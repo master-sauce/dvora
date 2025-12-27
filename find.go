@@ -137,4 +137,7 @@ func main() {
 	case 2:
 		concatUrls(moviesFile, movshwo)
 	}
+	fmt.Println("\nPress enter to exit...")
+	readLine()
 }
+
