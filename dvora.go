@@ -14,9 +14,9 @@ import (
 	"golang.org/x/net/html"
 )
 
-// defineFileNames sets the file paths for shows and movies.
-func defineFileNames() (string, string) {
-	return "shows.txt", "movies.txt"
+// defineFileNames sets the file paths for shows, movies, and manual checks.
+func defineFileNames() (string, string, string) {
+	return "shows.txt", "movies.txt", "manual_checks.txt"
 }
 
 // checkFileExists ensures a file is present at the given path.
@@ -42,6 +42,7 @@ func displayWelcome() {
 (______/   \_/  (_______)/   \__//     \|
                                          	
 	`
+ 
  
 	fmt.Println(asciiArt)
 	fmt.Println("Welcome to Dvora, find your favorite movies and shows. Press enter to continue...")
@@ -281,14 +282,67 @@ func searchAndCheckUrls(filePath, userInput, userAgent string) {
 	}
 }
 
+// searchManualChecks reads URLs from manual_checks.txt, formats the user input
+// based on prefixes (+ or -), and prints the formatted URLs to console.
+func searchManualChecks(filePath, userInput string) {
+	fmt.Print("\n" + strings.Repeat("=", 60) + "\n")
+	fmt.Print("MANUAL CHECKS: \n\n")
+	// fmt.Print(strings.Repeat("=", 60) + "\n\n")
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		fmt.Printf("Warning: Could not open %s: %v\n", filePath, err)
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	urlCount := 0
+
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		if line == "" {
+			continue // Skip empty lines
+		}
+
+		var formattedInput string
+		switch {
+		case strings.HasPrefix(line, "+"):
+			formattedInput = strings.ReplaceAll(userInput, " ", "+")
+			line = line[1:] // Remove prefix
+		case strings.HasPrefix(line, "-"):
+			formattedInput = strings.ReplaceAll(userInput, " ", "-")
+			line = line[1:] // Remove prefix
+		default:
+			formattedInput = userInput
+		}
+
+		url := line + formattedInput
+		urlCount++
+		fmt.Printf("%d. %s\n", urlCount, url)
+	}
+
+	if err := scanner.Err(); err != nil {
+		fmt.Printf("Error reading from file %s: %v\n", filePath, err)
+	}
+
+	if urlCount == 0 {
+		fmt.Println("No URLs found in manual_checks.txt")
+	}
+
+	fmt.Print("\n" + strings.Repeat("=", 60) + "\n")
+}
+
 // main orchestrates the program's execution flow.
 func main() {
 	displayWelcome()
 	movshwo := getUserInput()
 
-	showsFile, moviesFile := defineFileNames()
+	showsFile, moviesFile, manualChecksFile := defineFileNames()
 	checkFileExists(showsFile)
 	checkFileExists(moviesFile)
+	checkFileExists(manualChecksFile)
 
 	// Get user agent
 	userAgent := getUserAgent()
@@ -301,6 +355,9 @@ func main() {
 	case 2:
 		searchAndCheckUrls(moviesFile, movshwo, userAgent)
 	}
+
+	// Always run manual checks at the end, regardless of choice
+	searchManualChecks(manualChecksFile, movshwo)
 
 	fmt.Println("\nPress enter to exit...")
 	readLine()
