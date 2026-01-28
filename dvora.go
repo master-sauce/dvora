@@ -16,9 +16,9 @@ import (
 	"golang.org/x/net/html"
 )
 
-// defineFileNames sets the file paths for shows, movies, and manual checks.
-func defineFileNames() (string, string, string) {
-	return "shows.txt", "movies.txt", "manual_checks.txt"
+// defineFileNames sets the file paths for shows, movies, manual checks, and API sites.
+func defineFileNames() (string, string, string, string) {
+	return "shows.txt", "movies.txt", "manual_checks.txt", "api_sites.txt"
 }
 
 // checkFileExists ensures a file is present at the given path.
@@ -115,20 +115,20 @@ func extractAllLinks(n *html.Node) []string {
 	return links
 }
 
-// Add this function to handle movie streaming site APIs
-func checkMovieAPI(url, searchTerm, userAgent string) (bool, error) {
+// checkMovieAPI handles movie streaming site APIs and returns the search URL if found
+func checkMovieAPI(url, searchTerm, userAgent string) (bool, string, error) {
 	// Extract the base URL part before the q= parameter
-	re := regexp.MustCompile(`(https://ww\d+\.[a-zA-Z0-9\-]+\.[a-zA-Z]+/searching\?q=)([^&]+)`)
+	re := regexp.MustCompile(`(https://ww\d+\.[a-zA-Z0-9\-]+\.[a-zA-Z]+)/searching\?q=`)
 	matches := re.FindStringSubmatch(url)
-	if len(matches) < 3 {
-		return false, fmt.Errorf("invalid movie API URL format")
+	if len(matches) < 2 {
+		return false, "", fmt.Errorf("invalid movie API URL format")
 	}
 
 	baseURL := matches[1]
 	// Format the search term with plus signs
 	searchQuery := strings.ReplaceAll(searchTerm, " ", "+")
 	// Build the complete API URL with our search term
-	apiURL := baseURL + searchQuery + "&limit=40&offset=0"
+	apiURL := baseURL + "/searching?q=" + searchQuery + "&limit=40&offset=0"
 
 	// Create a new HTTP client with timeout
 	client := &http.Client{
@@ -138,7 +138,7 @@ func checkMovieAPI(url, searchTerm, userAgent string) (bool, error) {
 	// Create a new request
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
-		return false, fmt.Errorf("failed to create request: %v", err)
+		return false, "", fmt.Errorf("failed to create request: %v", err)
 	}
 
 	// Set the user agent
@@ -148,19 +148,19 @@ func checkMovieAPI(url, searchTerm, userAgent string) (bool, error) {
 	// Make the HTTP request
 	resp, err := client.Do(req)
 	if err != nil {
-		return false, fmt.Errorf("failed to fetch URL: %v", err)
+		return false, "", fmt.Errorf("failed to fetch URL: %v", err)
 	}
 	defer resp.Body.Close()
 
 	// Check if the request was successful
 	if resp.StatusCode != http.StatusOK {
-		return false, fmt.Errorf("HTTP request failed with status: %s", resp.Status)
+		return false, "", fmt.Errorf("HTTP request failed with status: %s", resp.Status)
 	}
 
 	// Read the response body
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return false, fmt.Errorf("failed to read response body: %v", err)
+		return false, "", fmt.Errorf("failed to read response body: %v", err)
 	}
 
 	// Parse the JSON response
@@ -183,26 +183,23 @@ func checkMovieAPI(url, searchTerm, userAgent string) (bool, error) {
 	}
 
 	if err := json.Unmarshal(body, &apiResponse); err != nil {
-		return false, fmt.Errorf("failed to parse JSON response: %v", err)
+		return false, "", fmt.Errorf("failed to parse JSON response: %v", err)
 	}
 
 	// Check if any result matches our search term
 	searchLower := strings.ToLower(searchTerm)
 	for _, item := range apiResponse.Data {
 		if strings.Contains(strings.ToLower(item.T), searchLower) {
-			return true, nil
+			// Return the regular search URL format
+			searchURL := baseURL + "/search/?q=" + searchQuery
+			return true, searchURL, nil
 		}
 	}
 
-	return false, nil
+	return false, "", nil
 }
 
 func checkSiteForContent(url, searchTerm, userAgent string) (bool, error) {
-	// Check if this is a movie site API URL
-	if strings.Contains(url, "/searching?q=") && (strings.Contains(url, "fmovies") || strings.Contains(url, "123movies") || strings.Contains(url, "ww") && strings.Contains(url, "searching")) {
-		return checkMovieAPI(url, searchTerm, userAgent)
-	}
-
 	// For regular websites
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest("GET", url, nil)
@@ -331,7 +328,7 @@ func hasNoResults(doc *html.Node) bool {
 	return false
 }
 
-// Modify searchAndCheckUrls to properly handle API URLs
+// searchAndCheckUrls checks regular (non-API) sites
 func searchAndCheckUrls(filePath, userInput, userAgent string) {
 	fmt.Printf("\nSearching for '%s' in %s:\n", userInput, strings.TrimSuffix(filePath, ".txt"))
 	file, err := os.Open(filePath)
@@ -341,51 +338,32 @@ func searchAndCheckUrls(filePath, userInput, userAgent string) {
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
-	// Track if any site contains the content
 	foundAny := false
-	lineNum := 0
 
 	for scanner.Scan() {
-		lineNum++
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" {
-			continue // Skip empty lines
+			continue
 		}
 
 		var formattedInput string
 		var url string
 
-		// Check if this is an API URL that needs special handling
-		if strings.Contains(line, "/searching?q=") {
-			// For API URLs, always use plus signs for spaces
+		// Regular URL handling
+		switch {
+		case strings.HasPrefix(line, "+"):
 			formattedInput = strings.ReplaceAll(userInput, " ", "+")
-			// Extract the base URL part before the q= parameter
-			re := regexp.MustCompile(`(https://ww\d+\.[a-zA-Z0-9\-]+\.[a-zA-Z]+/searching\?q=)`)
-			matches := re.FindStringSubmatch(line)
-			if len(matches) > 1 {
-				url = matches[1] + formattedInput + "&limit=40&offset=0"
-			} else {
-				// Fallback if regex doesn't match
-				url = line + formattedInput
-			}
-		} else {
-			// Regular URL handling
-			switch {
-			case strings.HasPrefix(line, "+"):
-				formattedInput = strings.ReplaceAll(userInput, " ", "+")
-				line = line[1:] // Remove prefix
-			case strings.HasPrefix(line, "-"):
-				formattedInput = strings.ReplaceAll(userInput, " ", "-")
-				line = line[1:] // Remove prefix
-			default:
-				formattedInput = userInput
-			}
-			url = line + formattedInput
+			line = line[1:] // Remove prefix
+		case strings.HasPrefix(line, "-"):
+			formattedInput = strings.ReplaceAll(userInput, " ", "-")
+			line = line[1:] // Remove prefix
+		default:
+			formattedInput = userInput
 		}
+		url = line + formattedInput
 
 		fmt.Printf("Checking: %s\n", url)
 
-		// Check the site for the content
 		contains, err := checkSiteForContent(url, userInput, userAgent)
 		if err != nil {
 			fmt.Printf("Error checking %s: %v\n", url, err)
@@ -406,6 +384,62 @@ func searchAndCheckUrls(filePath, userInput, userAgent string) {
 
 	if !foundAny {
 		fmt.Printf("'%s' was not found on any of the sites.\n", userInput)
+	}
+}
+
+// searchAndCheckAPIUrls checks API-based sites and returns actual movie URLs
+func searchAndCheckAPIUrls(filePath, userInput, userAgent string) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		// If file doesn't exist, just skip silently
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+
+	// Check if file has any content
+	hasContent := false
+	var lines []string
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" {
+			hasContent = true
+			lines = append(lines, line)
+		}
+	}
+
+	if !hasContent {
+		return
+	}
+
+	// Print separator for API results
+	fmt.Print("\n" + strings.Repeat("=", 60) + "\n")
+	fmt.Print("API SITE RESULTS:\n\n")
+
+	for _, line := range lines {
+		// Build API URL
+		formattedInput := strings.ReplaceAll(userInput, " ", "+")
+		apiURL := line + "/searching?q=" + formattedInput
+
+		fmt.Printf("Checking: %s\n", apiURL)
+
+		found, movieURL, err := checkMovieAPI(apiURL, userInput, userAgent)
+		if err != nil {
+			fmt.Printf("Error checking %s: %v\n", apiURL, err)
+			continue
+		}
+
+		if found {
+			fmt.Printf("✓ Found '%s' on this site!\n", userInput)
+			fmt.Printf("  → %s\n", movieURL)
+		} else {
+			fmt.Printf("✗ '%s' not found on this site.\n", userInput)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		log.Fatalf("Error reading from file %s: %v", filePath, err)
 	}
 }
 
@@ -465,10 +499,11 @@ func main() {
 	displayWelcome()
 	movshwo := getUserInput()
 
-	showsFile, moviesFile, manualChecksFile := defineFileNames()
+	showsFile, moviesFile, manualChecksFile, apiSitesFile := defineFileNames()
 	checkFileExists(showsFile)
 	checkFileExists(moviesFile)
 	checkFileExists(manualChecksFile)
+	// API sites file is optional, so we don't check if it exists
 
 	// Get user agent
 	userAgent := getUserAgent()
@@ -481,6 +516,9 @@ func main() {
 	case 2:
 		searchAndCheckUrls(moviesFile, movshwo, userAgent)
 	}
+
+	// Check API sites
+	searchAndCheckAPIUrls(apiSitesFile, movshwo, userAgent)
 
 	// Always run manual checks at the end, regardless of choice
 	searchManualChecks(manualChecksFile, movshwo)
