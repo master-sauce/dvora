@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -42,8 +44,7 @@ func displayWelcome() {
 (______/   \_/  (_______)/   \__//     \|
                                          	
 	`
- 
- 
+
 	fmt.Println(asciiArt)
 	fmt.Println("Welcome to Dvora, find your favorite movies and shows. Press enter to continue...")
 	readLine() // Use a helper to wait for an empty line
@@ -85,15 +86,7 @@ func getUserChoice() int {
 
 // getUserAgent prompts the user for their custom user agent
 func getUserAgent() string {
-	// fmt.Print("Enter your custom user agent (press Enter for default): ")
-	// userAgent := readLine()
-	// if userAgent == "" {
-	// 	// Default user agent
-	// 	userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-	// }
-
 	userAgent := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-
 	return userAgent
 }
 
@@ -122,21 +115,35 @@ func extractAllLinks(n *html.Node) []string {
 	return links
 }
 
-// checkSiteForContent fetches the content of a URL and checks if any links contain the search term
-func checkSiteForContent(url, searchTerm, userAgent string) (bool, error) {
+// Add this function to handle movie streaming site APIs
+func checkMovieAPI(url, searchTerm, userAgent string) (bool, error) {
+	// Extract the base URL part before the q= parameter
+	re := regexp.MustCompile(`(https://ww\d+\.[a-zA-Z0-9\-]+\.[a-zA-Z]+/searching\?q=)([^&]+)`)
+	matches := re.FindStringSubmatch(url)
+	if len(matches) < 3 {
+		return false, fmt.Errorf("invalid movie API URL format")
+	}
+
+	baseURL := matches[1]
+	// Format the search term with plus signs
+	searchQuery := strings.ReplaceAll(searchTerm, " ", "+")
+	// Build the complete API URL with our search term
+	apiURL := baseURL + searchQuery + "&limit=40&offset=0"
+
 	// Create a new HTTP client with timeout
 	client := &http.Client{
 		Timeout: 10 * time.Second,
 	}
 
 	// Create a new request
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
 		return false, fmt.Errorf("failed to create request: %v", err)
 	}
 
 	// Set the user agent
 	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "application/json")
 
 	// Make the HTTP request
 	resp, err := client.Do(req)
@@ -150,79 +157,161 @@ func checkSiteForContent(url, searchTerm, userAgent string) (bool, error) {
 		return false, fmt.Errorf("HTTP request failed with status: %s", resp.Status)
 	}
 
-	// Parse the HTML
-	doc, err := html.Parse(resp.Body)
+	// Read the response body
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return false, fmt.Errorf("failed to parse HTML: %v", err)
+		return false, fmt.Errorf("failed to read response body: %v", err)
 	}
 
-	// Extract all links from the page
-	links := extractAllLinks(doc)
-
-	// Prepare patterns to match the search term with spaces, hyphens, or plus signs between words
-	searchWords := strings.Fields(strings.ToLower(searchTerm))
-	if len(searchWords) == 0 {
-		return false, nil
+	// Parse the JSON response
+	var apiResponse struct {
+		Data []struct {
+			T string `json:"t"` // Title
+			S string `json:"s"` // Slug
+			D string `json:"d"` // Type (m for movie, s for series)
+			E int    `json:"e"` // Episodes
+			N int    `json:"n"` // New
+			Q string `json:"q"` // Quality
+			Y int    `json:"y"` // Year
+		} `json:"data"`
+		Meta struct {
+			Offset     int `json:"offset"`
+			TotalItems int `json:"total_items"`
+			TotalPages int `json:"total_pages"`
+			PageNumber int `json:"page_number"`
+		} `json:"meta"`
 	}
 
-	// Create multiple patterns to match the search term in different formats
-	var patterns []string
-
-	// Pattern 1: Exact match with word boundaries
-	var pattern1Builder strings.Builder
-	for i, word := range searchWords {
-		if i > 0 {
-			pattern1Builder.WriteString(`[\s\-\+\.]+`)
-		}
-		pattern1Builder.WriteString(regexp.QuoteMeta(word))
+	if err := json.Unmarshal(body, &apiResponse); err != nil {
+		return false, fmt.Errorf("failed to parse JSON response: %v", err)
 	}
-	patterns = append(patterns, pattern1Builder.String())
 
-	// Pattern 2: More flexible match with any characters before and after
-	var pattern2Builder strings.Builder
-	pattern2Builder.WriteString(`.*`)
-	for i, word := range searchWords {
-		if i > 0 {
-			pattern2Builder.WriteString(`[\s\-\+\.\/]+`)
-		}
-		pattern2Builder.WriteString(regexp.QuoteMeta(word))
-	}
-	pattern2Builder.WriteString(`.*`)
-	patterns = append(patterns, pattern2Builder.String())
-
-	// Pattern 3: Even more flexible match with any characters including numbers
-	var pattern3Builder strings.Builder
-	pattern3Builder.WriteString(`.*`)
-	for i, word := range searchWords {
-		if i > 0 {
-			pattern3Builder.WriteString(`[\s\-\+\.\/\d]+`)
-		}
-		pattern3Builder.WriteString(regexp.QuoteMeta(word))
-	}
-	pattern3Builder.WriteString(`.*`)
-	patterns = append(patterns, pattern3Builder.String())
-
-	// Test each pattern
-	for _, patternStr := range patterns {
-		searchPattern := regexp.MustCompile(patternStr)
-
-		// Check each link for a match
-		for _, link := range links {
-			linkLower := strings.ToLower(link)
-			if searchPattern.MatchString(linkLower) {
-				return true, nil
-			}
+	// Check if any result matches our search term
+	searchLower := strings.ToLower(searchTerm)
+	for _, item := range apiResponse.Data {
+		if strings.Contains(strings.ToLower(item.T), searchLower) {
+			return true, nil
 		}
 	}
 
 	return false, nil
 }
 
-// searchAndCheckUrls reads URLs from a file, formats the user's input,
-// and checks each site for the content.
+func checkSiteForContent(url, searchTerm, userAgent string) (bool, error) {
+	// Check if this is a movie site API URL
+	if strings.Contains(url, "/searching?q=") && (strings.Contains(url, "fmovies") || strings.Contains(url, "123movies") || strings.Contains(url, "ww") && strings.Contains(url, "searching")) {
+		return checkMovieAPI(url, searchTerm, userAgent)
+	}
+
+	// For regular websites
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to create request: %v", err)
+	}
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("failed to fetch URL: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("HTTP request failed with status: %s", resp.Status)
+	}
+
+	doc, err := html.Parse(resp.Body)
+	if err != nil {
+		return false, fmt.Errorf("failed to parse HTML: %v", err)
+	}
+
+	// First check if the page indicates no results
+	if hasNoResults(doc) {
+		return false, nil
+	}
+
+	// Extract all links from the page
+	links := extractAllLinks(doc)
+
+	// More restrictive pattern matching
+	searchWords := strings.Fields(strings.ToLower(searchTerm))
+	if len(searchWords) == 0 {
+		return false, nil
+	}
+
+	// Create a more restrictive pattern
+	var patternBuilder strings.Builder
+	for i, word := range searchWords {
+		if i > 0 {
+			patternBuilder.WriteString(`[\s\-\+\.\/]+`)
+		}
+		patternBuilder.WriteString(regexp.QuoteMeta(word))
+	}
+	patternStr := patternBuilder.String()
+	searchPattern := regexp.MustCompile(patternStr)
+
+	// Count how many links match our pattern
+	matchCount := 0
+	for _, link := range links {
+		linkLower := strings.ToLower(link)
+		if searchPattern.MatchString(linkLower) {
+			matchCount++
+		}
+	}
+
+	// Only return true if we have a reasonable number of matches
+	return matchCount > 0, nil
+}
+
+// hasNoResults checks if the page indicates no results were found
+func hasNoResults(doc *html.Node) bool {
+	var pageText strings.Builder
+	var traverseText func(*html.Node)
+	traverseText = func(node *html.Node) {
+		if node.Type == html.TextNode {
+			pageText.WriteString(node.Data)
+			pageText.WriteString(" ")
+		}
+		for c := node.FirstChild; c != nil; c = c.NextSibling {
+			traverseText(c)
+		}
+	}
+	traverseText(doc)
+	pageContent := strings.ToLower(pageText.String())
+
+	// Check for common "no results" indicators
+	// All indicators should be lowercase since pageContent is converted to lowercase
+	noResultsIndicators := []string{
+		"no result found.",    // with period (soap2day uses this)
+		"no result found",     // without period
+		"no results found",    // plural
+		"no results",
+		"nothing found",
+		"not found",
+		"no matches",
+		"0 results",
+		"could not find",
+		"couldn't find",
+		"search returned no results",
+		"sorry, no results",
+		"no items found",
+		"your search did not match",
+		"did not match any",
+		"no search results",
+	}
+
+	for _, indicator := range noResultsIndicators {
+		if strings.Contains(pageContent, indicator) {
+			return true
+		}
+	}
+	return false
+}
+
+// Modify searchAndCheckUrls to properly handle API URLs
 func searchAndCheckUrls(filePath, userInput, userAgent string) {
 	fmt.Printf("\nSearching for '%s' in %s:\n", userInput, strings.TrimSuffix(filePath, ".txt"))
-
 	file, err := os.Open(filePath)
 	if err != nil {
 		log.Fatalf("Failed to open file %s: %v", filePath, err)
@@ -230,7 +319,6 @@ func searchAndCheckUrls(filePath, userInput, userAgent string) {
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
-
 	// Track if any site contains the content
 	foundAny := false
 	lineNum := 0
@@ -238,24 +326,41 @@ func searchAndCheckUrls(filePath, userInput, userAgent string) {
 	for scanner.Scan() {
 		lineNum++
 		line := strings.TrimSpace(scanner.Text())
-
 		if line == "" {
 			continue // Skip empty lines
 		}
 
 		var formattedInput string
-		switch {
-		case strings.HasPrefix(line, "+"):
+		var url string
+
+		// Check if this is an API URL that needs special handling
+		if strings.Contains(line, "/searching?q=") {
+			// For API URLs, always use plus signs for spaces
 			formattedInput = strings.ReplaceAll(userInput, " ", "+")
-			line = line[1:] // Remove prefix
-		case strings.HasPrefix(line, "-"):
-			formattedInput = strings.ReplaceAll(userInput, " ", "-")
-			line = line[1:] // Remove prefix
-		default:
-			formattedInput = userInput
+			// Extract the base URL part before the q= parameter
+			re := regexp.MustCompile(`(https://ww\d+\.[a-zA-Z0-9\-]+\.[a-zA-Z]+/searching\?q=)`)
+			matches := re.FindStringSubmatch(line)
+			if len(matches) > 1 {
+				url = matches[1] + formattedInput + "&limit=40&offset=0"
+			} else {
+				// Fallback if regex doesn't match
+				url = line + formattedInput
+			}
+		} else {
+			// Regular URL handling
+			switch {
+			case strings.HasPrefix(line, "+"):
+				formattedInput = strings.ReplaceAll(userInput, " ", "+")
+				line = line[1:] // Remove prefix
+			case strings.HasPrefix(line, "-"):
+				formattedInput = strings.ReplaceAll(userInput, " ", "-")
+				line = line[1:] // Remove prefix
+			default:
+				formattedInput = userInput
+			}
+			url = line + formattedInput
 		}
 
-		url := line + formattedInput
 		fmt.Printf("Checking: %s\n", url)
 
 		// Check the site for the content
@@ -287,7 +392,6 @@ func searchAndCheckUrls(filePath, userInput, userAgent string) {
 func searchManualChecks(filePath, userInput string) {
 	fmt.Print("\n" + strings.Repeat("=", 60) + "\n")
 	fmt.Print("MANUAL CHECKS: \n\n")
-	// fmt.Print(strings.Repeat("=", 60) + "\n\n")
 
 	file, err := os.Open(filePath)
 	if err != nil {
