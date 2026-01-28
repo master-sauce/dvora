@@ -272,7 +272,7 @@ Dvora prints ready-to-click URLs from `manual_checks.txt` so you can quickly ver
 
 ## 🛠️ Requirements
 
-* Go **1.20+** recommended
+* Go **1.23+** recommended
 * Internet connection
 
 Dependencies:
