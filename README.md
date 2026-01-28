@@ -4,7 +4,7 @@ Dvora is a terminal-based Go application that helps you quickly check whether a 
 
 ---
 
-## 🚀 Installation & Usage (Start Here)
+## 🚀 Installation & Usage
 
 ### 1️⃣ Clone the repository
 
