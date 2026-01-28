@@ -1,11 +1,26 @@
 # 🎬 Dvora
 
-Dvora is a terminal-based Go application that helps you quickly check whether a **movie or TV show** exists across multiple streaming and index sites.
+Dvora is a terminal-based Go application that helps you quickly check whether a **movie or TV show** exists across multiple streaming and index sites and gives you back the search link.
 
 ---
 
 ## 🚀 Installation & Usage
 
+```
+# For macOS using Homebrew
+brew install go
+
+# For Ubuntu/Debian
+sudo apt update
+sudo apt install golang-go
+
+# For Windows
+# Download the latest installer from: https://go.dev/dl/
+# Or use Chocolatey: choco install golang
+
+# For other systems, visit: https://go.dev/doc/install
+
+```
 ### 1️⃣ Clone the repository
 
 ```
