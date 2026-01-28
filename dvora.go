@@ -420,7 +420,7 @@ func searchAndCheckAPIUrls(filePath, userInput, userAgent string) {
 	for _, line := range lines {
 		// Build API URL
 		formattedInput := strings.ReplaceAll(userInput, " ", "+")
-		apiURL := line + "/searching?q=" + formattedInput
+		apiURL := line + "/searching?q=" + formattedInput + "&limit=40&offset=0"
 
 		fmt.Printf("Checking: %s\n", apiURL)
 
