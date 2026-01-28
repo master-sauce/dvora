@@ -226,11 +226,6 @@ func checkSiteForContent(url, searchTerm, userAgent string) (bool, error) {
 		return false, fmt.Errorf("failed to parse HTML: %v", err)
 	}
 
-	// First check if the page indicates no results
-	if hasNoResults(doc) {
-		return false, nil
-	}
-
 	// Extract all links from the page
 	links := extractAllLinks(doc)
 
@@ -255,13 +250,40 @@ func checkSiteForContent(url, searchTerm, userAgent string) (bool, error) {
 	matchCount := 0
 	for _, link := range links {
 		linkLower := strings.ToLower(link)
+
+		// Skip external social sharing and irrelevant links
+		if strings.Contains(linkLower, "addtoany.com") ||
+			strings.Contains(linkLower, "facebook.com") ||
+			strings.Contains(linkLower, "twitter.com") ||
+			strings.Contains(linkLower, "reddit.com") ||
+			strings.Contains(linkLower, "pinterest.com") ||
+			strings.Contains(linkLower, "whatsapp.com") ||
+			strings.Contains(linkLower, "t.me") ||
+			strings.Contains(linkLower, "mailto:") ||
+			strings.Contains(linkLower, "/login") ||
+			strings.Contains(linkLower, "/register") ||
+			strings.Contains(linkLower, "/signup") {
+			continue
+		}
+
 		if searchPattern.MatchString(linkLower) {
 			matchCount++
 		}
 	}
 
-	// Only return true if we have a reasonable number of matches
-	return matchCount > 0, nil
+	// If we found matching links, return true regardless of any "no results" text
+	// This prevents false positives where the text exists but results are actually shown
+	if matchCount > 0 {
+		return true, nil
+	}
+
+	// Only if we found NO matching links, then check if the page explicitly says "no results"
+	if hasNoResults(doc) {
+		return false, nil
+	}
+
+	// No matches found and no explicit "no results" message
+	return false, nil
 }
 
 // hasNoResults checks if the page indicates no results were found
@@ -283,9 +305,9 @@ func hasNoResults(doc *html.Node) bool {
 	// Check for common "no results" indicators
 	// All indicators should be lowercase since pageContent is converted to lowercase
 	noResultsIndicators := []string{
-		"no result found.",    // with period (soap2day uses this)
-		"no result found",     // without period
-		"no results found",    // plural
+		"no result found.", // with period (soap2day uses this)
+		"no result found",  // without period
+		"no results found", // plural
 		"no results",
 		"nothing found",
 		"not found",
