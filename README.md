@@ -18,7 +18,7 @@ cd dvora
 ### 2️⃣ Build the project
 
 ```
-go build -o dvora
+go build dvora.go
 ```
 
 ---
