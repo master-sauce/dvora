@@ -266,18 +266,3 @@ Dependencies:
 
 ---
 
-## 💡 Future Ideas
-
-* Parallel site checks
-* Result ranking
-* Export results to file
-* Headless browser fallback
-* Configurable timeouts
-
----
-
-## ❤️ Author
-
-Built with curiosity, caffeine, and Go.
-
-Happy hunting 🎥
