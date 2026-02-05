@@ -494,35 +494,48 @@ func searchManualChecks(filePath, userInput string) {
 	fmt.Print("\n" + strings.Repeat("=", 60) + "\n")
 }
 
-// main orchestrates the program's execution flow.
 func main() {
-	displayWelcome()
-	movshwo := getUserInput()
 
-	showsFile, moviesFile, manualChecksFile, apiSitesFile := defineFileNames()
-	checkFileExists(showsFile)
-	checkFileExists(moviesFile)
-	checkFileExists(manualChecksFile)
-	// API sites file is optional, so we don't check if it exists
+	for {
 
-	// Get user agent
-	userAgent := getUserAgent()
+		displayWelcome()
+		movshwo := getUserInput()
 
-	choice := getUserChoice()
+		showsFile, moviesFile, manualChecksFile, apiSitesFile := defineFileNames()
+		checkFileExists(showsFile)
+		checkFileExists(moviesFile)
+		checkFileExists(manualChecksFile)
+		// API sites file is optional, so we don't check if it exists
 
-	switch choice {
-	case 1:
-		searchAndCheckUrls(showsFile, movshwo, userAgent)
-	case 2:
-		searchAndCheckUrls(moviesFile, movshwo, userAgent)
+		// Get user agent
+		userAgent := getUserAgent()
+
+		choice := getUserChoice()
+
+		switch choice {
+		case 1:
+			searchAndCheckUrls(showsFile, movshwo, userAgent)
+		case 2:
+			searchAndCheckUrls(moviesFile, movshwo, userAgent)
+		}
+
+		// Check API sites
+		searchAndCheckAPIUrls(apiSitesFile, movshwo, userAgent)
+
+		// Always run manual checks at the end, regardless of choice
+		searchManualChecks(manualChecksFile, movshwo)
+
+		// --- "Search Again?" Prompt ---
+		// This replaces the original "Press enter to exit..."
+		fmt.Print("\nWould you like to search again? (y/n): ")
+		searchAgain := readLine()
+
+		if strings.ToLower(searchAgain) != "y" {
+			break // Exit the outer for-loop, which ends the program
+		}
+		// If the user enters 'y', the outer loop continues, starting the process over
 	}
 
-	// Check API sites
-	searchAndCheckAPIUrls(apiSitesFile, movshwo, userAgent)
-
-	// Always run manual checks at the end, regardless of choice
-	searchManualChecks(manualChecksFile, movshwo)
-
-	fmt.Println("\nPress enter to exit...")
-	readLine()
+	// This line is now reached only when the user chooses not to search again
+	fmt.Println("Goodbye.")
 }
