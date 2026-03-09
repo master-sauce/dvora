@@ -1,3 +1,5 @@
 +https://tmovie.tv/search?query=
 +https://yflix.to/browser?keyword=
 +https://www.1flex.nl/search?q=
++https://ww4.fmovies.co/search/?q=
++https://ww8.123moviesfree.net/search/?q=
