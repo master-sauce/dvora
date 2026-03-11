@@ -263,6 +263,13 @@ func checkSiteForContent(url, searchTerm, userAgent string) (bool, error) {
 			continue
 		}
 
+		// New check: skip links that are search results themselves or pagination
+		if strings.HasPrefix(linkLower, "/search/") ||
+			strings.HasPrefix(linkLower, "search/") ||
+			strings.HasPrefix(linkLower, "/search?") {
+			continue
+		}
+
 		if searchPattern.MatchString(linkLower) {
 			matchCount++
 		}
