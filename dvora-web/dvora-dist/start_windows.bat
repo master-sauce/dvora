@@ -6,7 +6,7 @@ REM Start the Go application in the background
 start "DVORA Server" /MIN go run main.go
 
 REM Wait a moment for the server to start
-timeout /t 2 /nobreak >nul
+timeout /t 4 /nobreak >nul
 
 REM Open the default browser
 start http://localhost:8080
