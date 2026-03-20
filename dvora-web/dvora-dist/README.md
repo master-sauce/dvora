@@ -2,8 +2,15 @@
 
 ## Run
 ```bash
-go run main.go
+
+# Windows
+start_windows.bat
+
+# Mac
+start_linux_mac.sh
+
 # open http://localhost:8080
+
 ```
 
 ## Site File Format
