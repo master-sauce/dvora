@@ -22,6 +22,7 @@ enum class SourceType {
 }
 
 data class WizdomResult(
+    val title: String?,
     val title_en: String?,
     val imdb: String?,
     val type: String?
@@ -53,7 +54,7 @@ class DvoraScanner {
                 cleanBaseUrl = baseUrl
             }
         }
-        
+
         val fullUrl = cleanBaseUrl + formattedInput
 
         try {
@@ -64,12 +65,12 @@ class DvoraScanner {
 
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@withContext SearchResult(fullUrl, false, errorMessage = "HTTP ${response.code}")
-                
+
                 val body = response.body?.string() ?: return@withContext SearchResult(fullUrl, false, errorMessage = "Empty body")
                 val doc = Jsoup.parse(body)
-                
+
                 val links = doc.select("[href]").map { it.attr("href") }
-                
+
                 val searchWords = searchTerm.split(" ").filter { it.isNotBlank() }
                 if (searchWords.isEmpty()) return@withContext SearchResult(fullUrl, false)
 
@@ -90,7 +91,7 @@ class DvoraScanner {
                 for (link in links) {
                     val linkLower = link.lowercase()
                     if (ignoredPatterns.any { linkLower.contains(it) }) continue
-                    
+
                     // New check: skip links that are search results themselves or pagination
                     if (linkLower.startsWith("/search/") || linkLower.startsWith("search/") || linkLower.startsWith("/search?")) continue
 
@@ -126,10 +127,10 @@ class DvoraScanner {
         }
     }
 
-    suspend fun scanSubtitles(searchTerm: String, searchType: SourceType): SearchResult = withContext(Dispatchers.IO) {
+    suspend fun scanSubtitles(searchTerm: String, searchType: SourceType): List<SearchResult> = withContext(Dispatchers.IO) {
         val query = searchTerm.replace(" ", "+")
         val apiSearchUrl = "https://wizdom.xyz/api/search?search=$query&page=0"
-        
+
         try {
             val request = Request.Builder()
                 .url(apiSearchUrl)
@@ -137,25 +138,31 @@ class DvoraScanner {
                 .build()
 
             client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@withContext SearchResult(apiSearchUrl, false, errorMessage = "HTTP ${response.code}")
-                
-                val body = response.body?.string() ?: return@withContext SearchResult(apiSearchUrl, false, errorMessage = "Empty body")
+                if (!response.isSuccessful) return@withContext listOf(SearchResult(apiSearchUrl, false, errorMessage = "HTTP ${response.code}"))
+
+                val body = response.body?.string() ?: return@withContext listOf(SearchResult(apiSearchUrl, false, errorMessage = "Empty body"))
                 val listType = object : TypeToken<List<WizdomResult>>() {}.type
                 val wizdomResults: List<WizdomResult> = Gson().fromJson(body, listType)
 
-                // Match based on title_en containing the search term
-                val match = wizdomResults.find { it.title_en?.contains(searchTerm, ignoreCase = true) == true }
-                
-                if (match != null && match.imdb != null) {
-                    val typePath = if (searchType == SourceType.SHOW) "tv" else "movie"
-                    val finalUrl = "https://wizdom.xyz/$typePath/${match.imdb}"
-                    return@withContext SearchResult(finalUrl, true, foundDetails = "Found subtitles for: ${match.title_en}")
+                // Match based on title_en or title containing the search term
+                val matches = wizdomResults.filter {
+                    it.title_en?.contains(searchTerm, ignoreCase = true) == true ||
+                            it.title?.contains(searchTerm, ignoreCase = true) == true
                 }
-                
-                return@withContext SearchResult(apiSearchUrl, false, foundDetails = "No matching subtitles found on Wizdom.")
+
+                if (matches.isNotEmpty()) {
+                    return@withContext matches.filter { it.imdb != null }.map { match ->
+                        val typePath = if (searchType == SourceType.SHOW) "tv" else "movie"
+                        val finalUrl = "https://wizdom.xyz/$typePath/${match.imdb}"
+                        val displayTitle = match.title_en ?: match.title ?: "Unknown"
+                        SearchResult(finalUrl, true, foundDetails = "Found subtitles for: $displayTitle")
+                    }
+                }
+
+                return@withContext listOf(SearchResult(apiSearchUrl, false, foundDetails = "No matching subtitles found on Wizdom."))
             }
         } catch (e: Exception) {
-            SearchResult(apiSearchUrl, false, errorMessage = e.message)
+            listOf(SearchResult(apiSearchUrl, false, errorMessage = e.message))
         }
     }
 

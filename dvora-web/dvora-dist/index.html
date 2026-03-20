@@ -658,6 +658,13 @@ a.card-url:hover { color: var(--accent); }
               </div>
               <div id="logSiteBlocks"></div>
             </div>
+            <div id="logSubtitleMeta" style="display:none">
+              <div class="log-search-query" style="background:rgba(255,170,0,0.04);border-top:1px solid var(--border);">
+                <div class="log-search-query-label" style="color:var(--subtitle);">Last Subtitle Search</div>
+                <div class="log-search-query-value" id="logSubtitleQueryDisplay"></div>
+              </div>
+              <div id="logSubtitleBlocks"></div>
+            </div>
           </div>
         </div>
 
@@ -671,6 +678,7 @@ a.card-url:hover { color: var(--accent); }
 // ===== STATE =====
 let mode = 'shows';
 let lastResults = null;
+let lastSubtitleResults = null;
 let activeTab = 'shows';
 
 // ===== MODE =====
@@ -932,51 +940,95 @@ function saveConfig(filename, textareaId, statusId) {
 function renderLogs() {
   const empty = document.getElementById('logEmpty');
   const meta = document.getElementById('logSearchMeta');
+  const subMeta = document.getElementById('logSubtitleMeta');
 
-  if (!lastResults) {
+  if (!lastResults && !lastSubtitleResults) {
     empty.style.display = 'block';
     meta.style.display = 'none';
+    subMeta.style.display = 'none';
     return;
   }
 
   empty.style.display = 'none';
-  meta.style.display = 'block';
 
-  document.getElementById('logQueryDisplay').textContent =
-    `"${lastResults.query}"  [${lastResults.results.filter(r=>r.type!='manual' && r.found).length} found / ${lastResults.results.filter(r=>r.type!='manual').length} scanned]`;
+  // Main search logs
+  if (lastResults) {
+    meta.style.display = 'block';
+    document.getElementById('logQueryDisplay').textContent =
+      `"${lastResults.query}"  [${lastResults.results.filter(r=>r.type!='manual' && r.found).length} found / ${lastResults.results.filter(r=>r.type!='manual').length} scanned]`;
 
-  const container = document.getElementById('logSiteBlocks');
-  container.innerHTML = '';
+    const container = document.getElementById('logSiteBlocks');
+    container.innerHTML = '';
 
-  lastResults.results.forEach(r => {
-    const block = document.createElement('div');
-    block.className = 'log-site-block';
+    lastResults.results.forEach(r => {
+      const block = document.createElement('div');
+      block.className = 'log-site-block';
 
-    let dotColor, verdictCls, verdictTxt;
-    if (r.type === 'manual') {
-      dotColor = 'var(--manual)'; verdictCls = 'manual'; verdictTxt = 'MANUAL';
-    } else if (r.found) {
-      dotColor = 'var(--found)'; verdictCls = 'found'; verdictTxt = 'FOUND';
-    } else {
-      dotColor = 'var(--text-dim)'; verdictCls = 'notfound'; verdictTxt = 'NOT FOUND';
-    }
+      let dotColor, verdictCls, verdictTxt;
+      if (r.type === 'manual') {
+        dotColor = 'var(--manual)'; verdictCls = 'manual'; verdictTxt = 'MANUAL';
+      } else if (r.found) {
+        dotColor = 'var(--found)'; verdictCls = 'found'; verdictTxt = 'FOUND';
+      } else {
+        dotColor = 'var(--text-dim)'; verdictCls = 'notfound'; verdictTxt = 'NOT FOUND';
+      }
 
-    const typeBadge = r.type === 'api' ? ' [API]' : r.type === 'manual' ? ' [MANUAL]' : '';
-    const urlShort = r.url.length > 80 ? r.url.substring(0, 80) + '…' : r.url;
-    const logs = r.logs || [];
-    const hasLogs = logs.length > 0;
+      const typeBadge = r.type === 'api' ? ' [API]' : r.type === 'manual' ? ' [MANUAL]' : '';
+      const urlShort = r.url.length > 80 ? r.url.substring(0, 80) + '…' : r.url;
+      const logs = r.logs || [];
+      const hasLogs = logs.length > 0;
 
-    block.innerHTML = `
-      <div class="log-site-header" onclick="toggleLogBlock(this)">
-        <div class="log-site-dot" style="background:${dotColor};box-shadow:${r.found&&r.type!=='manual'?'0 0 6px '+dotColor:'none'}"></div>
-        <div class="log-site-url">${esc(urlShort)}${esc(typeBadge)}</div>
-        <span class="log-site-verdict ${verdictCls}">${verdictTxt}</span>
-        <span class="log-expand">${hasLogs ? '▾' : ''}</span>
-      </div>
-      ${hasLogs ? `<div class="log-site-body">${buildLogLines(logs)}</div>` : ''}
-    `;
-    container.appendChild(block);
-  });
+      block.innerHTML = `
+        <div class="log-site-header" onclick="toggleLogBlock(this)">
+          <div class="log-site-dot" style="background:${dotColor};box-shadow:${r.found&&r.type!=='manual'?'0 0 6px '+dotColor:'none'}"></div>
+          <div class="log-site-url">${esc(urlShort)}${esc(typeBadge)}</div>
+          <span class="log-site-verdict ${verdictCls}">${verdictTxt}</span>
+          <span class="log-expand">${hasLogs ? '▾' : ''}</span>
+        </div>
+        ${hasLogs ? `<div class="log-site-body">${buildLogLines(logs)}</div>` : ''}
+      `;
+      container.appendChild(block);
+    });
+  } else {
+    meta.style.display = 'none';
+  }
+
+  // Subtitle search logs
+  if (lastSubtitleResults) {
+    subMeta.style.display = 'block';
+    const { query, items } = lastSubtitleResults;
+    const matchCount = items.filter(i => i.found).length;
+    document.getElementById('logSubtitleQueryDisplay').textContent =
+      `"${query}"  [${matchCount} matched / ${items.length} results — wizdom.xyz]`;
+
+    const subContainer = document.getElementById('logSubtitleBlocks');
+    subContainer.innerHTML = '';
+
+    items.forEach(item => {
+      const block = document.createElement('div');
+      block.className = 'log-site-block';
+
+      const dotColor = item.found ? 'var(--subtitle)' : 'var(--text-dim)';
+      const verdictCls = item.found ? 'found' : 'notfound';
+      const verdictTxt = item.found ? 'MATCH' : 'NO MATCH';
+      const hasLogs = item.logs && item.logs.length > 0;
+      const label = `${item.title_en || '—'}${item.title ? ' / ' + item.title : ''}`;
+      const labelShort = label.length > 70 ? label.substring(0, 70) + '…' : label;
+
+      block.innerHTML = `
+        <div class="log-site-header" onclick="toggleLogBlock(this)">
+          <div class="log-site-dot" style="background:${dotColor};box-shadow:${item.found ? '0 0 6px var(--subtitle)' : 'none'}"></div>
+          <div class="log-site-url">${esc(labelShort)} <span style="color:var(--text-dim);font-size:0.7em;">[SUBTITLE]</span></div>
+          <span class="log-site-verdict ${verdictCls}" style="${item.found ? 'color:var(--subtitle);border-color:rgba(255,170,0,0.3);background:rgba(255,170,0,0.08)' : ''}">${verdictTxt}</span>
+          <span class="log-expand">${hasLogs ? '▾' : ''}</span>
+        </div>
+        ${hasLogs ? `<div class="log-site-body">${buildLogLines(item.logs)}</div>` : ''}
+      `;
+      subContainer.appendChild(block);
+    });
+  } else {
+    subMeta.style.display = 'none';
+  }
 }
 
 function toggleLogBlock(header) {
@@ -1004,7 +1056,6 @@ async function doSubtitleSearch() {
   panel.classList.add('visible');
   body.innerHTML = '<div class="sub-empty">Searching wizdom.xyz...</div>';
 
-  const searchQuery = q.split(' ').join('+');
   const apiURL = `https://wizdom.xyz/api/search?search=${encodeURIComponent(q)}&page=0`;
 
   try {
@@ -1012,20 +1063,60 @@ async function doSubtitleSearch() {
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const data = await resp.json();
 
+    if (!Array.isArray(data)) throw new Error('Unexpected response format (not an array)');
+
+    const qLower = q.toLowerCase();
+
     body.innerHTML = '';
 
-    if (!Array.isArray(data) || data.length === 0) {
+    if (data.length === 0) {
+      lastSubtitleResults = { query: q, items: [{ title_en: '(no results)', title: '', found: false, logs: [
+        { level: 'info', message: `GET ${apiURL}` },
+        { level: 'info', message: `API returned 0 results` },
+        { level: 'verdict', message: `NOT FOUND — API returned 0 results for "${q}"` }
+      ]}]};
+      if (document.getElementById('settingsOverlay').classList.contains('open') && activeTab === 'logs') renderLogs();
       body.innerHTML = '<div class="sub-notfound-banner">✗ No subtitles found for "' + esc(q) + '"</div><div class="sub-empty">No results returned from Wizdom.</div>';
       return;
     }
 
-    const qLower = q.toLowerCase();
-    const hasMatch = data.some(item => item.title_en && item.title_en.toLowerCase().includes(qLower));
+    const itemMatches = item => {
+      const enMatch = !!(item.title_en && item.title_en.toLowerCase().includes(qLower));
+      const heMatch = !!(item.title && item.title.toLowerCase().includes(qLower));
+      return { enMatch, heMatch, any: enMatch || heMatch };
+    };
+
+    const hasMatch = data.some(item => itemMatches(item).any);
+
+    // Build lastSubtitleResults with verbose logs per item
+    lastSubtitleResults = {
+      query: q,
+      items: data.map((item, i) => {
+        const { enMatch, heMatch, any: found } = itemMatches(item);
+        const logs = [];
+        const lg = (level, msg) => logs.push({ level, message: msg });
+        lg('info', `Result #${i + 1}: title_en="${item.title_en || ''}" title="${item.title || ''}"`);
+        lg('info', `year=${item.year || '?'} type=${item.type || '?'} imdb="${item.imdb || 'N/A'}"`);
+        lg('info', `rating=${item.rating || 'N/A'} votes=${item.votes || 'N/A'}`);
+        if (item.genres) lg('info', `genres: ${item.genres}`);
+        lg('info', `Checking title_en "${item.title_en || ''}" for "${qLower}"`);
+        if (enMatch) lg('match', `✓ MATCH (title_en): "${item.title_en}" contains "${qLower}"`);
+        else lg('skip', `  no match: title_en "${item.title_en || '—'}" does not contain "${qLower}"`);
+        lg('info', `Checking title "${item.title || ''}" for "${qLower}"`);
+        if (heMatch) lg('match', `✓ MATCH (title): "${item.title}" contains "${qLower}"`);
+        else lg('skip', `  no match: title "${item.title || '—'}" does not contain "${qLower}"`);
+        if (found) lg('verdict', `FOUND — subtitle page: wizdom.xyz/${mode === 'movies' ? 'movie' : 'tv'}/${item.imdb || '?'}`);
+        else lg('verdict', `NOT FOUND — neither title_en nor title matched "${qLower}"`);
+        return { title_en: item.title_en, title: item.title, found, logs };
+      })
+    };
+
+    if (document.getElementById('settingsOverlay').classList.contains('open') && activeTab === 'logs') renderLogs();
 
     const banner = document.createElement('div');
     if (hasMatch) {
       banner.className = 'sub-found-banner';
-      banner.textContent = '✓ HEBREW SUBTITLES FOUND — "' + q + '" matched in Wizdom results';
+      banner.textContent = '✓ SUBTITLES FOUND — "' + q + '" matched in Wizdom results';
     } else {
       banner.className = 'sub-notfound-banner';
       banner.textContent = '✗ No exact title match for "' + q + '" — showing all results below';
@@ -1033,11 +1124,13 @@ async function doSubtitleSearch() {
     body.appendChild(banner);
 
     data.forEach((item, i) => {
+      const { enMatch, heMatch, any: isMatch } = itemMatches(item);
+
       const card = document.createElement('div');
       card.className = 'sub-result-card';
       card.style.animationDelay = (i * 40) + 'ms';
+      if (isMatch) card.style.background = 'linear-gradient(90deg, rgba(0,255,224,0.03), transparent 60%)';
 
-      const isMatch = item.title_en && item.title_en.toLowerCase().includes(qLower);
       const posterHTML = item.poster_small
         ? `<img class="sub-poster" src="${esc(item.poster_small)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
           + `<div class="sub-poster-placeholder" style="display:none">🎬</div>`
@@ -1048,7 +1141,6 @@ async function doSubtitleSearch() {
       const year = item.year ? `· ${item.year}` : '';
       const typeLabel = item.type ? `· ${item.type}` : '';
 
-      // Build Wizdom URL: use current mode to pick tv/movie path
       let wizdomURL = '';
       if (item.imdb) {
         const wizdomType = mode === 'movies' ? 'movie' : 'tv';
@@ -1069,12 +1161,17 @@ async function doSubtitleSearch() {
           ${item.genres ? `<div class="sub-genres">${esc(item.genres)}</div>` : ''}
           ${wizdomURL ? `<div style="margin-top:5px;"><a href="${wizdomURL}" target="_blank" style="font-size:0.68rem;color:var(--subtitle);text-decoration:none;letter-spacing:0.05em;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">→ ${wizdomURL}</a></div>` : ''}
         </div>
-        <span class="sub-badge">SUBS</span>
+        <span class="sub-badge">${isMatch ? '<span style="color:var(--found)">✓</span> SUBS' : 'SUBS'}</span>
       `;
       body.appendChild(card);
     });
 
   } catch (err) {
+    lastSubtitleResults = { query: q, items: [{ title_en: '(error)', title: '', found: false, logs: [
+      { level: 'warn', message: 'Error: ' + err.message },
+      { level: 'verdict', message: 'NOT FOUND — request failed' }
+    ]}]};
+    if (document.getElementById('settingsOverlay').classList.contains('open') && activeTab === 'logs') renderLogs();
     body.innerHTML = `<div class="sub-notfound-banner">⚠ Error: ${esc(err.message)}</div><div class="sub-empty">Could not reach Wizdom API.</div>`;
   } finally {
     btn.disabled = false;
