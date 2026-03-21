@@ -23,12 +23,13 @@ type LogEntry struct {
 }
 
 type SiteResult struct {
-	URL      string     `json:"url"`
-	Found    bool       `json:"found"`
-	Error    string     `json:"error,omitempty"`
-	Type     string     `json:"type"` // "auto", "api", "manual"
-	MovieURL string     `json:"movie_url,omitempty"`
-	Logs     []LogEntry `json:"logs"`
+	URL       string     `json:"url"`
+	Found     bool       `json:"found"`
+	Error     string     `json:"error,omitempty"`
+	Type      string     `json:"type"` // "auto", "api", "manual"
+	MovieURL  string     `json:"movie_url,omitempty"`
+	MovieURLs []string   `json:"movie_urls,omitempty"`
+	Logs      []LogEntry `json:"logs"`
 }
 
 type SearchResponse struct {
@@ -266,9 +267,97 @@ func checkMovieAPI(baseURL, searchTerm string) (bool, string, []LogEntry, error)
 	return false, "", logs, nil
 }
 
+func checkStremioAPI(baseURL, searchTerm, mode string) (bool, []string, []LogEntry, error) {
+	var logs []LogEntry
+	add := func(level, msg string) { logs = append(logs, LogEntry{level, msg}) }
+
+	mediaType := "series"
+	if mode == "movies" {
+		mediaType = "movie"
+	}
+
+	searchQuery := strings.ReplaceAll(searchTerm, " ", "+")
+	apiURL := baseURL + "/catalog/" + mediaType + "/top/search=" + searchQuery + ".json"
+
+	add("info", fmt.Sprintf("Stremio API GET %s", apiURL))
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest("GET", apiURL, nil)
+	if err != nil {
+		return false, nil, logs, err
+	}
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, nil, logs, err
+	}
+	defer resp.Body.Close()
+
+	add("info", fmt.Sprintf("Response: HTTP %d %s", resp.StatusCode, resp.Status))
+
+	if resp.StatusCode != http.StatusOK {
+		return false, nil, logs, fmt.Errorf("HTTP %s", resp.Status)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false, nil, logs, err
+	}
+
+	var apiResponse struct {
+		Metas []struct {
+			ID          string `json:"id"`
+			ImdbID      string `json:"imdb_id"`
+			Type        string `json:"type"`
+			Name        string `json:"name"`
+			ReleaseInfo string `json:"releaseInfo"`
+		} `json:"metas"`
+	}
+	if err := json.Unmarshal(body, &apiResponse); err != nil {
+		return false, nil, logs, fmt.Errorf("JSON parse error: %v", err)
+	}
+
+	add("info", fmt.Sprintf("API returned %d results", len(apiResponse.Metas)))
+
+	searchLower := strings.ToLower(searchTerm)
+	add("info", fmt.Sprintf("Checking each name for substring: \"%s\"", searchLower))
+
+	var matchedURLs []string
+	for _, item := range apiResponse.Metas {
+		if len(matchedURLs) >= 10 {
+			break
+		}
+		nameLower := strings.ToLower(item.Name)
+		if strings.Contains(nameLower, searchLower) {
+			id := item.ImdbID
+			if id == "" {
+				id = item.ID
+			}
+			stremioURL := "https://web.stremio.com/#/detail/" + item.Type + "/" + id + "/" + id
+			matchedURLs = append(matchedURLs, stremioURL)
+			add("match", fmt.Sprintf("✓ MATCH: \"%s\" (%s) → %s", item.Name, item.ReleaseInfo, stremioURL))
+		} else {
+			add("skip", fmt.Sprintf("  no match: \"%s\"", item.Name))
+		}
+	}
+
+	if len(matchedURLs) > 0 {
+		add("verdict", fmt.Sprintf("FOUND — %d result(s) matched \"%s\"", len(matchedURLs), searchTerm))
+		return true, matchedURLs, logs, nil
+	}
+
+	add("verdict", fmt.Sprintf("NOT FOUND — none of %d results matched \"%s\"", len(apiResponse.Metas), searchTerm))
+	return false, nil, logs, nil
+}
+
 func readLines(filePath string) ([]string, error) {
 	f, err := os.Open(filePath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
 		return nil, err
 	}
 	defer f.Close()
@@ -344,11 +433,42 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 
 	apiLines, _ := readLines("api_sites.txt")
 	for _, line := range apiLines {
-		searchQuery := strings.ReplaceAll(query, " ", "+")
-		apiURL := line + "/searching?q=" + searchQuery + "&limit=40&offset=0"
+		var found bool
+		var movieURL string
+		var logs []LogEntry
+		var err error
+		var displayURL string
 
-		found, movieURL, logs, err := checkMovieAPI(line, query)
-		sr := SiteResult{URL: apiURL, Found: found, Type: "api", MovieURL: movieURL, Logs: logs}
+		switch {
+		case strings.HasPrefix(line, "stremio:"):
+			baseURL := strings.TrimPrefix(line, "stremio:")
+			mediaType := "series"
+			if mode == "movies" {
+				mediaType = "movie"
+			}
+			searchQuery := strings.ReplaceAll(query, " ", "+")
+			displayURL = baseURL + "/catalog/" + mediaType + "/top/search=" + searchQuery + ".json"
+			var matchedURLs []string
+			found, matchedURLs, logs, err = checkStremioAPI(baseURL, query, mode)
+			if len(matchedURLs) > 0 {
+				movieURL = matchedURLs[0]
+			}
+			sr := SiteResult{URL: displayURL, Found: found, Type: "api", MovieURL: movieURL, MovieURLs: matchedURLs, Logs: logs}
+			if err != nil {
+				sr.Error = err.Error()
+				sr.Logs = append(sr.Logs, LogEntry{"warn", "Error: " + err.Error()})
+			}
+			results = append(results, sr)
+			continue
+		default:
+			// cinemeta: prefix or bare URL — original logic
+			baseURL := strings.TrimPrefix(line, "cinemeta:")
+			searchQuery := strings.ReplaceAll(query, " ", "+")
+			displayURL = baseURL + "/searching?q=" + searchQuery + "&limit=40&offset=0"
+			found, movieURL, logs, err = checkMovieAPI(baseURL, query)
+		}
+
+		sr := SiteResult{URL: displayURL, Found: found, Type: "api", MovieURL: movieURL, Logs: logs}
 		if err != nil {
 			sr.Error = err.Error()
 			sr.Logs = append(sr.Logs, LogEntry{"warn", "Error: " + err.Error()})
