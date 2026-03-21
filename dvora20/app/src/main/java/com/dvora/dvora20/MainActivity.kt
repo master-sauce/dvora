@@ -42,7 +42,6 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             Dvora20Theme {
-                // Force Left-to-Right layout regardless of system language
                 CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                     DvoraApp()
                 }
@@ -51,7 +50,6 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-// Global state for logs (simple implementation for persistence during session)
 object SearchLogs {
     var lastLogs by mutableStateOf<List<SearchResult>>(emptyList())
 }
@@ -82,6 +80,7 @@ fun DvoraApp() {
     var shows by remember { mutableStateOf(loadSources(context, "shows")) }
     var movies by remember { mutableStateOf(loadSources(context, "movies")) }
     var manualChecks by remember { mutableStateOf(loadSources(context, "manual_checks")) }
+    var apiSites by remember { mutableStateOf(loadSources(context, "api_sites")) }
 
     var showSettings by remember { mutableStateOf(false) }
     var showSubtitles by remember { mutableStateOf(false) }
@@ -91,14 +90,14 @@ fun DvoraApp() {
             TopAppBar(
                 title = { Text("DVORA 2.0") },
                 actions = {
-                    IconButton(onClick = {
-                        showSubtitles = true
+                    IconButton(onClick = { 
+                        showSubtitles = true 
                         showSettings = false
                     }) {
                         Icon(Icons.Default.Subtitles, contentDescription = "Subtitles")
                     }
-                    IconButton(onClick = {
-                        showSettings = true
+                    IconButton(onClick = { 
+                        showSettings = true 
                         showSubtitles = false
                     }) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
@@ -114,11 +113,13 @@ fun DvoraApp() {
                     shows = shows,
                     movies = movies,
                     manualChecks = manualChecks,
+                    apiSites = apiSites,
                     onUpdate = { type, newList ->
                         when (type) {
                             SourceType.SHOW -> { shows = newList; saveSources(context, "shows", newList) }
                             SourceType.MOVIE -> { movies = newList; saveSources(context, "movies", newList) }
                             SourceType.MANUAL -> { manualChecks = newList; saveSources(context, "manual_checks", newList) }
+                            SourceType.API -> { apiSites = newList; saveSources(context, "api_sites", newList) }
                         }
                     },
                     onBack = { showSettings = false },
@@ -162,13 +163,33 @@ fun DvoraApp() {
                             results = emptyList()
 
                             scope.launch {
-                                val activeSources = if (searchType == SourceType.SHOW) shows else movies
                                 val currentResults = mutableListOf<SearchResult>()
+                                
+                                // 1. Scan Sites (Shows/Movies)
+                                val activeSources = if (searchType == SourceType.SHOW) shows else movies
                                 activeSources.forEach { url ->
                                     currentResults.add(scanner.scanSite(url, searchTerm))
                                 }
+
+                                // 2. Scan APIs (Stremio/v1)
+                                apiSites.forEach { site ->
+                                    when {
+                                        site.startsWith("stremio:") -> {
+                                            val base = site.removePrefix("stremio:")
+                                            currentResults.addAll(scanner.scanStremio(base, searchTerm, searchType))
+                                        }
+                                        site.startsWith("v1:") -> {
+                                            val base = site.removePrefix("v1:")
+                                            currentResults.addAll(scanner.scanV1(base, searchTerm))
+                                        }
+                                        else -> {
+                                            currentResults.addAll(scanner.scanV1(site, searchTerm))
+                                        }
+                                    }
+                                }
+
                                 results = currentResults
-                                SearchLogs.lastLogs = currentResults // Save to logs
+                                SearchLogs.lastLogs = currentResults
                                 manualLinks = manualChecks.map { scanner.getManualCheck(it, searchTerm) }
                                 isSearching = false
                             }
@@ -185,7 +206,7 @@ fun DvoraApp() {
                     LazyColumn(modifier = Modifier.weight(1f)) {
                         if (results.isNotEmpty()) {
                             item { Text("RESULTS:", fontWeight = FontWeight.Bold, fontSize = 18.sp) }
-                            items(results) { result -> ResultItem(result) }
+                            items(results) { result -> ResultItem(result, showDetails = true) }
                         }
                         if (manualLinks.isNotEmpty()) {
                             item {
@@ -253,7 +274,7 @@ fun SubtitlesScreen(
                 scope.launch {
                     val searchResults = scanner.scanSubtitles(searchTerm, searchType)
                     results = searchResults
-                    SearchLogs.lastLogs = searchResults // Save all matches to logs
+                    SearchLogs.lastLogs = searchResults
                     isSearching = false
                 }
             },
@@ -269,7 +290,7 @@ fun SubtitlesScreen(
 
         LazyColumn(modifier = Modifier.weight(1f)) {
             items(results) { result ->
-                ResultItem(result, showDetails = false) // Details only in logs
+                ResultItem(result, showDetails = true)
             }
         }
     }
@@ -297,13 +318,11 @@ fun ResultItem(result: SearchResult, showDetails: Boolean = false) {
                 )
             }
             Text(result.url, fontSize = 12.sp, color = Color.Gray)
-            if (showDetails) {
-                if (result.foundDetails != null) {
-                    Text(result.foundDetails, fontSize = 10.sp, color = Color.DarkGray)
-                }
-                if (result.errorMessage != null) {
-                    Text("Error: ${result.errorMessage}", color = Color.Red, fontSize = 12.sp)
-                }
+            if (showDetails && result.foundDetails != null) {
+                Text(result.foundDetails, fontSize = 12.sp, color = Color.DarkGray, fontWeight = FontWeight.Medium)
+            }
+            if (result.errorMessage != null) {
+                Text("Error: ${result.errorMessage}", color = Color.Red, fontSize = 12.sp)
             }
         }
     }
@@ -314,12 +333,13 @@ fun SettingsScreen(
     shows: List<String>,
     movies: List<String>,
     manualChecks: List<String>,
+    apiSites: List<String>,
     onUpdate: (SourceType, List<String>) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Shows", "Movies", "Manual", "Logs")
+    val tabs = listOf("Shows", "Movies", "APIs", "Manual", "Logs")
 
     Column(modifier = modifier.fillMaxSize()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -327,7 +347,7 @@ fun SettingsScreen(
             Text("Settings", style = MaterialTheme.typography.titleLarge)
         }
 
-        TabRow(selectedTabIndex = selectedTab) {
+        ScrollableTabRow(selectedTabIndex = selectedTab, edgePadding = 16.dp) {
             tabs.forEachIndexed { index, title ->
                 Tab(selected = selectedTab == index, onClick = { selectedTab = index }, text = { Text(title) })
             }
@@ -336,8 +356,9 @@ fun SettingsScreen(
         when (selectedTab) {
             0 -> SourceEditor(shows) { onUpdate(SourceType.SHOW, it) }
             1 -> SourceEditor(movies) { onUpdate(SourceType.MOVIE, it) }
-            2 -> SourceEditor(manualChecks) { onUpdate(SourceType.MANUAL, it) }
-            3 -> VerboseLogsScreen()
+            2 -> SourceEditor(apiSites) { onUpdate(SourceType.API, it) }
+            3 -> SourceEditor(manualChecks) { onUpdate(SourceType.MANUAL, it) }
+            4 -> VerboseLogsScreen()
         }
     }
 }
@@ -355,8 +376,8 @@ fun SourceEditor(list: List<String>, onUpdate: (List<String>) -> Unit) {
                 val lines = inputStream?.bufferedReader()?.use { r -> r.readLines() } ?: emptyList()
                 val clean = lines.map { l -> l.trim() }.filter { l -> l.isNotBlank() }
                 if (clean.isNotEmpty()) onUpdate((list + clean).distinct())
-            } catch (e: Exception) {
-                Toast.makeText(context, "Import failed", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) { 
+                Toast.makeText(context, "Import failed", Toast.LENGTH_SHORT).show() 
             }
         }
     }
@@ -366,7 +387,7 @@ fun SourceEditor(list: List<String>, onUpdate: (List<String>) -> Unit) {
             OutlinedTextField(
                 value = newItem,
                 onValueChange = { newItem = it },
-                label = { Text(if (editingIndex == -1) "Add URL" else "Edit URL") },
+                label = { Text(if (editingIndex == -1) "Add Item" else "Edit Item") },
                 modifier = Modifier.weight(1f)
             )
             IconButton(onClick = {
@@ -381,7 +402,7 @@ fun SourceEditor(list: List<String>, onUpdate: (List<String>) -> Unit) {
                     newItem = ""
                 }
             }) { Icon(if (editingIndex == -1) Icons.Default.Add else Icons.Default.Check, null) }
-
+            
             if (editingIndex == -1) {
                 IconButton(onClick = { filePickerLauncher.launch("text/plain") }) { Icon(Icons.Default.FileUpload, null) }
             } else {
@@ -443,10 +464,8 @@ fun saveSources(context: Context, key: String, sources: List<String>) {
 
 fun loadSources(context: Context, key: String): List<String> {
     val prefs = context.getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE)
-
-    // Check if we have saved data
+    
     if (!prefs.contains(key)) {
-        // Return defaults if nothing is saved
         return when (key) {
             "shows" -> listOf(
                 "+https://ww25.soap2day.day/?s=",
@@ -472,9 +491,14 @@ fun loadSources(context: Context, key: String): List<String> {
                 "+https://ww4.fmovies.co/search/?q=",
                 "+https://ww8.123moviesfree.net/search/?q="
             )
+            "api_sites" -> listOf(
+                "stremio:https://v3-cinemeta.strem.io",
+                "v1:https://ww8.123moviesfree.net",
+                "v1:https://ww4.fmovies.co"
+            )
             else -> emptyList()
         }
     }
-
+    
     return prefs.getStringSet(key, null)?.toList() ?: emptyList()
 }

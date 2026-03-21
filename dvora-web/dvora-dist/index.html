@@ -638,9 +638,9 @@ a.card-url:hover { color: var(--accent); }
         <div class="stab-content" id="tab-api">
           <div class="config-desc">
             One entry per line. Use a prefix to select the API type:<br><br>
-            <code>cinemeta:https://ww3.somesite.com</code> — uses <code>/searching?q=</code> JSON endpoint (default)<br>
+            <code>v1:https://ww3.somesite.com</code> — uses <code>/searching?q=</code> JSON endpoint (default)<br>
             <code>stremio:https://v3-cinemeta.strem.io</code> — uses Cinemeta/Stremio catalog endpoint<br><br>
-            A bare URL with no prefix is treated as <code>cinemeta:</code>.
+            A bare URL with no prefix is treated as <code>v1:</code>.
           </div>
           <textarea class="config-textarea" id="api-textarea" rows="12" placeholder="https://ww3.somesite.com"></textarea>
           <div class="config-footer">
@@ -816,10 +816,9 @@ function makeCard(r, idx) {
   const urlShort = r.url.length > 90 ? r.url.substring(0, 90) + '…' : r.url;
 
   let extraHTML = '';
-  if (r.movie_urls && r.movie_urls.length > 1) {
-    // Stremio: multiple matched results
-    extraHTML = r.movie_urls.map(u =>
-      `<a href="${esc(u)}" target="_blank" class="card-movie-url">→ ${esc(u)}</a>`
+  if (r.matches && r.matches.length > 0) {
+    extraHTML = r.matches.map(m =>
+      `<a href="${esc(m.url)}" target="_blank" class="card-movie-url">→ ${esc(m.name)} <span style="color:var(--text-dim);font-size:0.65rem;">${esc(m.url)}</span></a>`
     ).join('');
   } else if (r.movie_url) {
     extraHTML = `<a href="${esc(r.movie_url)}" target="_blank" class="card-movie-url">→ ${esc(r.movie_url)}</a>`;
