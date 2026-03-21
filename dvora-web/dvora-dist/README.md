@@ -37,9 +37,10 @@ URLs that are NOT auto-scanned — shown as clickable links for you to verify in
 Configured via **Manual Checks** in Settings.
 
 ### Search Subtitles
-Queries [Wizdom.xyz](https://wizdom.xyz) for Hebrew subtitles. Matches against both the English title (`title_en`) and Hebrew title (`title`). Shows poster, year, rating, genres, and a direct link to the subtitle page.
-- **Shows mode** → links to `wizdom.xyz/tv/...`
-- **Movies mode** → links to `wizdom.xyz/movie/...`
+Queries [Wizdom.xyz](https://wizdom.xyz) for Hebrew subtitles in order to upload your own.
+
+Shows poster, year, rating, genres, and a direct link to the subtitle page.
+
 
 ## Site File Format
 One URL prefix per line. The search term is appended directly.
