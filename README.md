@@ -1,5 +1,14 @@
 # DVORA — Browser UI
 
+
+
+```
+git clone https://github.com/master-sauce/dvora.git
+cd dvora/dvora-web/dvora-dist
+```
+
+
+
 ## Run
 ```bash
 # Windows
