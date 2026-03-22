@@ -492,9 +492,9 @@ fun loadSources(context: Context, key: String): List<String> {
                 "+https://ww8.123moviesfree.net/search/?q="
             )
             "api_sites" -> listOf(
-                "stremio:https://v3-cinemeta.strem.io",
                 "v1:https://ww8.123moviesfree.net",
-                "v1:https://ww4.fmovies.co"
+                "v1:https://ww4.fmovies.co",
+                "stremio:https://v3-cinemeta.strem.io"
             )
             else -> emptyList()
         }
