@@ -1,6 +1,7 @@
 # DVORA — Browser UI
 
 
+### 1️⃣ Clone the repository
 
 ```
 git clone https://github.com/master-sauce/dvora.git
