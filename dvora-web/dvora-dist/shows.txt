@@ -5,3 +5,6 @@
 +https://westream.to/search?keyword=
 +https://1movies.bz/browser?keyword=
 +https://yflix.to/browser?keyword=
++https://hianime.city/?s=
++https://gogoanime.by/?s=
++https://aniwatchtv.to/search?keyword=

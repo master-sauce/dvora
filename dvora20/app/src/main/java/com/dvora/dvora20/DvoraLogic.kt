@@ -99,7 +99,7 @@ class DvoraScanner {
                 val ignoredPatterns = listOf(
                     "addtoany.com", "facebook.com", "twitter.com", "reddit.com",
                     "pinterest.com", "whatsapp.com", "t.me", "mailto:",
-                    "/login", "/register", "/signup"
+                    "/login", "/register", "/signup", "/feed"
                 )
 
                 var matchedLink: String? = null

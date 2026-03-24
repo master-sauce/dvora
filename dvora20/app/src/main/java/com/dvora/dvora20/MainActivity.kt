@@ -474,7 +474,10 @@ fun loadSources(context: Context, key: String): List<String> {
                 "+https://www.lookmovie2.to/shows/search/?q=",
                 "+https://westream.to/search?keyword=",
                 "+https://1movies.bz/browser?keyword=",
-                "+https://yflix.to/browser?keyword="
+                "+https://yflix.to/browser?keyword=",
+                "+https://hianime.city/?s=",
+                "+https://gogoanime.by/?s=",
+                "+https://aniwatchtv.to/search?keyword="
             )
             "movies" -> listOf(
                 "+https://ww25.soap2day.day/?s=",

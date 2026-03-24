@@ -140,7 +140,7 @@ func checkSiteForContent(url, searchTerm string) (bool, []LogEntry, error) {
 	skipDomains := []string{
 		"addtoany.com", "facebook.com", "twitter.com", "reddit.com",
 		"pinterest.com", "whatsapp.com", "t.me", "mailto:", "/login",
-		"/register", "/signup",
+		"/register", "/signup", "/feed",
 	}
 
 	matchCount := 0
