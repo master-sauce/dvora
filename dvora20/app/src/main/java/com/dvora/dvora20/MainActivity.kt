@@ -435,23 +435,44 @@ fun VerboseLogsScreen() {
     } else {
         LazyColumn(Modifier.padding(16.dp)) {
             items(logs) { log ->
-                Card(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                ) {
-                    Column(Modifier.padding(12.dp)) {
-                        Text(log.url, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Spacer(Modifier.height(4.dp))
-                        Row {
-                            Text("Status: ", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
-                            Text(if (log.found) "FOUND" else "NOT FOUND", color = if (log.found) Color(0xFF2E7D32) else Color(0xFFC62828), fontSize = 12.sp)
-                        }
-                        Text("Details: ${log.foundDetails ?: "No details available."}", fontSize = 12.sp, fontFamily = FontFamily.Monospace)
-                        if (log.errorMessage != null) {
-                            Text("Error: ${log.errorMessage}", color = Color.Red, fontSize = 12.sp)
-                        }
-                    }
-                }
+                LogItem(log)
+            }
+        }
+    }
+}
+
+@Composable
+fun LogItem(log: SearchResult) {
+    var expanded by remember { mutableStateOf(false) }
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+            .clickable { expanded = !expanded },
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Text(log.url, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            Spacer(Modifier.height(4.dp))
+            Row {
+                Text("Status: ", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                Text(if (log.found) "FOUND" else "NOT FOUND", color = if (log.found) Color(0xFF2E7D32) else Color(0xFFC62828), fontSize = 12.sp)
+            }
+            Text("Details: ${log.foundDetails ?: "No details available."}", fontSize = 12.sp, fontFamily = FontFamily.Monospace)
+            
+            if (expanded && log.verboseLogs != null) {
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                Text(
+                    text = log.verboseLogs,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            
+            if (log.errorMessage != null) {
+                Text("Error: ${log.errorMessage}", color = Color.Red, fontSize = 12.sp)
             }
         }
     }
