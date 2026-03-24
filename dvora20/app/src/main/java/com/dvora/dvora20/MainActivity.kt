@@ -90,14 +90,14 @@ fun DvoraApp() {
             TopAppBar(
                 title = { Text("DVORA 2.0") },
                 actions = {
-                    IconButton(onClick = { 
-                        showSubtitles = true 
+                    IconButton(onClick = {
+                        showSubtitles = true
                         showSettings = false
                     }) {
                         Icon(Icons.Default.Subtitles, contentDescription = "Subtitles")
                     }
-                    IconButton(onClick = { 
-                        showSettings = true 
+                    IconButton(onClick = {
+                        showSettings = true
                         showSubtitles = false
                     }) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
@@ -164,7 +164,7 @@ fun DvoraApp() {
 
                             scope.launch {
                                 val currentResults = mutableListOf<SearchResult>()
-                                
+
                                 // 1. Scan Sites (Shows/Movies)
                                 val activeSources = if (searchType == SourceType.SHOW) shows else movies
                                 activeSources.forEach { url ->
@@ -376,8 +376,8 @@ fun SourceEditor(list: List<String>, onUpdate: (List<String>) -> Unit) {
                 val lines = inputStream?.bufferedReader()?.use { r -> r.readLines() } ?: emptyList()
                 val clean = lines.map { l -> l.trim() }.filter { l -> l.isNotBlank() }
                 if (clean.isNotEmpty()) onUpdate((list + clean).distinct())
-            } catch (e: Exception) { 
-                Toast.makeText(context, "Import failed", Toast.LENGTH_SHORT).show() 
+            } catch (e: Exception) {
+                Toast.makeText(context, "Import failed", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -402,7 +402,7 @@ fun SourceEditor(list: List<String>, onUpdate: (List<String>) -> Unit) {
                     newItem = ""
                 }
             }) { Icon(if (editingIndex == -1) Icons.Default.Add else Icons.Default.Check, null) }
-            
+
             if (editingIndex == -1) {
                 IconButton(onClick = { filePickerLauncher.launch("text/plain") }) { Icon(Icons.Default.FileUpload, null) }
             } else {
@@ -464,7 +464,7 @@ fun saveSources(context: Context, key: String, sources: List<String>) {
 
 fun loadSources(context: Context, key: String): List<String> {
     val prefs = context.getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE)
-    
+
     if (!prefs.contains(key)) {
         return when (key) {
             "shows" -> listOf(
@@ -502,6 +502,6 @@ fun loadSources(context: Context, key: String): List<String> {
             else -> emptyList()
         }
     }
-    
+
     return prefs.getStringSet(key, null)?.toList() ?: emptyList()
 }

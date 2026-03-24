@@ -14,7 +14,8 @@ data class SearchResult(
     val url: String,
     val found: Boolean,
     val errorMessage: String? = null,
-    val foundDetails: String? = null // To store what was detected
+    val foundDetails: String? = null,
+    val verboseLogs: String? = null // For detailed logs only
 )
 
 enum class SourceType {
@@ -69,7 +70,7 @@ class DvoraScanner {
                 cleanBaseUrl = baseUrl
             }
         }
-        
+
         val fullUrl = cleanBaseUrl + formattedInput
 
         try {
@@ -80,12 +81,12 @@ class DvoraScanner {
 
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@withContext SearchResult(fullUrl, false, errorMessage = "HTTP ${response.code}")
-                
+
                 val body = response.body?.string() ?: return@withContext SearchResult(fullUrl, false, errorMessage = "Empty body")
-                val doc = Jsoup.parse(body)
-                
-                val links = doc.select("[href]").map { it.attr("href") }
-                
+                val doc = Jsoup.parse(body, fullUrl)
+
+                val links = doc.select("a[href]")
+
                 val searchWords = searchTerm.split(" ").filter { it.isNotBlank() }
                 if (searchWords.isEmpty()) return@withContext SearchResult(fullUrl, false)
 
@@ -102,22 +103,59 @@ class DvoraScanner {
                     "/login", "/register", "/signup", "/feed"
                 )
 
-                var matchedLink: String? = null
-                for (link in links) {
-                    val linkLower = link.lowercase()
-                    if (ignoredPatterns.any { linkLower.contains(it) }) continue
-                    
-                    // New check: skip links that are search results themselves or pagination
-                    if (linkLower.startsWith("/search/") || linkLower.startsWith("search/") || linkLower.startsWith("/search?")) continue
+                val matchedLinks = mutableListOf<String>()
+                val skipCounts = mutableMapOf<String, Int>()
 
-                    if (searchPattern.matcher(linkLower).find()) {
-                        matchedLink = link
-                        break
+                for (linkObj in links) {
+                    val href = linkObj.attr("abs:href")
+                    if (href.isBlank()) continue
+                    
+                    val linkLower = href.lowercase()
+                    val textLower = linkObj.text().lowercase()
+
+                    var ignored = false
+                    for (pattern in ignoredPatterns) {
+                        if (linkLower.contains(pattern)) {
+                            skipCounts[pattern] = (skipCounts[pattern] ?: 0) + 1
+                            ignored = true
+                            break
+                        }
+                    }
+                    if (ignored) continue
+
+                    if (linkLower.contains("/search/") || linkLower.contains("search/") || linkLower.contains("/search?")) {
+                        skipCounts["search/pagination"] = (skipCounts["search/pagination"] ?: 0) + 1
+                        continue
+                    }
+
+                    if (searchPattern.matcher(linkLower).find() || searchPattern.matcher(textLower).find()) {
+                        if (!matchedLinks.contains(href)) {
+                            matchedLinks.add(href)
+                        }
                     }
                 }
 
-                if (matchedLink != null) {
-                    return@withContext SearchResult(fullUrl, true, foundDetails = "Matched link: $matchedLink")
+                val logBuilder = StringBuilder()
+                logBuilder.append("Matches found: ${matchedLinks.size}\n")
+                
+                logBuilder.append("\nSkip statistics (Blocked Patterns):\n")
+                if (skipCounts.isEmpty()) {
+                    logBuilder.append("No links were skipped.\n")
+                } else {
+                    skipCounts.forEach { (pattern, count) ->
+                        logBuilder.append("- Blocked '$pattern': $count times\n")
+                    }
+                }
+
+                val verbose = logBuilder.toString()
+
+                if (matchedLinks.isNotEmpty()) {
+                    return@withContext SearchResult(
+                        url = fullUrl, 
+                        found = true, 
+                        foundDetails = "Matches found: ${matchedLinks.size}", 
+                        verboseLogs = verbose
+                    )
                 }
 
                 val pageContent = doc.text().lowercase()
@@ -131,11 +169,12 @@ class DvoraScanner {
                 )
 
                 val detectedIndicator = noResultsIndicators.find { pageContent.contains(it) }
-                if (detectedIndicator != null) {
-                    return@withContext SearchResult(fullUrl, false, foundDetails = "Detected 'No Results' text: '$detectedIndicator'")
-                }
-
-                return@withContext SearchResult(fullUrl, false, foundDetails = "No matching links and no specific failure indicators found.")
+                return@withContext SearchResult(
+                    url = fullUrl, 
+                    found = false, 
+                    foundDetails = if (detectedIndicator != null) "Detected: $detectedIndicator" else "No matches found",
+                    verboseLogs = verbose
+                )
             }
         } catch (e: Exception) {
             SearchResult(fullUrl, false, errorMessage = e.message)
@@ -145,7 +184,7 @@ class DvoraScanner {
     suspend fun scanSubtitles(searchTerm: String, searchType: SourceType): List<SearchResult> = withContext(Dispatchers.IO) {
         val query = searchTerm.replace(" ", "+")
         val apiSearchUrl = "https://wizdom.xyz/api/search?search=$query&page=0"
-        
+
         try {
             val request = Request.Builder()
                 .url(apiSearchUrl)
@@ -154,16 +193,16 @@ class DvoraScanner {
 
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@withContext listOf(SearchResult(apiSearchUrl, false, errorMessage = "HTTP ${response.code}"))
-                
+
                 val body = response.body?.string() ?: return@withContext listOf(SearchResult(apiSearchUrl, false, errorMessage = "Empty body"))
                 val listType = object : TypeToken<List<WizdomResult>>() {}.type
                 val wizdomResults: List<WizdomResult> = Gson().fromJson(body, listType)
 
-                val matches = wizdomResults.filter { 
-                    it.title_en?.contains(searchTerm, ignoreCase = true) == true || 
-                    it.title?.contains(searchTerm, ignoreCase = true) == true
+                val matches = wizdomResults.filter {
+                    it.title_en?.contains(searchTerm, ignoreCase = true) == true ||
+                            it.title?.contains(searchTerm, ignoreCase = true) == true
                 }
-                
+
                 if (matches.isNotEmpty()) {
                     return@withContext matches.filter { it.imdb != null }.map { match ->
                         val typePath = if (searchType == SourceType.SHOW) "tv" else "movie"
@@ -172,7 +211,7 @@ class DvoraScanner {
                         SearchResult(finalUrl, true, foundDetails = "Match: $displayTitle")
                     }
                 }
-                
+
                 return@withContext listOf(SearchResult(apiSearchUrl, false, foundDetails = "No matching subtitles found on Wizdom."))
             }
         } catch (e: Exception) {
@@ -184,17 +223,17 @@ class DvoraScanner {
         val mediaType = if (searchType == SourceType.SHOW) "series" else "movie"
         val query = searchTerm.replace(" ", "+")
         val apiURL = "$baseUrl/catalog/$mediaType/top/search=$query.json"
-        
+
         try {
             val request = Request.Builder().url(apiURL).header("User-Agent", userAgent).build()
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@withContext listOf(SearchResult(apiURL, false, errorMessage = "HTTP ${response.code}"))
                 val body = response.body?.string() ?: return@withContext listOf(SearchResult(apiURL, false, errorMessage = "Empty body"))
                 val stremioResponse = Gson().fromJson(body, StremioResponse::class.java)
-                
+
                 val matches = stremioResponse.metas?.filter { it.name.contains(searchTerm, ignoreCase = true) } ?: emptyList()
                 if (matches.isEmpty()) return@withContext listOf(SearchResult(apiURL, false, foundDetails = "No Stremio matches for '$searchTerm'"))
-                
+
                 return@withContext matches.take(10).map { item ->
                     val id = item.imdb_id ?: item.id
                     val stremioUrl = "https://web.stremio.com/#/detail/${item.type}/$id/$id"
@@ -209,17 +248,17 @@ class DvoraScanner {
     suspend fun scanV1(baseUrl: String, searchTerm: String): List<SearchResult> = withContext(Dispatchers.IO) {
         val query = searchTerm.replace(" ", "+")
         val apiURL = "$baseUrl/searching?q=$query&limit=40&offset=0"
-        
+
         try {
             val request = Request.Builder().url(apiURL).header("User-Agent", userAgent).build()
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@withContext listOf(SearchResult(apiURL, false, errorMessage = "HTTP ${response.code}"))
                 val body = response.body?.string() ?: return@withContext listOf(SearchResult(apiURL, false, errorMessage = "Empty body"))
                 val v1Response = Gson().fromJson(body, V1Response::class.java)
-                
+
                 val matches = v1Response.data?.filter { it.t.contains(searchTerm, ignoreCase = true) } ?: emptyList()
                 if (matches.isEmpty()) return@withContext listOf(SearchResult(apiURL, false, foundDetails = "No v1 matches for '$searchTerm'"))
-                
+
                 return@withContext matches.map { item ->
                     val finalUrl = "$baseUrl/search/?q=$query"
                     SearchResult(finalUrl, true, foundDetails = "Match: ${item.t} (${item.y ?: ""})")
