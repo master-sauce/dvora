@@ -100,7 +100,7 @@ class DvoraScanner {
                 val ignoredPatterns = listOf(
                     "addtoany.com", "facebook.com", "twitter.com", "reddit.com",
                     "pinterest.com", "whatsapp.com", "t.me", "mailto:",
-                    "/login", "/register", "/signup", "/feed"
+                    "/login", "/register", "/signup", "/feed", "#"
                 )
 
                 val matchedLinks = mutableListOf<String>()
@@ -137,6 +137,10 @@ class DvoraScanner {
 
                 val logBuilder = StringBuilder()
                 logBuilder.append("Matches found: ${matchedLinks.size}\n")
+                if (matchedLinks.isNotEmpty()) {
+                    logBuilder.append("Matching links (up to 10):\n")
+                    matchedLinks.take(10).forEach { logBuilder.append("- $it\n") }
+                }
                 
                 logBuilder.append("\nSkip statistics (Blocked Patterns):\n")
                 if (skipCounts.isEmpty()) {
