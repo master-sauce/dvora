@@ -88,7 +88,7 @@ fun DvoraApp() {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("DVORA 2.0") },
+                title = { Text("DVORA") },
                 actions = {
                     IconButton(onClick = {
                         showSubtitles = true
