@@ -25,7 +25,6 @@ import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -34,60 +33,121 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.dvora.dvora20.ui.theme.Dvora20Theme
 import kotlinx.coroutines.launch
 
-// ── Bee Theme Colors ──────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// BEE THEME — COLORS & SCHEMES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** Immutable palette used by both light and dark schemes. */
 object BeeColors {
-    val HoneyGold       = Color(0xFFFFC107) // primary amber
-    val DeepAmber       = Color(0xFFFF8F00) // darker amber for accents
-    val HoneycombYellow = Color(0xFFFFECB3) // soft background tint
-    val BeeBlack        = Color(0xFF1A1200) // near-black with warm tint
-    val BeeStripe       = Color(0xFF212121) // dark grey stripe
-    val WaxWhite        = Color(0xFFFFFDE7) // cream white
-    val PollenOrange    = Color(0xFFFF6D00) // vivid accent
-    val ComбBlue        = Color(0xFF424242) // muted dark for surfaces
-    val FoundGreen      = Color(0xFF558B2F) // earthy green for "found"
-    val NotFoundRed     = Color(0xFFB71C1C) // deep red for "not found"
+    // Shared warm tones
+    val HoneyGold       = Color(0xFFFFC107)
+    val DeepAmber       = Color(0xFFFF8F00)
+    val PollenOrange    = Color(0xFFFF6D00)
+    val FoundGreen      = Color(0xFF558B2F)
+    val FoundGreenDark  = Color(0xFF8BC34A)
+    val NotFoundRed     = Color(0xFFB71C1C)
+    val NotFoundAmber   = Color(0xFFFF8F00)
+
+    // Light-mode surfaces
+    val WaxWhite        = Color(0xFFFFFDE7)
+    val HoneycombYellow = Color(0xFFFFECB3)
+    val BeeBlack        = Color(0xFF1A1200)
+
+    // Dark-mode surfaces
+    val DarkComb        = Color(0xFF1C1500)  // deepest dark bg
+    val DarkCell        = Color(0xFF2A1F00)  // card/surface dark
+    val DarkStripe      = Color(0xFF3A2B00)  // elevated surface
+    val DarkOnSurface   = Color(0xFFFFE082)  // readable warm text on dark
 }
 
-// Bee-themed Material3 ColorScheme
-private val BeeColorScheme = lightColorScheme(
-    primary            = BeeColors.HoneyGold,
-    onPrimary          = BeeColors.BeeBlack,
-    primaryContainer   = BeeColors.HoneycombYellow,
-    onPrimaryContainer = BeeColors.BeeBlack,
-    secondary          = BeeColors.DeepAmber,
-    onSecondary        = BeeColors.WaxWhite,
-    secondaryContainer = Color(0xFFFFD54F),
+/** Light bee color scheme — cream and amber */
+private val BeeLightScheme = lightColorScheme(
+    primary              = BeeColors.HoneyGold,
+    onPrimary            = BeeColors.BeeBlack,
+    primaryContainer     = BeeColors.HoneycombYellow,
+    onPrimaryContainer   = BeeColors.BeeBlack,
+    secondary            = BeeColors.DeepAmber,
+    onSecondary          = BeeColors.WaxWhite,
+    secondaryContainer   = Color(0xFFFFD54F),
     onSecondaryContainer = BeeColors.BeeBlack,
-    tertiary           = BeeColors.PollenOrange,
-    onTertiary         = BeeColors.WaxWhite,
-    background         = BeeColors.WaxWhite,
-    onBackground       = BeeColors.BeeBlack,
-    surface            = BeeColors.WaxWhite,
-    onSurface          = BeeColors.BeeBlack,
-    surfaceVariant     = BeeColors.HoneycombYellow,
-    onSurfaceVariant   = Color(0xFF4E3B00),
-    outline            = BeeColors.DeepAmber,
-    error              = BeeColors.NotFoundRed,
-    onError            = Color.White,
+    tertiary             = BeeColors.PollenOrange,
+    onTertiary           = BeeColors.WaxWhite,
+    background           = BeeColors.WaxWhite,
+    onBackground         = BeeColors.BeeBlack,
+    surface              = BeeColors.WaxWhite,
+    onSurface            = BeeColors.BeeBlack,
+    surfaceVariant       = BeeColors.HoneycombYellow,
+    onSurfaceVariant     = Color(0xFF4E3B00),
+    outline              = BeeColors.DeepAmber,
+    error                = BeeColors.NotFoundRed,
+    onError              = Color.White,
 )
+
+/** Dark bee color scheme — deep amber on near-black */
+private val BeeDarkScheme = darkColorScheme(
+    primary              = BeeColors.HoneyGold,
+    onPrimary            = BeeColors.BeeBlack,
+    primaryContainer     = Color(0xFF4A3500),
+    onPrimaryContainer   = BeeColors.HoneyGold,
+    secondary            = BeeColors.DeepAmber,
+    onSecondary          = BeeColors.BeeBlack,
+    secondaryContainer   = Color(0xFF3E2800),
+    onSecondaryContainer = BeeColors.HoneyGold,
+    tertiary             = BeeColors.PollenOrange,
+    onTertiary           = BeeColors.BeeBlack,
+    background           = BeeColors.DarkComb,
+    onBackground         = BeeColors.DarkOnSurface,
+    surface              = BeeColors.DarkCell,
+    onSurface            = BeeColors.DarkOnSurface,
+    surfaceVariant       = BeeColors.DarkStripe,
+    onSurfaceVariant     = Color(0xFFFFCC80),
+    outline              = BeeColors.DeepAmber,
+    error                = Color(0xFFFF6B6B),
+    onError              = BeeColors.BeeBlack,
+)
+
+// ── CompositionLocal for dark-mode toggle ────────────────────────────────────
+val LocalDarkMode = compositionLocalOf { mutableStateOf(false) }
+
+/** Returns a color that adapts to the current bee theme mode. */
+@Composable
+fun beeAdapt(light: Color, dark: Color): Color =
+    if (LocalDarkMode.current.value) dark else light
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ACTIVITY
+// ═══════════════════════════════════════════════════════════════════════════════
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            // Wrap in bee theme
-            MaterialTheme(colorScheme = BeeColorScheme) {
-                CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
-                    DvoraApp()
+            val prefs = getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE)
+            val darkModeState = remember { mutableStateOf(prefs.getBoolean("dark_mode", false)) }
+
+            CompositionLocalProvider(
+                LocalDarkMode provides darkModeState,
+                LocalLayoutDirection provides LayoutDirection.Ltr
+            ) {
+                MaterialTheme(colorScheme = if (darkModeState.value) BeeDarkScheme else BeeLightScheme) {
+                    DvoraApp(
+                        onToggleDarkMode = {
+                            darkModeState.value = !darkModeState.value
+                            prefs.edit().putBoolean("dark_mode", darkModeState.value).apply()
+                        }
+                    )
                 }
             }
         }
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SHARED STATE
+// ═══════════════════════════════════════════════════════════════════════════════
 
 object SearchLogs {
     var lastLogs by mutableStateOf<List<SearchResult>>(emptyList())
@@ -103,155 +163,140 @@ fun openUrl(context: Context, url: String) {
     }
 }
 
-// ── Honeycomb stripe background modifier ─────────────────────────────────────
-private val HoneycombHeaderBrush = Brush.horizontalGradient(
-    colors = listOf(BeeColors.BeeBlack, Color(0xFF3E2800), BeeColors.BeeBlack)
-)
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN APP
+// ═══════════════════════════════════════════════════════════════════════════════
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DvoraApp() {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val scanner = remember { DvoraScanner() }
+fun DvoraApp(onToggleDarkMode: () -> Unit) {
+    val context    = LocalContext.current
+    val scope      = rememberCoroutineScope()
+    val scanner    = remember { DvoraScanner() }
+    val isDark     = LocalDarkMode.current.value
 
-    var searchTerm by remember { mutableStateOf("") }
-    var searchType by remember { mutableStateOf(SourceType.SHOW) }
-    var results by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
+    var searchTerm  by remember { mutableStateOf("") }
+    var searchType  by remember { mutableStateOf(SourceType.SHOW) }
+    var results     by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
     var manualLinks by remember { mutableStateOf<List<String>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
 
-    var shows by remember { mutableStateOf(loadSources(context, "shows")) }
-    var movies by remember { mutableStateOf(loadSources(context, "movies")) }
+    var shows        by remember { mutableStateOf(loadSources(context, "shows")) }
+    var movies       by remember { mutableStateOf(loadSources(context, "movies")) }
     var manualChecks by remember { mutableStateOf(loadSources(context, "manual_checks")) }
-    var apiSites by remember { mutableStateOf(loadSources(context, "api_sites")) }
+    var apiSites     by remember { mutableStateOf(loadSources(context, "api_sites")) }
 
-    var showSettings by remember { mutableStateOf(false) }
+    var showSettings  by remember { mutableStateOf(false) }
     var showSubtitles by remember { mutableStateOf(false) }
+
+    val headerBg   = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
+    val scaffoldBg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("🐝", fontSize = 22.sp, modifier = Modifier.padding(end = 8.dp))
                         Text(
-                            text = "🐝",
-                            fontSize = 22.sp,
-                            modifier = Modifier.padding(end = 8.dp)
-                        )
-                        Text(
-                            text = "DVORA",
-                            fontWeight = FontWeight.ExtraBold,
+                            "DVORA",
+                            fontWeight    = FontWeight.ExtraBold,
                             letterSpacing = 4.sp,
-                            color = BeeColors.HoneyGold
+                            color         = BeeColors.HoneyGold
                         )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = BeeColors.BeeBlack,
-                    titleContentColor = BeeColors.HoneyGold,
+                    containerColor         = headerBg,
+                    titleContentColor      = BeeColors.HoneyGold,
                     actionIconContentColor = BeeColors.HoneyGold
                 ),
                 actions = {
-                    IconButton(onClick = {
-                        showSubtitles = true
-                        showSettings = false
-                    }) {
+                    // Dark / Light toggle button
+                    IconButton(onClick = onToggleDarkMode) {
                         Icon(
-                            Icons.Default.Subtitles,
-                            contentDescription = "Subtitles",
-                            tint = BeeColors.HoneyGold
+                            imageVector        = if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode,
+                            contentDescription = if (isDark) "Switch to Light" else "Switch to Dark",
+                            tint               = BeeColors.HoneyGold
                         )
                     }
-                    IconButton(onClick = {
-                        showSettings = true
-                        showSubtitles = false
-                    }) {
-                        Icon(
-                            Icons.Default.Settings,
-                            contentDescription = "Settings",
-                            tint = BeeColors.HoneyGold
-                        )
+                    IconButton(onClick = { showSubtitles = true; showSettings = false }) {
+                        Icon(Icons.Default.Subtitles, "Subtitles", tint = BeeColors.HoneyGold)
+                    }
+                    IconButton(onClick = { showSettings = true; showSubtitles = false }) {
+                        Icon(Icons.Default.Settings, "Settings", tint = BeeColors.HoneyGold)
                     }
                 }
             )
         },
-        containerColor = BeeColors.WaxWhite,
-        modifier = Modifier.fillMaxSize()
+        containerColor = scaffoldBg,
+        modifier       = Modifier.fillMaxSize()
     ) { innerPadding ->
         when {
-            showSettings -> {
-                SettingsScreen(
-                    shows = shows,
-                    movies = movies,
-                    manualChecks = manualChecks,
-                    apiSites = apiSites,
-                    onUpdate = { type, newList ->
-                        when (type) {
-                            SourceType.SHOW   -> { shows = newList;        saveSources(context, "shows", newList) }
-                            SourceType.MOVIE  -> { movies = newList;       saveSources(context, "movies", newList) }
-                            SourceType.MANUAL -> { manualChecks = newList; saveSources(context, "manual_checks", newList) }
-                            SourceType.API    -> { apiSites = newList;     saveSources(context, "api_sites", newList) }
-                        }
-                    },
-                    onBack = { showSettings = false },
-                    modifier = Modifier.padding(innerPadding)
-                )
-            }
-            showSubtitles -> {
-                SubtitlesScreen(
-                    scanner = scanner,
-                    onBack = { showSubtitles = false },
-                    modifier = Modifier.padding(innerPadding)
-                )
-            }
+            showSettings -> SettingsScreen(
+                shows        = shows,
+                movies       = movies,
+                manualChecks = manualChecks,
+                apiSites     = apiSites,
+                onUpdate     = { type, newList ->
+                    when (type) {
+                        SourceType.SHOW   -> { shows = newList;        saveSources(context, "shows", newList) }
+                        SourceType.MOVIE  -> { movies = newList;       saveSources(context, "movies", newList) }
+                        SourceType.MANUAL -> { manualChecks = newList; saveSources(context, "manual_checks", newList) }
+                        SourceType.API    -> { apiSites = newList;     saveSources(context, "api_sites", newList) }
+                    }
+                },
+                onBack       = { showSettings = false },
+                onToggleDark = onToggleDarkMode,
+                modifier     = Modifier.padding(innerPadding)
+            )
+            showSubtitles -> SubtitlesScreen(
+                scanner      = scanner,
+                onBack       = { showSubtitles = false },
+                onToggleDark = onToggleDarkMode,
+                modifier     = Modifier.padding(innerPadding)
+            )
             else -> {
+                val cardBg = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
+
                 Column(
                     modifier = Modifier
                         .padding(innerPadding)
                         .padding(16.dp)
                         .fillMaxSize()
                 ) {
-                    // ── Honeycomb search card ───────────────────────────────
+                    // ── Search card ────────────────────────────────────────
                     Card(
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = BeeColors.HoneycombYellow),
+                        shape     = RoundedCornerShape(16.dp),
+                        colors    = CardDefaults.cardColors(containerColor = cardBg),
                         elevation = CardDefaults.cardElevation(4.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier  = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             OutlinedTextField(
-                                value = searchTerm,
+                                value         = searchTerm,
                                 onValueChange = { searchTerm = it },
-                                label = { Text("🍯 Search Movie or Show") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor   = BeeColors.DeepAmber,
-                                    unfocusedBorderColor = BeeColors.HoneyGold,
-                                    focusedLabelColor    = BeeColors.DeepAmber,
-                                    cursorColor          = BeeColors.DeepAmber
-                                )
+                                label         = { Text("🍯 Search Movie or Show") },
+                                modifier      = Modifier.fillMaxWidth(),
+                                singleLine    = true,
+                                colors        = beeTextFieldColors()
                             )
-
                             Spacer(Modifier.height(12.dp))
-
-                            // ── Type selector with bee stripe pill ─────────
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier          = Modifier.fillMaxWidth()
                             ) {
                                 BeeRadioOption(
-                                    label = "📺 Shows",
+                                    label    = "📺 Shows",
                                     selected = searchType == SourceType.SHOW,
-                                    onClick = { searchType = SourceType.SHOW },
+                                    onClick  = { searchType = SourceType.SHOW },
                                     modifier = Modifier.weight(1f)
                                 )
                                 Spacer(Modifier.width(8.dp))
                                 BeeRadioOption(
-                                    label = "🎬 Movies",
+                                    label    = "🎬 Movies",
                                     selected = searchType == SourceType.MOVIE,
-                                    onClick = { searchType = SourceType.MOVIE },
+                                    onClick  = { searchType = SourceType.MOVIE },
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -260,83 +305,56 @@ fun DvoraApp() {
 
                     Spacer(Modifier.height(12.dp))
 
-                    // ── Search button ───────────────────────────────────────
+                    // ── Search button ──────────────────────────────────────
                     Button(
                         onClick = {
                             if (searchTerm.isBlank()) return@Button
                             isSearching = true
-                            results = emptyList()
-
+                            results     = emptyList()
                             scope.launch {
                                 val currentResults = mutableListOf<SearchResult>()
-
-                                val activeSources = if (searchType == SourceType.SHOW) shows else movies
-                                activeSources.forEach { url ->
-                                    currentResults.add(scanner.scanSite(url, searchTerm))
-                                }
-
+                                val activeSources  = if (searchType == SourceType.SHOW) shows else movies
+                                activeSources.forEach { currentResults.add(scanner.scanSite(it, searchTerm)) }
                                 apiSites.forEach { site ->
                                     when {
-                                        site.startsWith("stremio:") -> {
-                                            val base = site.removePrefix("stremio:")
-                                            currentResults.addAll(scanner.scanStremio(base, searchTerm, searchType))
-                                        }
-                                        site.startsWith("v1:") -> {
-                                            val base = site.removePrefix("v1:")
-                                            currentResults.addAll(scanner.scanV1(base, searchTerm))
-                                        }
-                                        else -> {
-                                            currentResults.addAll(scanner.scanV1(site, searchTerm))
-                                        }
+                                        site.startsWith("stremio:") -> currentResults.addAll(scanner.scanStremio(site.removePrefix("stremio:"), searchTerm, searchType))
+                                        site.startsWith("v1:")      -> currentResults.addAll(scanner.scanV1(site.removePrefix("v1:"), searchTerm))
+                                        else                        -> currentResults.addAll(scanner.scanV1(site, searchTerm))
                                     }
                                 }
-
-                                results = currentResults
+                                results             = currentResults
                                 SearchLogs.lastLogs = currentResults
-                                manualLinks = manualChecks.map { scanner.getManualCheck(it, searchTerm) }
-                                isSearching = false
+                                manualLinks         = manualChecks.map { scanner.getManualCheck(it, searchTerm) }
+                                isSearching         = false
                             }
                         },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp),
-                        enabled = !isSearching,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = BeeColors.BeeBlack,
-                            contentColor   = BeeColors.HoneyGold,
-                            disabledContainerColor = Color(0xFF4A3B00),
-                            disabledContentColor   = BeeColors.HoneyGold.copy(alpha = 0.5f)
+                        modifier = Modifier.fillMaxWidth().height(52.dp),
+                        enabled  = !isSearching,
+                        shape    = RoundedCornerShape(12.dp),
+                        colors   = ButtonDefaults.buttonColors(
+                            containerColor        = headerBg,
+                            contentColor          = BeeColors.HoneyGold,
+                            disabledContainerColor = if (isDark) Color(0xFF2A2000) else Color(0xFF4A3B00),
+                            disabledContentColor   = BeeColors.HoneyGold.copy(alpha = 0.4f)
                         )
                     ) {
-                        if (isSearching) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(24.dp),
-                                color = BeeColors.HoneyGold,
-                                strokeWidth = 2.dp
-                            )
-                        } else {
-                            Text(
-                                "🐝  BUZZ & SEARCH",
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 2.sp
-                            )
-                        }
+                        if (isSearching)
+                            CircularProgressIndicator(modifier = Modifier.size(24.dp), color = BeeColors.HoneyGold, strokeWidth = 2.dp)
+                        else
+                            Text("🐝  BUZZ & SEARCH", fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
                     }
 
                     Spacer(Modifier.height(16.dp))
 
                     LazyColumn(modifier = Modifier.weight(1f)) {
                         if (results.isNotEmpty()) {
-                            item {
-                                BeesSectionHeader(title = "🍯 Results")
-                            }
-                            items(results) { result -> ResultItem(result, showDetails = true) }
+                            item { BeesSectionHeader("🍯 Results") }
+                            items(results) { ResultItem(it, showDetails = true) }
                         }
                         if (manualLinks.isNotEmpty()) {
                             item {
                                 Spacer(Modifier.height(16.dp))
-                                BeesSectionHeader(title = "🔍 Manual Checks")
+                                BeesSectionHeader("🔍 Manual Checks")
                             }
                             items(manualLinks) { link ->
                                 Card(
@@ -344,16 +362,20 @@ fun DvoraApp() {
                                         .fillMaxWidth()
                                         .padding(vertical = 4.dp)
                                         .clickable { openUrl(context, link) },
-                                    colors = CardDefaults.cardColors(containerColor = BeeColors.HoneycombYellow),
-                                    shape = RoundedCornerShape(10.dp)
+                                    colors = CardDefaults.cardColors(containerColor = cardBg),
+                                    shape  = RoundedCornerShape(10.dp)
                                 ) {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.padding(10.dp)
+                                        modifier          = Modifier.padding(10.dp)
                                     ) {
                                         Text("↗", fontSize = 16.sp, color = BeeColors.DeepAmber)
                                         Spacer(Modifier.width(8.dp))
-                                        Text(link, fontSize = 12.sp, color = Color(0xFF4E3B00))
+                                        Text(
+                                            link,
+                                            fontSize = 12.sp,
+                                            color    = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface)
+                                        )
                                     }
                                 }
                             }
@@ -365,21 +387,37 @@ fun DvoraApp() {
     }
 }
 
-// ── Reusable bee-styled radio option ─────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// REUSABLE COMPOSABLES
+// ═══════════════════════════════════════════════════════════════════════════════
+
 @Composable
-fun BeeRadioOption(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    val bg = if (selected) BeeColors.BeeBlack else Color.Transparent
-    val textColor = if (selected) BeeColors.HoneyGold else BeeColors.BeeBlack
+fun beeTextFieldColors() = OutlinedTextFieldDefaults.colors(
+    focusedBorderColor   = BeeColors.DeepAmber,
+    unfocusedBorderColor = BeeColors.HoneyGold,
+    focusedLabelColor    = BeeColors.DeepAmber,
+    cursorColor          = BeeColors.DeepAmber,
+    focusedTextColor     = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface),
+    unfocusedTextColor   = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface),
+)
+
+@Composable
+fun BeeRadioOption(
+    label:    String,
+    selected: Boolean,
+    onClick:  () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val bg        = if (selected) beeAdapt(BeeColors.BeeBlack, BeeColors.DarkStripe) else Color.Transparent
+    val textColor = if (selected) BeeColors.HoneyGold else beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold)
 
     Surface(
-        modifier = modifier
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(8.dp),
-        color = bg,
-        tonalElevation = if (selected) 0.dp else 0.dp,
-        border = androidx.compose.foundation.BorderStroke(
+        modifier = modifier.clickable(onClick = onClick),
+        shape    = RoundedCornerShape(8.dp),
+        color    = bg,
+        border   = androidx.compose.foundation.BorderStroke(
             width = 1.5.dp,
-            color = if (selected) BeeColors.BeeBlack else BeeColors.DeepAmber
+            color = if (selected) beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold) else BeeColors.DeepAmber
         )
     ) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp)) {
@@ -388,147 +426,41 @@ fun BeeRadioOption(label: String, selected: Boolean, onClick: () -> Unit, modifi
     }
 }
 
-// ── Section header with honey-stripe decoration ───────────────────────────────
 @Composable
 fun BeesSectionHeader(title: String) {
+    val lineColor  = BeeColors.HoneyGold
+    val labelColor = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold)
     Row(
         verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp)
+        modifier          = Modifier.fillMaxWidth().padding(vertical = 8.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .height(2.dp)
-                .background(BeeColors.HoneyGold)
-        )
+        Box(modifier = Modifier.weight(1f).height(2.dp).background(lineColor))
         Text(
-            text = title,
-            fontWeight = FontWeight.ExtraBold,
-            fontSize = 14.sp,
-            color = BeeColors.BeeBlack,
+            text          = title,
+            fontWeight    = FontWeight.ExtraBold,
+            fontSize      = 14.sp,
+            color         = labelColor,
             letterSpacing = 1.5.sp,
-            modifier = Modifier.padding(horizontal = 10.dp)
+            modifier      = Modifier.padding(horizontal = 10.dp)
         )
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .height(2.dp)
-                .background(BeeColors.HoneyGold)
-        )
-    }
-}
-
-@Composable
-fun SubtitlesScreen(
-    scanner: DvoraScanner,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var searchTerm by remember { mutableStateOf("") }
-    var searchType by remember { mutableStateOf(SourceType.SHOW) }
-    var results by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
-    var isSearching by remember { mutableStateOf(false) }
-
-    Column(modifier = modifier.fillMaxSize().background(BeeColors.WaxWhite).padding(16.dp)) {
-        // Header
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(BeeColors.BeeBlack, shape = RoundedCornerShape(12.dp))
-                .padding(4.dp)
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = BeeColors.HoneyGold)
-            }
-            Text(
-                "🎞️  Subtitles",
-                style = MaterialTheme.typography.titleLarge,
-                color = BeeColors.HoneyGold,
-                fontWeight = FontWeight.Bold
-            )
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        OutlinedTextField(
-            value = searchTerm,
-            onValueChange = { searchTerm = it },
-            label = { Text("Movie or Show Name") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor   = BeeColors.DeepAmber,
-                unfocusedBorderColor = BeeColors.HoneyGold,
-                focusedLabelColor    = BeeColors.DeepAmber
-            )
-        )
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 12.dp)
-        ) {
-            BeeRadioOption("📺 Shows",  searchType == SourceType.SHOW,  { searchType = SourceType.SHOW },  Modifier.weight(1f))
-            Spacer(Modifier.width(8.dp))
-            BeeRadioOption("🎬 Movies", searchType == SourceType.MOVIE, { searchType = SourceType.MOVIE }, Modifier.weight(1f))
-        }
-
-        Button(
-            onClick = {
-                if (searchTerm.isBlank()) return@Button
-                isSearching = true
-                results = emptyList()
-                scope.launch {
-                    val searchResults = scanner.scanSubtitles(searchTerm, searchType)
-                    results = searchResults
-                    SearchLogs.lastLogs = searchResults
-                    isSearching = false
-                }
-            },
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            enabled = !isSearching,
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = BeeColors.DeepAmber,
-                contentColor   = BeeColors.WaxWhite
-            )
-        ) {
-            if (isSearching) CircularProgressIndicator(modifier = Modifier.size(24.dp), color = BeeColors.WaxWhite, strokeWidth = 2.dp)
-            else Text("🐝  Search Subtitles", fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        LazyColumn(modifier = Modifier.weight(1f)) {
-            items(results) { result -> ResultItem(result, showDetails = true) }
-        }
+        Box(modifier = Modifier.weight(1f).height(2.dp).background(lineColor))
     }
 }
 
 @Composable
 fun ResultItem(result: SearchResult, showDetails: Boolean = false) {
-    val context = LocalContext.current
-    val foundBg    = Color(0xFFF1F8E9) // light earthy green tint
-    val notFoundBg = Color(0xFFFFF8E1) // pale amber tint (not harsh red)
+    val context     = LocalContext.current
+    val foundBg     = beeAdapt(Color(0xFFF1F8E9), Color(0xFF1B2A10))
+    val notFoundBg  = beeAdapt(Color(0xFFFFF8E1), BeeColors.DarkCell)
+    val urlColor    = beeAdapt(Color(0xFF795548), Color(0xFFBCAAA4))
+    val detailColor = beeAdapt(Color(0xFF4E342E), BeeColors.DarkOnSurface)
 
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .clickable { openUrl(context, result.url) },
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (result.found) foundBg else notFoundBg
-        ),
+        modifier  = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { openUrl(context, result.url) },
+        shape     = RoundedCornerShape(12.dp),
+        colors    = CardDefaults.cardColors(containerColor = if (result.found) foundBg else notFoundBg),
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
-        // Colored left accent stripe
         Row(modifier = Modifier.fillMaxWidth()) {
             Box(
                 modifier = Modifier
@@ -541,92 +473,195 @@ fun ResultItem(result: SearchResult, showDetails: Boolean = false) {
             )
             Column(modifier = Modifier.padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = if (result.found) "✅" else "🟡",
-                        fontSize = 18.sp
-                    )
+                    Text(if (result.found) "✅" else "🟡", fontSize = 18.sp)
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = if (result.found) "Found!" else "Not Found",
+                        if (result.found) "Found!" else "Not Found",
                         fontWeight = FontWeight.Bold,
-                        color = if (result.found) BeeColors.FoundGreen else Color(0xFF8D5A00)
+                        color      = if (result.found)
+                            beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark)
+                        else
+                            beeAdapt(Color(0xFF8D5A00), BeeColors.NotFoundAmber)
                     )
                 }
                 Spacer(Modifier.height(4.dp))
-                Text(result.url, fontSize = 11.sp, color = Color(0xFF795548))
+                Text(result.url, fontSize = 11.sp, color = urlColor)
                 if (showDetails && result.foundDetails != null) {
                     Spacer(Modifier.height(2.dp))
-                    Text(
-                        result.foundDetails,
-                        fontSize = 12.sp,
-                        color = Color(0xFF4E342E),
-                        fontWeight = FontWeight.Medium
-                    )
+                    Text(result.foundDetails, fontSize = 12.sp, color = detailColor, fontWeight = FontWeight.Medium)
                 }
-                if (result.errorMessage != null) {
-                    Text("⚠️ ${result.errorMessage}", color = BeeColors.NotFoundRed, fontSize = 12.sp)
-                }
+                if (result.errorMessage != null)
+                    Text("⚠️ ${result.errorMessage}", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
             }
         }
     }
 }
 
-@Composable
-fun SettingsScreen(
-    shows: List<String>,
-    movies: List<String>,
-    manualChecks: List<String>,
-    apiSites: List<String>,
-    onUpdate: (SourceType, List<String>) -> Unit,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Shows", "Movies", "APIs", "Manual", "Logs")
+// ═══════════════════════════════════════════════════════════════════════════════
+// SUBTITLES SCREEN
+// ═══════════════════════════════════════════════════════════════════════════════
 
-    Column(modifier = modifier.fillMaxSize().background(BeeColors.WaxWhite)) {
-        // Settings header
+@Composable
+fun SubtitlesScreen(
+    scanner:      DvoraScanner,
+    onBack:       () -> Unit,
+    onToggleDark: () -> Unit,
+    modifier:     Modifier = Modifier
+) {
+    val context     = LocalContext.current
+    val scope       = rememberCoroutineScope()
+    val isDark      = LocalDarkMode.current.value
+    val headerBg    = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
+    val scaffoldBg  = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
+
+    var searchTerm  by remember { mutableStateOf("") }
+    var searchType  by remember { mutableStateOf(SourceType.SHOW) }
+    var results     by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
+    var isSearching by remember { mutableStateOf(false) }
+
+    Column(modifier = modifier.fillMaxSize().background(scaffoldBg).padding(16.dp)) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
-                .background(BeeColors.BeeBlack)
+                .background(headerBg, shape = RoundedCornerShape(12.dp))
                 .padding(4.dp)
         ) {
             IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = BeeColors.HoneyGold)
             }
             Text(
-                "⚙️  Settings",
-                style = MaterialTheme.typography.titleLarge,
-                color = BeeColors.HoneyGold,
-                fontWeight = FontWeight.Bold
+                "🎞️  Subtitles",
+                style      = MaterialTheme.typography.titleLarge,
+                color      = BeeColors.HoneyGold,
+                fontWeight = FontWeight.Bold,
+                modifier   = Modifier.weight(1f)
             )
+            IconButton(onClick = onToggleDark) {
+                Icon(
+                    if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode,
+                    "Toggle theme",
+                    tint = BeeColors.HoneyGold
+                )
+            }
         }
 
-        // Bee-striped tab row
+        Spacer(Modifier.height(16.dp))
+
+        OutlinedTextField(
+            value = searchTerm, onValueChange = { searchTerm = it },
+            label = { Text("Movie or Show Name") },
+            modifier = Modifier.fillMaxWidth(), singleLine = true,
+            colors = beeTextFieldColors()
+        )
+
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier          = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+        ) {
+            BeeRadioOption("📺 Shows",  searchType == SourceType.SHOW,  { searchType = SourceType.SHOW },  Modifier.weight(1f))
+            Spacer(Modifier.width(8.dp))
+            BeeRadioOption("🎬 Movies", searchType == SourceType.MOVIE, { searchType = SourceType.MOVIE }, Modifier.weight(1f))
+        }
+
+        Button(
+            onClick = {
+                if (searchTerm.isBlank()) return@Button
+                isSearching = true; results = emptyList()
+                scope.launch {
+                    results             = scanner.scanSubtitles(searchTerm, searchType)
+                    SearchLogs.lastLogs = results
+                    isSearching         = false
+                }
+            },
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            enabled  = !isSearching,
+            shape    = RoundedCornerShape(12.dp),
+            colors   = ButtonDefaults.buttonColors(
+                containerColor = BeeColors.DeepAmber,
+                contentColor   = beeAdapt(BeeColors.WaxWhite, BeeColors.BeeBlack)
+            )
+        ) {
+            if (isSearching)
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = BeeColors.WaxWhite, strokeWidth = 2.dp)
+            else
+                Text("🐝  Search Subtitles", fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            items(results) { ResultItem(it, showDetails = true) }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SETTINGS SCREEN
+// ═══════════════════════════════════════════════════════════════════════════════
+
+@Composable
+fun SettingsScreen(
+    shows:        List<String>,
+    movies:       List<String>,
+    manualChecks: List<String>,
+    apiSites:     List<String>,
+    onUpdate:     (SourceType, List<String>) -> Unit,
+    onBack:       () -> Unit,
+    onToggleDark: () -> Unit,
+    modifier:     Modifier = Modifier
+) {
+    var selectedTab by remember { mutableIntStateOf(0) }
+    val tabs = listOf("Shows", "Movies", "APIs", "Manual", "Logs")
+    val isDark   = LocalDarkMode.current.value
+    val headerBg = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
+    val bgColor  = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
+
+    Column(modifier = modifier.fillMaxSize().background(bgColor)) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().background(headerBg).padding(4.dp)
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = BeeColors.HoneyGold)
+            }
+            Text(
+                "⚙️  Settings",
+                style      = MaterialTheme.typography.titleLarge,
+                color      = BeeColors.HoneyGold,
+                fontWeight = FontWeight.Bold,
+                modifier   = Modifier.weight(1f)
+            )
+            IconButton(onClick = onToggleDark) {
+                Icon(
+                    if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode,
+                    "Toggle theme",
+                    tint = BeeColors.HoneyGold
+                )
+            }
+        }
+
         ScrollableTabRow(
             selectedTabIndex = selectedTab,
-            edgePadding = 16.dp,
-            containerColor = BeeColors.BeeBlack,
-            contentColor = BeeColors.HoneyGold,
-            indicator = { tabPositions ->
+            edgePadding      = 16.dp,
+            containerColor   = headerBg,
+            contentColor     = BeeColors.HoneyGold,
+            indicator        = { tabPositions ->
                 TabRowDefaults.SecondaryIndicator(
-                    modifier = Modifier
-                        .1tabIndicatorOffset(tabPositions[selectedTab]),
-                    color = BeeColors.HoneyGold,
-                    height = 3.dp
+                    modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                    color    = BeeColors.HoneyGold,
+                    height   = 3.dp
                 )
             }
         ) {
             tabs.forEachIndexed { index, title ->
                 Tab(
                     selected = selectedTab == index,
-                    onClick = { selectedTab = index },
-                    text = {
+                    onClick  = { selectedTab = index },
+                    text     = {
                         Text(
                             title,
-                            color = if (selectedTab == index) BeeColors.HoneyGold else BeeColors.HoneyGold.copy(alpha = 0.5f),
+                            color      = if (selectedTab == index) BeeColors.HoneyGold else BeeColors.HoneyGold.copy(alpha = 0.45f),
                             fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal
                         )
                     }
@@ -644,17 +679,24 @@ fun SettingsScreen(
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// SOURCE EDITOR
+// ═══════════════════════════════════════════════════════════════════════════════
+
 @Composable
 fun SourceEditor(list: List<String>, onUpdate: (List<String>) -> Unit) {
-    var newItem by remember { mutableStateOf("") }
+    var newItem      by remember { mutableStateOf("") }
     var editingIndex by remember { mutableIntStateOf(-1) }
-    val context = LocalContext.current
+    val context      = LocalContext.current
+    val bgColor      = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
+    val textColor    = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface)
+    val rowAlt       = beeAdapt(BeeColors.HoneycombYellow.copy(alpha = 0.4f), BeeColors.DarkStripe.copy(alpha = 0.6f))
 
     val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let {
             try {
-                val inputStream = context.contentResolver.openInputStream(it)
-                val lines = inputStream?.bufferedReader()?.use { r -> r.readLines() } ?: emptyList()
+                val lines = context.contentResolver.openInputStream(it)
+                    ?.bufferedReader()?.use { r -> r.readLines() } ?: emptyList()
                 val clean = lines.map { l -> l.trim() }.filter { l -> l.isNotBlank() }
                 if (clean.isNotEmpty()) onUpdate((list + clean).distinct())
             } catch (e: Exception) {
@@ -663,18 +705,14 @@ fun SourceEditor(list: List<String>, onUpdate: (List<String>) -> Unit) {
         }
     }
 
-    Column(modifier = Modifier.padding(16.dp).background(BeeColors.WaxWhite)) {
+    Column(modifier = Modifier.padding(16.dp).background(bgColor)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
-                value = newItem,
+                value         = newItem,
                 onValueChange = { newItem = it },
-                label = { Text(if (editingIndex == -1) "Add Item" else "Edit Item") },
-                modifier = Modifier.weight(1f),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor   = BeeColors.DeepAmber,
-                    unfocusedBorderColor = BeeColors.HoneyGold,
-                    focusedLabelColor    = BeeColors.DeepAmber
-                )
+                label         = { Text(if (editingIndex == -1) "Add Item" else "Edit Item") },
+                modifier      = Modifier.weight(1f),
+                colors        = beeTextFieldColors()
             )
             IconButton(onClick = {
                 if (newItem.isNotBlank()) {
@@ -687,13 +725,7 @@ fun SourceEditor(list: List<String>, onUpdate: (List<String>) -> Unit) {
                     }
                     newItem = ""
                 }
-            }) {
-                Icon(
-                    if (editingIndex == -1) Icons.Default.Add else Icons.Default.Check,
-                    null,
-                    tint = BeeColors.DeepAmber
-                )
-            }
+            }) { Icon(if (editingIndex == -1) Icons.Default.Add else Icons.Default.Check, null, tint = BeeColors.DeepAmber) }
 
             if (editingIndex == -1) {
                 IconButton(onClick = { filePickerLauncher.launch("text/plain") }) {
@@ -716,124 +748,109 @@ fun SourceEditor(list: List<String>, onUpdate: (List<String>) -> Unit) {
                         .fillMaxWidth()
                         .padding(vertical = 6.dp)
                         .background(
-                            if (index % 2 == 0) BeeColors.HoneycombYellow.copy(alpha = 0.4f) else Color.Transparent,
+                            if (index % 2 == 0) rowAlt else Color.Transparent,
                             shape = RoundedCornerShape(6.dp)
                         )
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
-                    Text(
-                        "🔗 ",
-                        fontSize = 12.sp
-                    )
+                    Text("🔗 ", fontSize = 12.sp)
                     Text(
                         item,
-                        modifier = Modifier.weight(1f).clickable {
-                            newItem = item
-                            editingIndex = index
-                        },
+                        modifier = Modifier.weight(1f).clickable { newItem = item; editingIndex = index },
                         fontSize = 13.sp,
-                        color = Color(0xFF4E3B00)
+                        color    = textColor
                     )
                     IconButton(onClick = { onUpdate(list - item) }) {
                         Icon(Icons.Default.Delete, null, tint = BeeColors.DeepAmber.copy(alpha = 0.7f))
                     }
                 }
-                HorizontalDivider(color = BeeColors.HoneyGold.copy(alpha = 0.3f))
+                HorizontalDivider(color = BeeColors.HoneyGold.copy(alpha = 0.25f))
             }
         }
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// VERBOSE LOGS
+// ═══════════════════════════════════════════════════════════════════════════════
+
 @Composable
 fun VerboseLogsScreen() {
-    val logs = SearchLogs.lastLogs
+    val logs    = SearchLogs.lastLogs
+    val bgColor = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
     if (logs.isEmpty()) {
-        Box(
-            Modifier.fillMaxSize().background(BeeColors.WaxWhite),
-            contentAlignment = Alignment.Center
-        ) {
+        Box(Modifier.fillMaxSize().background(bgColor), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("🐝", fontSize = 48.sp)
                 Spacer(Modifier.height(8.dp))
-                Text("No logs from last search.", color = Color(0xFF8D5A00))
+                Text(
+                    "No logs from last search.",
+                    color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f))
+                )
             }
         }
     } else {
-        LazyColumn(Modifier.padding(16.dp).background(BeeColors.WaxWhite)) {
-            items(logs) { log -> LogItem(log) }
+        LazyColumn(Modifier.padding(16.dp).background(bgColor)) {
+            items(logs) { LogItem(it) }
         }
     }
 }
 
 @Composable
 fun LogItem(log: SearchResult) {
-    var expanded by remember { mutableStateOf(false) }
+    var expanded     by remember { mutableStateOf(false) }
+    val cardColor    = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
+    val titleColor   = beeAdapt(Color(0xFF3E2800), BeeColors.DarkOnSurface)
+    val labelColor   = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.75f))
+    val monoColor    = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.7f))
+    val verboseColor = beeAdapt(Color(0xFF4E342E), BeeColors.DarkOnSurface.copy(alpha = 0.6f))
+
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 8.dp)
-            .clickable { expanded = !expanded },
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = BeeColors.HoneycombYellow),
+        modifier  = Modifier.fillMaxWidth().padding(vertical = 8.dp).clickable { expanded = !expanded },
+        shape     = RoundedCornerShape(12.dp),
+        colors    = CardDefaults.cardColors(containerColor = cardColor),
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    if (log.found) "✅" else "🟡",
-                    fontSize = 16.sp
-                )
+                Text(if (log.found) "✅" else "🟡", fontSize = 16.sp)
                 Spacer(Modifier.width(8.dp))
-                Text(
-                    log.url,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    color = Color(0xFF3E2800),
-                    modifier = Modifier.weight(1f)
-                )
-                Icon(
-                    if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                    null,
-                    tint = BeeColors.DeepAmber
-                )
+                Text(log.url, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = titleColor, modifier = Modifier.weight(1f))
+                Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, tint = BeeColors.DeepAmber)
             }
             Spacer(Modifier.height(4.dp))
             Row {
-                Text("Status: ", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Color(0xFF5D4037))
+                Text("Status: ", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = labelColor)
                 Text(
                     if (log.found) "FOUND" else "NOT FOUND",
-                    color = if (log.found) BeeColors.FoundGreen else BeeColors.PollenOrange,
-                    fontSize = 12.sp,
+                    color      = if (log.found) beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark) else BeeColors.PollenOrange,
+                    fontSize   = 12.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
             Text(
                 "Details: ${log.foundDetails ?: "No details available."}",
-                fontSize = 12.sp,
+                fontSize   = 12.sp,
                 fontFamily = FontFamily.Monospace,
-                color = Color(0xFF5D4037)
+                color      = monoColor
             )
-
             if (expanded && log.verboseLogs != null) {
                 Spacer(Modifier.height(8.dp))
-                HorizontalDivider(color = BeeColors.HoneyGold.copy(alpha = 0.5f), modifier = Modifier.padding(vertical = 4.dp))
-                Text(
-                    text = log.verboseLogs,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = Color(0xFF4E342E)
-                )
+                HorizontalDivider(color = BeeColors.HoneyGold.copy(alpha = 0.4f), modifier = Modifier.padding(vertical = 4.dp))
+                Text(log.verboseLogs, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = verboseColor)
             }
-
             if (log.errorMessage != null) {
                 Spacer(Modifier.height(4.dp))
-                Text("⚠️ ${log.errorMessage}", color = BeeColors.NotFoundRed, fontSize = 12.sp)
+                Text("⚠️ ${log.errorMessage}", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
             }
         }
     }
 }
 
-// ── Storage Helpers (unchanged) ───────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+// STORAGE HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
 fun saveSources(context: Context, key: String, sources: List<String>) {
     context.getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE)
         .edit().putStringSet(key, sources.toSet()).apply()
@@ -841,10 +858,9 @@ fun saveSources(context: Context, key: String, sources: List<String>) {
 
 fun loadSources(context: Context, key: String): List<String> {
     val prefs = context.getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE)
-
     if (!prefs.contains(key)) {
         return when (key) {
-            "shows" -> listOf(
+            "shows"         -> listOf(
                 "+https://ww25.soap2day.day/?s=",
                 "-https://myflixerz.to/search/",
                 "-https://himovies.sx/search/",
@@ -856,7 +872,7 @@ fun loadSources(context: Context, key: String): List<String> {
                 "+https://gogoanime.by/?s=",
                 "+https://aniwatchtv.to/search?keyword="
             )
-            "movies" -> listOf(
+            "movies"        -> listOf(
                 "+https://ww25.soap2day.day/?s=",
                 "-https://myflixerz.to/search/",
                 "-https://himovies.sx/search/",
@@ -871,14 +887,13 @@ fun loadSources(context: Context, key: String): List<String> {
                 "+https://ww4.fmovies.co/search/?q=",
                 "+https://ww8.123moviesfree.net/search/?q="
             )
-            "api_sites" -> listOf(
+            "api_sites"     -> listOf(
                 "v1:https://ww8.123moviesfree.net",
                 "v1:https://ww4.fmovies.co",
                 "stremio:https://v3-cinemeta.strem.io"
             )
-            else -> emptyList()
+            else            -> emptyList()
         }
     }
-
     return prefs.getStringSet(key, null)?.toList() ?: emptyList()
 }
