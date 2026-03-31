@@ -63,6 +63,8 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.jsoup)
     implementation(libs.gson)
+    implementation(libs.volley)
+    implementation(libs.coil.compose)  // ← add this
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

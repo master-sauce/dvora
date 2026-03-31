@@ -11,6 +11,8 @@ composeBom = "2024.09.00"
 okhttp = "4.12.0"
 jsoup = "1.17.2"
 gson = "2.10.1"
+volley = "1.2.1"
+coil = "2.7.0"       # ← add this
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -31,6 +33,8 @@ androidx-compose-material-icons-extended = { group = "androidx.compose.material"
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
+volley = { group = "com.android.volley", name = "volley", version.ref = "volley" }
+coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

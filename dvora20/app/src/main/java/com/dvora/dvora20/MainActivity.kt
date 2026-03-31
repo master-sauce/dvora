@@ -33,6 +33,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import kotlinx.coroutines.launch
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -188,6 +192,7 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
 
     var showSettings  by remember { mutableStateOf(false) }
     var showSubtitles by remember { mutableStateOf(false) }
+    var showImdb      by remember { mutableStateOf(false) }
 
     val headerBg   = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
     val scaffoldBg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
@@ -220,10 +225,28 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                             tint               = BeeColors.HoneyGold
                         )
                     }
-                    IconButton(onClick = { showSubtitles = true; showSettings = false }) {
+                    IconButton(onClick = { showSubtitles = true; showSettings = false; showImdb = false }) {
                         Icon(Icons.Default.Subtitles, "Subtitles", tint = BeeColors.HoneyGold)
                     }
-                    IconButton(onClick = { showSettings = true; showSubtitles = false }) {
+                    IconButton(onClick = { showImdb = true; showSubtitles = false; showSettings = false }) {
+                        // IMDb logo badge — gold "IMDb" text in a rounded rectangle
+                        Box(
+                            modifier         = Modifier
+                                .size(40.dp)
+                                .padding(6.dp)
+                                .background(Color(0xFFF5C518), RoundedCornerShape(4.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text       = "IMDb",
+                                fontSize   = 7.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color      = Color.Black,
+                                letterSpacing = 0.sp
+                            )
+                        }
+                    }
+                    IconButton(onClick = { showSettings = true; showSubtitles = false; showImdb = false }) {
                         Icon(Icons.Default.Settings, "Settings", tint = BeeColors.HoneyGold)
                     }
                 }
@@ -253,6 +276,12 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
             showSubtitles -> SubtitlesScreen(
                 scanner      = scanner,
                 onBack       = { showSubtitles = false },
+                onToggleDark = onToggleDarkMode,
+                modifier     = Modifier.padding(innerPadding)
+            )
+            showImdb -> ImdbScreen(
+                scanner      = scanner,
+                onBack       = { showImdb = false },
                 onToggleDark = onToggleDarkMode,
                 modifier     = Modifier.padding(innerPadding)
             )
@@ -592,6 +621,236 @@ fun SubtitlesScreen(
 
         LazyColumn(modifier = Modifier.weight(1f)) {
             items(results) { ResultItem(it, showDetails = true) }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// IMDB SCREEN
+// ═══════════════════════════════════════════════════════════════════════════════
+
+@Composable
+fun ImdbScreen(
+    scanner:      DvoraScanner,
+    onBack:       () -> Unit,
+    onToggleDark: () -> Unit,
+    modifier:     Modifier = Modifier
+) {
+    val context    = LocalContext.current
+    val scope      = rememberCoroutineScope()
+    val isDark     = LocalDarkMode.current.value
+    val headerBg   = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
+    val scaffoldBg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
+
+    var searchTerm  by remember { mutableStateOf("") }
+    var results     by remember { mutableStateOf<List<ImdbResult>>(emptyList()) }
+    var isSearching by remember { mutableStateOf(false) }
+    var errorMsg    by remember { mutableStateOf<String?>(null) }
+
+    Column(modifier = modifier.fillMaxSize().background(scaffoldBg)) {
+
+        // ── Header ────────────────────────────────────────────────────────────
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(headerBg)
+                .padding(4.dp)
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = BeeColors.HoneyGold)
+            }
+            // IMDb logo
+            Box(
+                modifier         = Modifier
+                    .padding(horizontal = 4.dp)
+                    .background(Color(0xFFF5C518), RoundedCornerShape(4.dp))
+                    .padding(horizontal = 6.dp, vertical = 3.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text       = "IMDb",
+                    fontSize   = 13.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color      = Color.Black,
+                    letterSpacing = 0.sp
+                )
+            }
+            Text(
+                "  Search",
+                style      = MaterialTheme.typography.titleLarge,
+                color      = BeeColors.HoneyGold,
+                fontWeight = FontWeight.Bold,
+                modifier   = Modifier.weight(1f)
+            )
+            IconButton(onClick = onToggleDark) {
+                Icon(
+                    if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode,
+                    "Toggle theme",
+                    tint = BeeColors.HoneyGold
+                )
+            }
+        }
+
+        // ── Search field + button ─────────────────────────────────────────────
+        Column(modifier = Modifier.padding(16.dp)) {
+            OutlinedTextField(
+                value         = searchTerm,
+                onValueChange = { searchTerm = it },
+                label         = { Text("Movie or Show Name") },
+                modifier      = Modifier.fillMaxWidth(),
+                singleLine    = true,
+                colors        = beeTextFieldColors()
+            )
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick = {
+                    if (searchTerm.isBlank()) return@Button
+                    isSearching = true
+                    results     = emptyList()
+                    errorMsg    = null
+                    scope.launch {
+                        val found = scanner.searchImdb(searchTerm)
+                        if (found.isEmpty()) errorMsg = "No results found on IMDb for \"$searchTerm\""
+                        results     = found
+                        isSearching = false
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                enabled  = !isSearching,
+                shape    = RoundedCornerShape(12.dp),
+                colors   = ButtonDefaults.buttonColors(
+                    containerColor        = Color(0xFFF5C518),
+                    contentColor          = Color.Black,
+                    disabledContainerColor = Color(0xFFB8941A),
+                    disabledContentColor   = Color.Black.copy(alpha = 0.4f)
+                )
+            ) {
+                if (isSearching)
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.Black, strokeWidth = 2.dp)
+                else {
+                    Box(
+                        modifier         = Modifier
+                            .padding(end = 8.dp)
+                            .background(Color.Black, RoundedCornerShape(3.dp))
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                    ) {
+                        Text("IMDb", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFFF5C518))
+                    }
+                    Text("Search", fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                }
+            }
+        }
+
+        // ── Results ───────────────────────────────────────────────────────────
+        if (errorMsg != null) {
+            Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                Text(errorMsg!!, color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)))
+            }
+        }
+
+        LazyColumn(
+            modifier      = Modifier.weight(1f),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
+        ) {
+            items(results) { ImdbResultCard(it) }
+        }
+    }
+}
+
+@Composable
+fun ImdbResultCard(item: ImdbResult) {
+    val context   = LocalContext.current
+    val cardBg    = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
+    val textColor = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
+    val subColor  = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.7f))
+
+    Card(
+        modifier  = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 5.dp)
+            .clickable { openUrl(context, item.imdbUrl) },
+        shape     = RoundedCornerShape(14.dp),
+        colors    = CardDefaults.cardColors(containerColor = cardBg),
+        elevation = CardDefaults.cardElevation(3.dp)
+    ) {
+        Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.Top) {
+
+            // Poster
+            if (item.posterUrl != null) {
+                Box(
+                    modifier = Modifier
+                        .width(70.dp)
+                        .height(100.dp)
+                        .background(
+                            beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe),
+                            RoundedCornerShape(8.dp)
+                        )
+                ) {
+                    AsyncImage(
+                        model             = ImageRequest.Builder(context)
+                            .data(item.posterUrl)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = item.title,
+                        contentScale      = ContentScale.Crop,
+                        modifier          = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(8.dp))
+                    )
+                }
+            } else {
+                Box(
+                    modifier         = Modifier
+                        .width(70.dp)
+                        .height(100.dp)
+                        .background(
+                            beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe),
+                            RoundedCornerShape(8.dp)
+                        ),
+                    contentAlignment = Alignment.Center
+                ) { Text("🎬", fontSize = 26.sp) }
+            }
+
+            Spacer(Modifier.width(12.dp))
+
+            // Info
+            Column(modifier = Modifier.weight(1f)) {
+                Text(item.title, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = textColor, maxLines = 2)
+                Spacer(Modifier.height(4.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (item.year != null)
+                        Text(item.year, fontSize = 12.sp, color = BeeColors.HoneyGold, fontWeight = FontWeight.SemiBold)
+                    if (item.mediaType != null) {
+                        Spacer(Modifier.width(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0xFFF5C518)
+                        ) {
+                            Text(
+                                item.mediaType,
+                                fontSize = 10.sp,
+                                color    = Color.Black,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                // IMDb link label
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier         = Modifier
+                            .background(Color(0xFFF5C518), RoundedCornerShape(3.dp))
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                    ) {
+                        Text("IMDb", fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black)
+                    }
+                    Spacer(Modifier.width(5.dp))
+                    Text(item.imdbId, fontSize = 11.sp, color = subColor)
+                }
+            }
         }
     }
 }

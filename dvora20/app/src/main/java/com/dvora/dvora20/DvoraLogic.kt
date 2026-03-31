@@ -18,6 +18,30 @@ data class SearchResult(
     val verboseLogs: String? = null // For detailed logs only
 )
 
+data class ImdbResult(
+    val imdbId: String,
+    val title: String,
+    val year: String?,
+    val mediaType: String?,
+    val posterUrl: String?,
+    val imdbUrl: String
+)
+
+// IMDb suggestion API models
+data class ImdbSuggestionResponse(val d: List<ImdbSuggestionItem>?)
+data class ImdbSuggestionItem(
+    val id: String?,   // "tt1234567" for titles, "nm..." for people
+    val l:  String?,   // title / name
+    val y:  Int?,      // year
+    val q:  String?,   // "TV series", "TV mini-series", "video game", etc. null = movie
+    val i:  ImdbImage? // poster
+)
+data class ImdbImage(
+    val imageUrl: String?,
+    val height: Int?,
+    val width: Int?
+)
+
 enum class SourceType {
     SHOW, MOVIE, MANUAL, API
 }
@@ -109,7 +133,7 @@ class DvoraScanner {
                 for (linkObj in links) {
                     val href = linkObj.attr("abs:href")
                     if (href.isBlank()) continue
-                    
+
                     val linkLower = href.lowercase()
                     val textLower = linkObj.text().lowercase()
 
@@ -141,7 +165,7 @@ class DvoraScanner {
                     logBuilder.append("Matching links (up to 10):\n")
                     matchedLinks.take(10).forEach { logBuilder.append("- $it\n") }
                 }
-                
+
                 logBuilder.append("\nSkip statistics (Blocked Patterns):\n")
                 if (skipCounts.isEmpty()) {
                     logBuilder.append("No links were skipped.\n")
@@ -155,9 +179,9 @@ class DvoraScanner {
 
                 if (matchedLinks.isNotEmpty()) {
                     return@withContext SearchResult(
-                        url = fullUrl, 
-                        found = true, 
-                        foundDetails = "Matches found: ${matchedLinks.size}", 
+                        url = fullUrl,
+                        found = true,
+                        foundDetails = "Matches found: ${matchedLinks.size}",
                         verboseLogs = verbose
                     )
                 }
@@ -174,8 +198,8 @@ class DvoraScanner {
 
                 val detectedIndicator = noResultsIndicators.find { pageContent.contains(it) }
                 return@withContext SearchResult(
-                    url = fullUrl, 
-                    found = false, 
+                    url = fullUrl,
+                    found = false,
                     foundDetails = if (detectedIndicator != null) "Detected: $detectedIndicator" else "No matches found",
                     verboseLogs = verbose
                 )
@@ -270,6 +294,50 @@ class DvoraScanner {
             }
         } catch (e: Exception) {
             listOf(SearchResult(apiURL, false, errorMessage = e.message))
+        }
+    }
+
+    // IMDb search
+    // Uses IMDb's suggestion/autocomplete API - returns real JSON, no JS rendering needed,
+    // no API key required. Same pattern as Go version: fetch JSON, parse, filter, return.
+    // Endpoint: https://v3.sg.media-imdb.com/suggestion/x/<query>.json
+    suspend fun searchImdb(searchTerm: String): List<ImdbResult> = withContext(Dispatchers.IO) {
+        val query     = searchTerm.trim().lowercase().replace(" ", "_")
+        val firstChar = query.firstOrNull { it.isLetter() } ?: 'a'
+        val url       = "https://v3.sg.media-imdb.com/suggestion/$firstChar/$query.json"
+
+        return@withContext try {
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", userAgent)
+                .header("Accept", "application/json")
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@use emptyList()
+                val body = response.body?.string() ?: return@use emptyList()
+
+                val parsed = Gson().fromJson(body, ImdbSuggestionResponse::class.java)
+                val items  = parsed.d ?: return@use emptyList()
+
+                // Filter to titles only (tt prefix), skip people (nm prefix)
+                items.filter { it.id?.startsWith("tt") == true }
+                    .take(10)
+                    .mapNotNull { item ->
+                        val imdbId = item.id ?: return@mapNotNull null
+                        val title  = item.l  ?: return@mapNotNull null
+                        ImdbResult(
+                            imdbId    = imdbId,
+                            title     = title,
+                            year      = item.y?.toString(),
+                            mediaType = item.q,
+                            posterUrl = item.i?.imageUrl,
+                            imdbUrl   = "https://www.imdb.com/title/$imdbId/"
+                        )
+                    }
+            }
+        } catch (e: Exception) {
+            emptyList()
         }
     }
 
