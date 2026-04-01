@@ -33,10 +33,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.ClipData
+import android.content.ClipboardManager
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -155,6 +159,12 @@ class MainActivity : ComponentActivity() {
 
 object SearchLogs {
     var lastLogs by mutableStateOf<List<SearchResult>>(emptyList())
+}
+
+fun copyToClipboard(context: Context, text: String) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText("url", text))
+    Toast.makeText(context, "Copied!", Toast.LENGTH_SHORT).show()
 }
 
 fun openUrl(context: Context, url: String) {
@@ -490,17 +500,17 @@ fun ResultItem(result: SearchResult, showDetails: Boolean = false) {
         colors    = CardDefaults.cardColors(containerColor = if (result.found) foundBg else notFoundBg),
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
-        Row(modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Box(
                 modifier = Modifier
                     .width(5.dp)
-                    .fillMaxHeight()
+                    .height(72.dp)
                     .background(
                         color = if (result.found) BeeColors.FoundGreen else BeeColors.DeepAmber,
                         shape = RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp)
                     )
             )
-            Column(modifier = Modifier.padding(12.dp)) {
+            Column(modifier = Modifier.weight(1f).padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(if (result.found) "✅" else "🟡", fontSize = 18.sp)
                     Spacer(Modifier.width(8.dp))
@@ -521,6 +531,11 @@ fun ResultItem(result: SearchResult, showDetails: Boolean = false) {
                 }
                 if (result.errorMessage != null)
                     Text("⚠️ ${result.errorMessage}", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+            }
+            if (result.found) {
+                IconButton(onClick = { copyToClipboard(context, result.url) }) {
+                    Icon(Icons.Default.ContentCopy, "Copy link", tint = BeeColors.DeepAmber)
+                }
             }
         }
     }
@@ -647,6 +662,18 @@ fun ImdbScreen(
     var isSearching by remember { mutableStateOf(false) }
     var errorMsg    by remember { mutableStateOf<String?>(null) }
 
+    // Live search: debounce 350ms so we don't hammer the API on every keystroke
+    LaunchedEffect(searchTerm) {
+        if (searchTerm.isBlank()) { results = emptyList(); errorMsg = null; return@LaunchedEffect }
+        delay(350)
+        isSearching = true
+        errorMsg    = null
+        val found   = scanner.searchImdb(searchTerm)
+        results     = found
+        errorMsg    = if (found.isEmpty()) "No results found for \"$searchTerm\"" else null
+        isSearching = false
+    }
+
     Column(modifier = modifier.fillMaxSize().background(scaffoldBg)) {
 
         // ── Header ────────────────────────────────────────────────────────────
@@ -702,43 +729,14 @@ fun ImdbScreen(
                 singleLine    = true,
                 colors        = beeTextFieldColors()
             )
-            Spacer(Modifier.height(12.dp))
-            Button(
-                onClick = {
-                    if (searchTerm.isBlank()) return@Button
-                    isSearching = true
-                    results     = emptyList()
-                    errorMsg    = null
-                    scope.launch {
-                        val found = scanner.searchImdb(searchTerm)
-                        if (found.isEmpty()) errorMsg = "No results found on IMDb for \"$searchTerm\""
-                        results     = found
-                        isSearching = false
-                    }
-                },
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                enabled  = !isSearching,
-                shape    = RoundedCornerShape(12.dp),
-                colors   = ButtonDefaults.buttonColors(
-                    containerColor        = Color(0xFFF5C518),
-                    contentColor          = Color.Black,
-                    disabledContainerColor = Color(0xFFB8941A),
-                    disabledContentColor   = Color.Black.copy(alpha = 0.4f)
+            // Loading indicator shown inline while live search is running
+            if (isSearching) {
+                Spacer(Modifier.height(8.dp))
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth(),
+                    color    = Color(0xFFF5C518),
+                    trackColor = Color(0xFFF5C518).copy(alpha = 0.2f)
                 )
-            ) {
-                if (isSearching)
-                    CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.Black, strokeWidth = 2.dp)
-                else {
-                    Box(
-                        modifier         = Modifier
-                            .padding(end = 8.dp)
-                            .background(Color.Black, RoundedCornerShape(3.dp))
-                            .padding(horizontal = 4.dp, vertical = 1.dp)
-                    ) {
-                        Text("IMDb", fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFFF5C518))
-                    }
-                    Text("Search", fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                }
             }
         }
 
@@ -850,6 +848,10 @@ fun ImdbResultCard(item: ImdbResult) {
                     Spacer(Modifier.width(5.dp))
                     Text(item.imdbId, fontSize = 11.sp, color = subColor)
                 }
+            }
+            // Copy button
+            IconButton(onClick = { copyToClipboard(context, item.imdbUrl) }) {
+                Icon(Icons.Default.ContentCopy, "Copy link", tint = BeeColors.DeepAmber)
             }
         }
     }
