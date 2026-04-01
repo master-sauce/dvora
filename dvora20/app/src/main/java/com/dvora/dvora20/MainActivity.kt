@@ -553,7 +553,6 @@ fun SubtitlesScreen(
     modifier:     Modifier = Modifier
 ) {
     val context     = LocalContext.current
-    val scope       = rememberCoroutineScope()
     val isDark      = LocalDarkMode.current.value
     val headerBg    = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
     val scaffoldBg  = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
@@ -562,6 +561,18 @@ fun SubtitlesScreen(
     var searchType  by remember { mutableStateOf(SourceType.SHOW) }
     var results     by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
+
+    // Live search: re-runs whenever searchTerm or searchType changes.
+    // 400ms debounce on text changes; type toggle fires immediately.
+    LaunchedEffect(searchTerm, searchType) {
+        if (searchTerm.isBlank()) { results = emptyList(); SearchLogs.lastLogs = emptyList(); return@LaunchedEffect }
+        delay(400)
+        isSearching = true
+        val found           = scanner.scanSubtitles(searchTerm, searchType)
+        results             = found
+        SearchLogs.lastLogs = found
+        isSearching         = false
+    }
 
     Column(modifier = modifier.fillMaxSize().background(scaffoldBg).padding(16.dp)) {
         Row(
@@ -608,31 +619,17 @@ fun SubtitlesScreen(
             BeeRadioOption("🎬 Movies", searchType == SourceType.MOVIE, { searchType = SourceType.MOVIE }, Modifier.weight(1f))
         }
 
-        Button(
-            onClick = {
-                if (searchTerm.isBlank()) return@Button
-                isSearching = true; results = emptyList()
-                scope.launch {
-                    results             = scanner.scanSubtitles(searchTerm, searchType)
-                    SearchLogs.lastLogs = results
-                    isSearching         = false
-                }
-            },
-            modifier = Modifier.fillMaxWidth().height(52.dp),
-            enabled  = !isSearching,
-            shape    = RoundedCornerShape(12.dp),
-            colors   = ButtonDefaults.buttonColors(
-                containerColor = BeeColors.DeepAmber,
-                contentColor   = beeAdapt(BeeColors.WaxWhite, BeeColors.BeeBlack)
+        // Progress bar replaces the button
+        if (isSearching) {
+            LinearProgressIndicator(
+                modifier   = Modifier.fillMaxWidth(),
+                color      = BeeColors.DeepAmber,
+                trackColor = BeeColors.DeepAmber.copy(alpha = 0.2f)
             )
-        ) {
-            if (isSearching)
-                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = BeeColors.WaxWhite, strokeWidth = 2.dp)
-            else
-                Text("🐝  Search Subtitles", fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Spacer(Modifier.height(16.dp))
+        } else {
+            Spacer(Modifier.height(4.dp))
         }
-
-        Spacer(Modifier.height(16.dp))
 
         LazyColumn(modifier = Modifier.weight(1f)) {
             items(results) { ResultItem(it, showDetails = true) }
