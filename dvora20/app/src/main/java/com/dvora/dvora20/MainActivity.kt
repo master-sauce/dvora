@@ -8,6 +8,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -567,6 +568,8 @@ fun SubtitlesScreen(
     var results     by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
 
+    BackHandler { onBack() }
+
     // Live search: re-runs whenever searchTerm or searchType changes.
     // 400ms debounce on text changes; type toggle fires immediately.
     LaunchedEffect(searchTerm, searchType) {
@@ -663,6 +666,8 @@ fun ImdbScreen(
     var results     by remember { mutableStateOf<List<ImdbResult>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
     var errorMsg    by remember { mutableStateOf<String?>(null) }
+
+    BackHandler { onBack() }
 
     // Live search: debounce 350ms so we don't hammer the API on every keystroke
     LaunchedEffect(searchTerm) {
@@ -874,6 +879,7 @@ fun SettingsScreen(
     onToggleDark: () -> Unit,
     modifier:     Modifier = Modifier
 ) {
+    BackHandler { onBack() }
     var selectedTab by remember { mutableIntStateOf(0) }
     val tabs = listOf("Shows", "Movies", "APIs", "Manual", "Logs")
     val isDark   = LocalDarkMode.current.value
