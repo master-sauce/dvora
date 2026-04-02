@@ -351,18 +351,23 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                             isSearching = true
                             results     = emptyList()
                             scope.launch {
-                                val currentResults = mutableListOf<SearchResult>()
-                                val activeSources  = if (searchType == SourceType.SHOW) shows else movies
-                                activeSources.forEach { currentResults.add(scanner.scanSite(it, searchTerm)) }
-                                apiSites.forEach { site ->
-                                    when {
-                                        site.startsWith("stremio:") -> currentResults.addAll(scanner.scanStremio(site.removePrefix("stremio:"), searchTerm, searchType))
-                                        site.startsWith("v1:")      -> currentResults.addAll(scanner.scanV1(site.removePrefix("v1:"), searchTerm))
-                                        else                        -> currentResults.addAll(scanner.scanV1(site, searchTerm))
-                                    }
+                                val activeSources = if (searchType == SourceType.SHOW) shows else movies
+
+                                // Each site is awaited individually so the UI updates
+                                // the moment a result arrives instead of waiting for all.
+                                activeSources.forEach { source ->
+                                    val result = scanner.scanSite(source, searchTerm)
+                                    results = results + result
                                 }
-                                results             = currentResults
-                                SearchLogs.lastLogs = currentResults
+                                apiSites.forEach { site ->
+                                    val newResults = when {
+                                        site.startsWith("stremio:") -> scanner.scanStremio(site.removePrefix("stremio:"), searchTerm, searchType)
+                                        site.startsWith("v1:")      -> scanner.scanV1(site.removePrefix("v1:"), searchTerm)
+                                        else                        -> scanner.scanV1(site, searchTerm)
+                                    }
+                                    results = results + newResults
+                                }
+                                SearchLogs.lastLogs = results
                                 manualLinks         = manualChecks.map { scanner.getManualCheck(it, searchTerm) }
                                 isSearching         = false
                             }
