@@ -5,1197 +5,594 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>DVORA</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Sora:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
-:root {
-  --bg: #050508;
-  --surface: #0c0c14;
-  --surface2: #0f0f1a;
-  --border: #1a1a2e;
-  --border2: #252540;
-  --accent: #00ffe0;
-  --accent2: #ff00aa;
-  --accent3: #7b2fff;
-  --text: #c8ccd8;
-  --text-dim: #555870;
-  --found: #00ffe0;
-  --notfound: #ff3366;
-  --manual: #ffcc00;
-  --api-color: #aa66ff;
-  --log-info: #6688aa;
-  --log-match: #00ffe0;
-  --log-skip: #444466;
-  --log-warn: #ff9944;
-  --log-verdict-found: #00ffe0;
-  --log-verdict-notfound: #ff3366;
-  --subtitle: #ffaa00;
-}
-* { margin: 0; padding: 0; box-sizing: border-box; }
-
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: 'Share Tech Mono', monospace;
-  min-height: 100vh;
-  overflow-x: hidden;
-}
-
-body::before {
-  content: '';
-  position: fixed; inset: 0;
-  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,255,224,0.01) 2px, rgba(0,255,224,0.01) 4px);
-  pointer-events: none; z-index: 9999;
-}
-body::after {
-  content: '';
-  position: fixed; inset: 0;
-  background-image: linear-gradient(rgba(0,255,224,0.025) 1px, transparent 1px), linear-gradient(90deg, rgba(0,255,224,0.025) 1px, transparent 1px);
-  background-size: 40px 40px;
-  pointer-events: none; z-index: 0;
-}
-
-.app {
-  position: relative; z-index: 1;
-  display: flex; flex-direction: column; min-height: 100vh;
-}
-
-/* ===== TOP NAV ===== */
-.topnav {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 16px 28px;
-  border-bottom: 1px solid var(--border);
-  background: rgba(5,5,8,0.9);
-  backdrop-filter: blur(10px);
-  position: sticky; top: 0; z-index: 100;
-}
-
-.logo {
-  font-family: 'Orbitron', sans-serif;
-  font-weight: 900; font-size: 1.4rem;
-  letter-spacing: 0.4em;
-  background: linear-gradient(135deg, var(--accent), var(--accent3));
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  background-clip: text;
-  filter: drop-shadow(0 0 12px rgba(0,255,224,0.4));
-}
-
-.nav-right { display: flex; gap: 12px; align-items: center; }
-
-.nav-btn {
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 0.78rem;
-  letter-spacing: 0.1em;
-  padding: 8px 16px;
-  cursor: pointer;
-  transition: all 0.18s;
-  display: flex; align-items: center; gap: 8px;
-}
-.nav-btn:hover { border-color: var(--accent); color: var(--accent); }
-.nav-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(0,255,224,0.07); }
-.nav-btn .icon { font-size: 1rem; }
-
-/* ===== LAYOUT ===== */
-.main-content {
-  flex: 1;
-  max-width: 960px; width: 100%;
-  margin: 0 auto;
-  padding: 36px 24px 80px;
-}
-
-/* ===== SEARCH ===== */
-.search-panel {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  padding: 28px 28px 24px;
-  margin-bottom: 32px;
-  position: relative; overflow: hidden;
-}
-.search-panel::before {
-  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
-  background: linear-gradient(90deg, transparent, var(--accent), transparent);
-}
-
-.field-label {
-  display: block; font-size: 0.68rem; letter-spacing: 0.3em;
-  color: var(--accent); text-transform: uppercase; margin-bottom: 10px;
-}
-
-.search-row { display: flex; gap: 0; margin-bottom: 20px; }
-
-.search-input {
-  flex: 1;
-  background: #080810;
-  border: 1px solid var(--border); border-right: none;
-  color: var(--accent);
-  font-family: 'Share Tech Mono', monospace; font-size: 1.05rem;
-  padding: 13px 18px; outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
-  caret-color: var(--accent);
-}
-.search-input:focus { border-color: var(--accent); box-shadow: inset 0 0 20px rgba(0,255,224,0.04); }
-.search-input::placeholder { color: var(--text-dim); }
-
-.search-btn {
-  background: var(--accent); color: var(--bg);
-  border: none; font-family: 'Orbitron', sans-serif;
-  font-weight: 700; font-size: 0.78rem; letter-spacing: 0.15em;
-  padding: 13px 26px; cursor: pointer;
-  transition: background 0.2s, box-shadow 0.2s; text-transform: uppercase;
-}
-.search-btn:hover { background: #33ffec; box-shadow: 0 0 25px rgba(0,255,224,0.45); }
-.search-btn:disabled { background: var(--text-dim); cursor: not-allowed; box-shadow: none; }
-
-.subtitle-btn {
-  background: transparent;
-  border: 1px solid var(--subtitle);
-  color: var(--subtitle);
-  font-family: 'Orbitron', sans-serif;
-  font-weight: 700; font-size: 0.72rem; letter-spacing: 0.12em;
-  padding: 9px 18px; cursor: pointer;
-  transition: all 0.18s; text-transform: uppercase;
-  display: flex; align-items: center; gap: 7px;
-}
-.subtitle-btn:hover { background: rgba(255,170,0,0.08); box-shadow: 0 0 16px rgba(255,170,0,0.25); }
-.subtitle-btn:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
-
-.subtitle-panel {
-  display: none; margin-top: 28px;
-  background: var(--surface); border: 1px solid var(--border);
-  border-left: 3px solid var(--subtitle);
-  overflow: hidden;
-}
-.subtitle-panel.visible { display: block; }
-.subtitle-panel-header {
-  padding: 14px 20px 12px;
-  border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-between;
-  background: rgba(255,170,0,0.04);
-}
-.subtitle-panel-title {
-  font-family: 'Orbitron', sans-serif; font-size: 0.7rem;
-  letter-spacing: 0.25em; color: var(--subtitle); text-transform: uppercase;
-}
-.subtitle-panel-body { padding: 0; }
-
-.sub-result-card {
-  display: flex; align-items: center; gap: 14px;
-  padding: 14px 20px; border-bottom: 1px solid var(--border);
-  opacity: 0; animation: slide-in 0.25s forwards;
-  transition: background 0.15s;
-}
-.sub-result-card:last-child { border-bottom: none; }
-.sub-result-card:hover { background: rgba(255,255,255,0.02); }
-.sub-poster {
-  width: 42px; height: 60px; object-fit: cover;
-  border: 1px solid var(--border2); flex-shrink: 0;
-  background: var(--surface2);
-}
-.sub-poster-placeholder {
-  width: 42px; height: 60px; flex-shrink: 0;
-  background: var(--surface2); border: 1px solid var(--border2);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 1.2rem; color: var(--text-dim);
-}
-.sub-info { flex: 1; min-width: 0; }
-.sub-title-en { font-size: 0.88rem; color: var(--text); font-weight: bold; }
-.sub-title-he { font-size: 0.75rem; color: var(--text-dim); margin-top: 2px; }
-.sub-meta { font-size: 0.68rem; color: var(--text-dim); margin-top: 4px; }
-.sub-genres { font-size: 0.65rem; color: var(--text-dim); margin-top: 3px; }
-.sub-badge {
-  font-family: 'Orbitron', sans-serif; font-size: 0.6rem; font-weight: 700;
-  letter-spacing: 0.1em; padding: 3px 8px;
-  background: rgba(255,170,0,0.12); color: var(--subtitle);
-  border: 1px solid rgba(255,170,0,0.3); flex-shrink: 0;
-}
-.sub-empty {
-  padding: 36px; text-align: center;
-  color: var(--text-dim); font-size: 0.78rem; letter-spacing: 0.15em;
-}
-.sub-found-banner {
-  padding: 10px 20px;
-  background: rgba(0,255,224,0.06);
-  border-bottom: 1px solid rgba(0,255,224,0.15);
-  font-size: 0.72rem; color: var(--found); letter-spacing: 0.12em;
-}
-.sub-notfound-banner {
-  padding: 10px 20px;
-  background: rgba(255,51,102,0.05);
-  border-bottom: 1px solid rgba(255,51,102,0.12);
-  font-size: 0.72rem; color: var(--notfound); letter-spacing: 0.12em;
-}
-
-.mode-toggle { display: flex; gap: 10px; }
-.mode-btn {
-  flex: 1; background: transparent; border: 1px solid var(--border);
-  color: var(--text-dim); font-family: 'Share Tech Mono', monospace;
-  font-size: 0.82rem; letter-spacing: 0.12em; padding: 9px 18px;
-  cursor: pointer; transition: all 0.18s; text-transform: uppercase;
-}
-.mode-btn:hover { border-color: var(--accent); color: var(--accent); }
-.mode-btn.active { background: rgba(0,255,224,0.07); border-color: var(--accent); color: var(--accent); }
-
-/* Progress */
-.progress-wrap { display: none; margin-bottom: 24px; }
-.progress-wrap.visible { display: block; }
-.progress-label { font-size: 0.68rem; letter-spacing: 0.2em; color: var(--text-dim); margin-bottom: 7px; }
-.progress-track { height: 2px; background: var(--border); overflow: hidden; }
-.progress-fill {
-  height: 100%; width: 0%;
-  background: linear-gradient(90deg, var(--accent3), var(--accent));
-  transition: width 0.4s ease;
-  box-shadow: 0 0 8px rgba(0,255,224,0.6);
-}
-
-/* ===== RESULTS ===== */
-.results-header {
-  display: flex; align-items: baseline; gap: 14px; margin-bottom: 18px;
-}
-.results-title { font-family: 'Orbitron', sans-serif; font-size: 0.72rem; letter-spacing: 0.3em; color: var(--text-dim); text-transform: uppercase; }
-.results-count { font-size: 0.7rem; color: var(--accent); }
-
-.section-label {
-  font-size: 0.63rem; letter-spacing: 0.3em; text-transform: uppercase;
-  margin: 24px 0 12px; padding-left: 10px;
-  border-left: 2px solid var(--border); color: var(--text-dim);
-}
-.section-label.api { border-color: var(--api-color); color: var(--api-color); }
-.section-label.manual { border-color: var(--manual); color: var(--manual); }
-
-/* Result Card */
-.result-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-left: 3px solid transparent;
-  margin-bottom: 6px;
-  opacity: 0; transform: translateX(-6px);
-  animation: slide-in 0.25s forwards;
-  overflow: hidden;
-}
-@keyframes slide-in { to { opacity: 1; transform: translateX(0); } }
-
-.result-card.found { border-left-color: var(--found); background: linear-gradient(90deg, rgba(0,255,224,0.04), transparent 60%), var(--surface); }
-.result-card.not-found { opacity: 0.55; }
-.result-card.manual-card { border-left-color: var(--manual); opacity: 0.82; }
-
-.card-main {
-  display: flex; align-items: center; gap: 14px;
-  padding: 14px 18px; cursor: pointer;
-  transition: background 0.15s;
-}
-.card-main:hover { background: rgba(255,255,255,0.02); }
-
-.status-dot {
-  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
-}
-.dot-found { background: var(--found); box-shadow: 0 0 8px var(--found); }
-.dot-notfound { background: var(--text-dim); }
-.dot-manual { background: var(--manual); }
-.dot-pulse { background: var(--text-dim); animation: blink 1s infinite; }
-@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
-
-.card-info { flex: 1; min-width: 0; }
-.card-url { font-size: 0.82rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; }
-a.card-url:hover { color: var(--accent); }
-.card-movie-url { display: block; font-size: 0.7rem; color: var(--accent); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none; }
-.card-movie-url:hover { text-decoration: underline; }
-.card-error { font-size: 0.68rem; color: var(--notfound); margin-top: 3px; }
-
-.card-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
-
-.badge {
-  font-size: 0.6rem; letter-spacing: 0.12em; padding: 3px 7px;
-  border-radius: 2px; font-family: 'Orbitron', sans-serif; font-weight: 700;
-}
-.badge-found { background: rgba(0,255,224,0.12); color: var(--found); border: 1px solid rgba(0,255,224,0.3); }
-.badge-notfound { background: transparent; color: var(--text-dim); border: 1px solid var(--border); }
-.badge-manual { background: rgba(255,204,0,0.08); color: var(--manual); border: 1px solid rgba(255,204,0,0.3); }
-.badge-api { background: rgba(170,102,255,0.1); color: var(--api-color); border: 1px solid rgba(170,102,255,0.3); }
-
-.log-toggle {
-  background: transparent; border: 1px solid var(--border2);
-  color: var(--text-dim); font-family: 'Share Tech Mono', monospace;
-  font-size: 0.65rem; padding: 3px 8px; cursor: pointer; letter-spacing: 0.05em;
-  transition: all 0.15s; white-space: nowrap;
-}
-.log-toggle:hover { border-color: var(--accent3); color: var(--accent3); }
-.log-toggle.open { border-color: var(--accent3); color: var(--accent3); }
-
-/* Log panel */
-.log-panel {
-  display: none; background: #06060d;
-  border-top: 1px solid var(--border);
-  padding: 14px 18px 16px;
-  max-height: 320px; overflow-y: auto;
-}
-.log-panel.open { display: block; }
-.log-panel::-webkit-scrollbar { width: 4px; }
-.log-panel::-webkit-scrollbar-track { background: transparent; }
-.log-panel::-webkit-scrollbar-thumb { background: var(--border2); }
-
-.log-line {
-  font-size: 0.72rem; line-height: 1.7; padding: 1px 0;
-  display: flex; gap: 10px;
-}
-.log-prefix { flex-shrink: 0; width: 60px; font-size: 0.62rem; letter-spacing: 0.05em; text-transform: uppercase; }
-.log-info .log-prefix { color: var(--log-info); }
-.log-match .log-prefix { color: var(--log-match); }
-.log-skip .log-prefix { color: var(--log-skip); }
-.log-warn .log-prefix { color: var(--log-warn); }
-.log-verdict .log-prefix { color: #ffffff; font-weight: bold; }
-
-.log-info .log-msg { color: var(--log-info); }
-.log-match .log-msg { color: var(--log-match); }
-.log-skip .log-msg { color: var(--log-skip); }
-.log-warn .log-msg { color: var(--log-warn); }
-.log-verdict .log-msg {
-  font-weight: bold;
-}
-.log-verdict.verdict-found .log-msg { color: var(--log-verdict-found); }
-.log-verdict.verdict-notfound .log-msg { color: var(--log-verdict-notfound); }
-
-/* Stats */
-.stats-bar {
-  display: none; background: var(--surface);
-  border: 1px solid var(--border); padding: 18px 24px;
-  margin-top: 28px; gap: 36px; flex-wrap: wrap;
-}
-.stats-bar.visible { display: flex; }
-.stat-item { text-align: center; }
-.stat-num { font-family: 'Orbitron', sans-serif; font-size: 1.5rem; font-weight: 700; color: var(--accent); }
-.stat-num.hi { color: var(--found); text-shadow: 0 0 12px rgba(0,255,224,0.45); }
-.stat-label { font-size: 0.62rem; letter-spacing: 0.2em; color: var(--text-dim); text-transform: uppercase; margin-top: 4px; }
-
-/* Empty */
-.empty-state { text-align: center; padding: 70px 20px; color: var(--text-dim); }
-.empty-glyph { font-family: 'Orbitron', sans-serif; font-size: 2.5rem; font-weight: 900; color: var(--border2); display: block; margin-bottom: 14px; }
-.empty-text { font-size: 0.78rem; letter-spacing: 0.2em; }
-
-/* ===== SETTINGS PANEL ===== */
-.settings-overlay {
-  display: none; position: fixed; inset: 0; z-index: 200;
-  background: rgba(2,2,6,0.85); backdrop-filter: blur(6px);
-}
-.settings-overlay.open { display: flex; align-items: stretch; }
-
-.settings-drawer {
-  width: 100%; max-width: 820px; margin-left: auto;
-  background: var(--surface);
-  border-left: 1px solid var(--border);
-  display: flex; flex-direction: column;
-  animation: drawer-in 0.22s ease;
-  overflow: hidden;
-}
-@keyframes drawer-in { from { transform: translateX(40px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
-
-.settings-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 20px 28px; border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
-  background: linear-gradient(90deg, rgba(123,47,255,0.07), transparent);
-}
-.settings-title {
-  font-family: 'Orbitron', sans-serif; font-size: 0.85rem;
-  letter-spacing: 0.3em; color: var(--accent3); text-transform: uppercase;
-}
-.settings-close {
-  background: transparent; border: 1px solid var(--border);
-  color: var(--text-dim); font-family: 'Share Tech Mono', monospace;
-  font-size: 0.9rem; width: 32px; height: 32px; cursor: pointer;
-  transition: all 0.15s; display: flex; align-items: center; justify-content: center;
-}
-.settings-close:hover { border-color: var(--notfound); color: var(--notfound); }
-
-.settings-body {
-  flex: 1; overflow-y: auto; padding: 0;
-}
-.settings-body::-webkit-scrollbar { width: 4px; }
-.settings-body::-webkit-scrollbar-thumb { background: var(--border2); }
-
-/* Settings tabs */
-.stabs {
-  display: flex; border-bottom: 1px solid var(--border);
-  padding: 0 28px; overflow-x: auto; flex-shrink: 0;
-  gap: 0;
-}
-.stab {
-  background: transparent; border: none; border-bottom: 2px solid transparent;
-  color: var(--text-dim); font-family: 'Share Tech Mono', monospace;
-  font-size: 0.75rem; letter-spacing: 0.12em; padding: 14px 18px;
-  cursor: pointer; transition: all 0.15s; text-transform: uppercase;
-  white-space: nowrap;
-}
-.stab:hover { color: var(--text); }
-.stab.active { color: var(--accent3); border-bottom-color: var(--accent3); }
-
-.stab-content { display: none; padding: 24px 28px; }
-.stab-content.active { display: block; }
-
-/* Config editor */
-.config-section { margin-bottom: 28px; }
-.config-desc {
-  font-size: 0.72rem; color: var(--text-dim); line-height: 1.7;
-  margin-bottom: 14px; padding: 12px 14px;
-  background: rgba(255,255,255,0.02); border-left: 2px solid var(--border2);
-}
-.config-desc code {
-  color: var(--accent); font-family: 'Share Tech Mono', monospace;
-}
-.config-textarea {
-  width: 100%; background: #06060d;
-  border: 1px solid var(--border); color: var(--text);
-  font-family: 'Share Tech Mono', monospace; font-size: 0.8rem;
-  line-height: 1.7; padding: 14px 16px; resize: vertical;
-  outline: none; min-height: 180px; tab-size: 2;
-  transition: border-color 0.2s;
-}
-.config-textarea:focus { border-color: var(--accent3); }
-.config-textarea::placeholder { color: var(--text-dim); }
-
-.config-footer { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
-.save-btn {
-  background: var(--accent3); color: #fff; border: none;
-  font-family: 'Orbitron', sans-serif; font-weight: 700;
-  font-size: 0.72rem; letter-spacing: 0.15em; padding: 10px 22px;
-  cursor: pointer; transition: all 0.18s; text-transform: uppercase;
-}
-.save-btn:hover { background: #9944ff; box-shadow: 0 0 20px rgba(123,47,255,0.4); }
-.save-btn:disabled { background: var(--text-dim); cursor: not-allowed; }
-.save-status { font-size: 0.7rem; letter-spacing: 0.1em; }
-.save-status.ok { color: var(--found); }
-.save-status.err { color: var(--notfound); }
-
-/* ===== LOG VIEWER (settings) ===== */
-.log-viewer-panel { padding: 0; }
-
-.log-viewer-empty {
-  text-align: center; padding: 60px; color: var(--text-dim);
-  font-size: 0.78rem; letter-spacing: 0.15em;
-}
-
-.log-site-block { margin-bottom: 2px; }
-
-.log-site-header {
-  display: flex; align-items: center; gap: 12px;
-  padding: 12px 18px; background: var(--surface2);
-  border-bottom: 1px solid var(--border);
-  cursor: pointer; transition: background 0.15s;
-}
-.log-site-header:hover { background: rgba(255,255,255,0.02); }
-.log-site-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.log-site-url { flex: 1; font-size: 0.78rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.log-site-verdict {
-  font-size: 0.62rem; font-family: 'Orbitron', sans-serif; font-weight: 700;
-  letter-spacing: 0.1em; padding: 2px 7px; border-radius: 2px;
-}
-.log-site-verdict.found { color: var(--found); border: 1px solid rgba(0,255,224,0.3); background: rgba(0,255,224,0.08); }
-.log-site-verdict.notfound { color: var(--text-dim); border: 1px solid var(--border); }
-.log-site-verdict.manual { color: var(--manual); border: 1px solid rgba(255,204,0,0.3); background: rgba(255,204,0,0.06); }
-.log-expand { font-size: 0.7rem; color: var(--text-dim); flex-shrink: 0; }
-
-.log-site-body {
-  display: none; background: #06060d;
-  border-bottom: 1px solid var(--border);
-  padding: 12px 18px; max-height: 280px; overflow-y: auto;
-}
-.log-site-body.open { display: block; }
-
-.log-search-query {
-  padding: 16px 18px 14px;
-  border-bottom: 1px solid var(--border);
-  background: rgba(123,47,255,0.05);
-}
-.log-search-query-label { font-size: 0.65rem; letter-spacing: 0.2em; color: var(--accent3); text-transform: uppercase; margin-bottom: 4px; }
-.log-search-query-value { font-size: 0.9rem; color: var(--text); }
+:root{--hg:#FFC107;--da:#FF8F00;--po:#FF6D00;--fg:#558B2F;--fgl:#8BC34A;--na:#FF8F00;--bg:#1C1500;--sf:#2A1F00;--s2:#3A2B00;--br:#4A3800;--b2:#5E4A00;--tx:#FFE082;--td:#FFCC80;--tm:#A07820;--sub:#FFAB00;--api:#FFC107;--man:#FF8F00;--li:#A07820;--lm:#8BC34A;--ls:#5A4800;--lw:#FF8F00;}
+body.light{--bg:#FFFDE7;--sf:#FFECB3;--s2:#FFE082;--br:#FFD54F;--b2:#FFC107;--tx:#1A1200;--td:#4E3B00;--tm:#7A5800;--li:#7A5800;--ls:#BFA040;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--tx);font-family:'Nunito',sans-serif;min-height:100vh;overflow-x:hidden;transition:background .3s,color .3s;}
+body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(circle,rgba(255,193,7,.04) 1px,transparent 1px);background-size:28px 28px;pointer-events:none;z-index:0;}
+.app{position:relative;z-index:1;display:flex;flex-direction:column;min-height:100vh;}
+/* NAV */
+.topnav{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:var(--bg);border-bottom:2px solid var(--br);position:sticky;top:0;z-index:100;backdrop-filter:blur(10px);}
+.logo{display:flex;align-items:center;gap:9px;font-family:'Sora',sans-serif;font-weight:800;font-size:1.25rem;letter-spacing:.35em;color:var(--hg);cursor:pointer;}
+.nav-right{display:flex;gap:7px;align-items:center;}
+.nav-btn{background:transparent;border:1.5px solid var(--b2);color:var(--tm);font-family:'Nunito',sans-serif;font-size:.8rem;font-weight:700;padding:6px 12px;cursor:pointer;border-radius:8px;transition:all .18s;display:flex;align-items:center;gap:5px;}
+.nav-btn:hover,.nav-btn.active{border-color:var(--hg);color:var(--hg);background:rgba(255,193,7,.08);}
+.tbtn{background:transparent;border:1.5px solid var(--b2);color:var(--hg);font-size:1.05rem;padding:5px 9px;cursor:pointer;border-radius:8px;transition:all .18s;}
+.tbtn:hover{background:rgba(255,193,7,.1);}
+/* VIEWS */
+.view{display:none;flex:1;flex-direction:column;}
+.view.active{display:flex;}
+/* CONTENT */
+.mc{flex:1;max-width:860px;width:100%;margin:0 auto;padding:22px 16px 70px;}
+/* SEARCH CARD */
+.sp{background:var(--sf);border:1.5px solid var(--br);border-radius:16px;padding:18px 18px 15px;margin-bottom:18px;box-shadow:0 4px 18px rgba(0,0,0,.25);}
+.fl{display:block;font-size:.68rem;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:var(--da);margin-bottom:7px;}
+.sr{display:flex;margin-bottom:13px;border-radius:10px;overflow:hidden;border:1.5px solid var(--b2);}
+.si{flex:1;background:var(--bg);border:none;outline:none;color:var(--tx);font-family:'Nunito',sans-serif;font-size:.97rem;font-weight:600;padding:11px 14px;caret-color:var(--hg);}
+.si::placeholder{color:var(--tm);font-weight:400;}
+.sb{background:var(--bg);border:none;border-left:1.5px solid var(--b2);color:var(--hg);font-family:'Sora',sans-serif;font-weight:700;font-size:.8rem;letter-spacing:.1em;padding:11px 18px;cursor:pointer;transition:all .2s;white-space:nowrap;}
+.sb:hover:not(:disabled){background:var(--hg);color:var(--bg);}
+.sb:disabled{opacity:.4;cursor:not-allowed;}
+.mt{display:flex;gap:9px;}
+.mb{flex:1;background:transparent;border:1.5px solid var(--b2);color:var(--tm);font-family:'Nunito',sans-serif;font-size:.86rem;font-weight:700;padding:9px 0;cursor:pointer;border-radius:10px;transition:all .18s;text-align:center;}
+.mb:hover{border-color:var(--hg);color:var(--hg);}
+.mb.active{background:var(--bg);border-color:var(--hg);color:var(--hg);box-shadow:0 0 0 1px var(--hg);}
+/* PROGRESS */
+.pw{display:none;margin-bottom:15px;}
+.pw.visible{display:block;}
+.pl{font-size:.68rem;font-weight:800;letter-spacing:.2em;color:var(--tm);margin-bottom:5px;text-transform:uppercase;}
+.pt{height:3px;background:var(--br);border-radius:2px;overflow:hidden;}
+.pf{height:100%;width:0%;background:linear-gradient(90deg,var(--da),var(--hg));transition:width .4s ease;border-radius:2px;}
+/* SECTION DIVIDERS */
+.sd{display:flex;align-items:center;gap:11px;margin:16px 0 9px;}
+.sdl{flex:1;height:2px;background:var(--br);border-radius:1px;}
+.sdt{font-family:'Sora',sans-serif;font-size:.63rem;font-weight:700;letter-spacing:.22em;text-transform:uppercase;color:var(--tm);white-space:nowrap;}
+.sd.api .sdt{color:var(--api);}.sd.api .sdl{background:rgba(255,193,7,.28);}
+.sd.man .sdt{color:var(--man);}.sd.man .sdl{background:rgba(255,143,0,.28);}
+/* RESULT CARDS */
+.rc{background:var(--sf);border:1.5px solid var(--br);border-radius:13px;margin-bottom:7px;overflow:hidden;opacity:0;transform:translateY(5px);animation:ci .22s forwards;}
+@keyframes ci{to{opacity:1;transform:translateY(0);}}
+.rc.found{border-color:rgba(139,195,74,.38);}
+.rc.notfound{opacity:.65;}
+.rc.man{border-color:rgba(255,143,0,.28);}
+.cm{display:flex;align-items:stretch;cursor:pointer;}
+.cb{width:5px;flex-shrink:0;border-radius:12px 0 0 12px;}
+.cb.f{background:var(--fg);}.cb.nf{background:var(--da);}.cb.m{background:var(--man);}.cb.a{background:var(--hg);}
+.cd{flex:1;padding:11px 12px;min-width:0;}
+.csr{display:flex;align-items:center;gap:7px;margin-bottom:3px;}
+.se{font-size:1rem;}
+.st{font-weight:800;font-size:.82rem;}
+.stf{color:var(--fgl);}.stnf{color:var(--na);}.stm{color:var(--man);}
+.cu{font-size:.73rem;color:var(--tm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;display:block;text-decoration:none;margin-bottom:1px;}
+a.cu:hover{color:var(--hg);}
+.cdet{font-size:.7rem;color:var(--td);margin-top:2px;font-weight:600;}
+.cmu{display:block;font-size:.68rem;color:var(--da);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-decoration:none;}
+.cmu:hover{text-decoration:underline;}
+.cerr{font-size:.67rem;color:var(--po);margin-top:3px;}
+.cr{display:flex;align-items:center;gap:7px;padding:11px 12px 11px 0;flex-shrink:0;}
+.badge{font-family:'Sora',sans-serif;font-size:.58rem;font-weight:700;letter-spacing:.1em;padding:3px 8px;border-radius:6px;}
+.bf{background:rgba(139,195,74,.14);color:var(--fgl);border:1px solid rgba(139,195,74,.33);}
+.bnf{background:transparent;color:var(--tm);border:1px solid var(--b2);}
+.bm{background:rgba(255,143,0,.1);color:var(--man);border:1px solid rgba(255,143,0,.28);}
+.ba{background:rgba(255,193,7,.1);color:var(--api);border:1px solid rgba(255,193,7,.22);}
+.lt{background:transparent;border:1px solid var(--b2);color:var(--tm);font-family:'Nunito',sans-serif;font-weight:700;font-size:.61rem;padding:3px 8px;cursor:pointer;border-radius:6px;transition:all .15s;white-space:nowrap;}
+.lt:hover,.lt.open{border-color:var(--da);color:var(--da);}
+.lp{display:none;background:var(--bg);border-top:1px solid var(--br);padding:10px 14px 12px;max-height:250px;overflow-y:auto;}
+.lp.open{display:block;}
+.ll{font-size:.68rem;line-height:1.75;display:flex;gap:9px;}
+.lpr{flex-shrink:0;width:52px;font-size:.6rem;letter-spacing:.05em;text-transform:uppercase;font-weight:700;}
+.log-info .lpr,.log-info .lmsg{color:var(--li);}
+.log-match .lpr,.log-match .lmsg{color:var(--lm);}
+.log-skip .lpr,.log-skip .lmsg{color:var(--ls);}
+.log-warn .lpr,.log-warn .lmsg{color:var(--lw);}
+.log-verdict .lpr{color:var(--hg);font-weight:900;}
+.log-verdict.vf .lmsg{color:var(--fgl);font-weight:700;}
+.log-verdict.vnf .lmsg{color:var(--po);font-weight:700;}
+/* STATS */
+.statsbar{display:none;background:var(--sf);border:1.5px solid var(--br);border-radius:13px;padding:13px 18px;margin-top:18px;}
+.statsbar.visible{display:flex;justify-content:space-around;}
+.stn{font-family:'Sora',sans-serif;font-size:1.45rem;font-weight:800;color:var(--hg);}
+.stn.hi{color:var(--fgl);}
+.stl{font-size:.58rem;font-weight:700;letter-spacing:.2em;color:var(--tm);text-transform:uppercase;margin-top:2px;}
+/* EMPTY */
+.empty{text-align:center;padding:55px 20px;color:var(--tm);}
+.eg{font-size:2.8rem;margin-bottom:11px;display:block;}
+.et{font-size:.8rem;font-weight:600;letter-spacing:.1em;}
+/* SCREEN HEADERS */
+.sh{display:flex;align-items:center;padding:12px 16px;background:var(--bg);border-bottom:2px solid var(--br);flex-shrink:0;}
+.sbk{background:transparent;border:1.5px solid var(--b2);color:var(--hg);font-size:.95rem;padding:6px 11px;cursor:pointer;border-radius:8px;transition:all .18s;margin-right:11px;}
+.sbk:hover{background:rgba(255,193,7,.1);}
+.shtitle{flex:1;font-family:'Sora',sans-serif;font-weight:800;font-size:1rem;letter-spacing:.1em;color:var(--hg);}
+.scontent{flex:1;overflow-y:auto;padding:18px 16px 60px;max-width:860px;width:100%;margin:0 auto;}
+/* SUBTITLE CARDS */
+.subcard{background:var(--sf);border:1.5px solid var(--br);border-radius:13px;margin-bottom:7px;display:flex;align-items:stretch;overflow:hidden;cursor:pointer;transition:border-color .18s;opacity:0;animation:ci .22s forwards;}
+.subcard:hover{border-color:var(--b2);}
+.subcard.sfound{border-color:rgba(139,195,74,.36);}
+.subb{width:5px;flex-shrink:0;border-radius:12px 0 0 12px;}
+.subb.f{background:var(--fg);}.subb.nf{background:var(--da);}
+.subbody{flex:1;padding:12px 13px;min-width:0;}
+.subtit{font-weight:800;font-size:.88rem;color:var(--tx);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.subimdbrow{display:flex;align-items:center;gap:6px;margin-top:4px;}
+.imdbbadge{background:#F5C518;color:#000;font-family:'Sora',sans-serif;font-size:.62rem;font-weight:900;padding:2px 6px;border-radius:4px;flex-shrink:0;}
+.subimdbid{font-size:.72rem;color:var(--tm);font-weight:600;}
+.suburl{font-size:.7rem;color:var(--sub);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.subactions{display:flex;flex-direction:column;align-items:center;gap:5px;padding:11px 11px 11px 0;flex-shrink:0;}
+.cpbtn{background:transparent;border:1px solid var(--b2);color:var(--da);font-size:.67rem;padding:4px 7px;cursor:pointer;border-radius:6px;font-family:'Nunito',sans-serif;font-weight:700;white-space:nowrap;transition:all .15s;}
+.cpbtn:hover{border-color:var(--da);background:rgba(255,143,0,.07);}
+.sbadge{font-family:'Sora',sans-serif;font-size:.58rem;font-weight:700;padding:3px 8px;border-radius:6px;background:rgba(139,195,74,.12);color:var(--fgl);border:1px solid rgba(139,195,74,.28);}
+.snbadge{font-family:'Sora',sans-serif;font-size:.58rem;font-weight:700;padding:3px 8px;border-radius:6px;background:transparent;color:var(--tm);border:1px solid var(--b2);}
+/* IMDB CARDS */
+.imdbcard{background:var(--sf);border:1.5px solid var(--br);border-radius:13px;margin-bottom:7px;overflow:hidden;opacity:0;transform:translateY(5px);animation:ci .22s forwards;cursor:pointer;transition:border-color .18s;}
+.imdbcard:hover{border-color:var(--b2);}
+.imdbinner{display:flex;align-items:stretch;}
+.imdbposter{width:68px;flex-shrink:0;background:var(--s2);}
+.imdbposter img{width:68px;height:98px;object-fit:cover;display:block;}
+.imdbph{width:68px;height:98px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;color:var(--tm);background:var(--s2);}
+.imdbinfo{flex:1;padding:11px 12px;min-width:0;}
+.imdbtitle{font-weight:800;font-size:.9rem;color:var(--tx);margin-bottom:4px;}
+.imdbmeta{display:flex;align-items:center;gap:7px;margin-bottom:5px;}
+.imdbyear{font-size:.78rem;font-weight:700;color:var(--hg);}
+.imdbtype{background:#F5C518;color:#000;font-size:.58rem;font-weight:900;padding:2px 6px;border-radius:4px;font-family:'Sora',sans-serif;}
+.imdbidrow{display:flex;align-items:center;gap:6px;}
+.imdbidtx{font-size:.7rem;color:var(--tm);font-weight:600;}
+.imdbactions{display:flex;flex-direction:column;align-items:center;gap:5px;padding:11px 11px 11px 0;flex-shrink:0;}
+.imdbload{height:3px;background:linear-gradient(90deg,var(--da),var(--hg));border-radius:2px;margin-top:9px;display:none;}
+.imdbload.visible{display:block;animation:shimmer 1.2s infinite;}
+@keyframes shimmer{0%{opacity:.35}50%{opacity:1}100%{opacity:.35}}
+/* SETTINGS */
+.sov{display:none;position:fixed;inset:0;z-index:200;background:rgba(20,12,0,.78);backdrop-filter:blur(5px);}
+.sov.open{display:flex;align-items:stretch;}
+.sdrawer{width:100%;max-width:760px;margin-left:auto;background:var(--bg);border-left:2px solid var(--br);display:flex;flex-direction:column;animation:drw .22s ease;overflow:hidden;}
+@keyframes drw{from{transform:translateX(40px);opacity:0}to{transform:translateX(0);opacity:1}}
+.sheader{display:flex;align-items:center;justify-content:space-between;padding:13px 20px;border-bottom:2px solid var(--br);background:var(--sf);flex-shrink:0;}
+.stitle{font-family:'Sora',sans-serif;font-size:.9rem;font-weight:800;letter-spacing:.15em;color:var(--hg);text-transform:uppercase;}
+.scls{background:transparent;border:1.5px solid var(--b2);color:var(--tm);font-size:.88rem;width:30px;height:30px;cursor:pointer;border-radius:8px;transition:all .15s;display:flex;align-items:center;justify-content:center;}
+.scls:hover{border-color:var(--po);color:var(--po);}
+.stabs{display:flex;border-bottom:2px solid var(--br);background:var(--sf);padding:0 10px;overflow-x:auto;flex-shrink:0;}
+.stabs::-webkit-scrollbar{height:0;}
+.stab{background:transparent;border:none;border-bottom:3px solid transparent;margin-bottom:-2px;color:rgba(255,193,7,.38);font-family:'Nunito',sans-serif;font-size:.76rem;font-weight:700;letter-spacing:.08em;padding:11px 14px;cursor:pointer;transition:all .15s;text-transform:uppercase;white-space:nowrap;}
+.stab:hover{color:rgba(255,193,7,.7);}
+.stab.active{color:var(--hg);border-bottom-color:var(--hg);}
+.sbody{flex:1;overflow-y:auto;}
+.sbody::-webkit-scrollbar{width:4px;}
+.sbody::-webkit-scrollbar-thumb{background:var(--b2);border-radius:2px;}
+.stabc{display:none;padding:18px 20px;}
+.stabc.active{display:block;}
+.cdesc{font-size:.72rem;color:var(--tm);line-height:1.75;margin-bottom:12px;padding:10px 12px;background:var(--sf);border-left:3px solid var(--b2);border-radius:0 8px 8px 0;}
+.cdesc code{color:var(--hg);font-family:monospace;background:rgba(255,193,7,.1);padding:1px 5px;border-radius:4px;}
+.cta{width:100%;background:var(--bg);border:1.5px solid var(--br);color:var(--tx);font-family:monospace;font-size:.78rem;line-height:1.7;padding:10px 12px;resize:vertical;outline:none;min-height:175px;border-radius:10px;transition:border-color .2s;}
+.cta:focus{border-color:var(--hg);}
+.cta::placeholder{color:var(--tm);}
+.cfoot{display:flex;gap:9px;align-items:center;margin-top:10px;}
+.savebtn{background:var(--bg);border:1.5px solid var(--hg);color:var(--hg);font-family:'Sora',sans-serif;font-weight:700;font-size:.72rem;letter-spacing:.12em;padding:7px 18px;cursor:pointer;border-radius:9px;transition:all .18s;text-transform:uppercase;}
+.savebtn:hover{background:var(--hg);color:var(--bg);}
+.ss{font-size:.7rem;font-weight:700;letter-spacing:.08em;}
+.ss.ok{color:var(--fgl);}.ss.err{color:var(--po);}
+/* LOG VIEWER */
+.lve{text-align:center;padding:50px;color:var(--tm);font-size:.78rem;letter-spacing:.12em;}
+.lsb{margin-bottom:2px;}
+.lsh{display:flex;align-items:center;gap:11px;padding:10px 15px;background:var(--sf);border-bottom:1px solid var(--br);cursor:pointer;transition:background .15s;}
+.lsh:hover{background:var(--s2);}
+.lsd{width:7px;height:7px;border-radius:50%;flex-shrink:0;}
+.lsu{flex:1;font-size:.75rem;color:var(--tx);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;}
+.lsv{font-family:'Sora',sans-serif;font-size:.6rem;font-weight:700;letter-spacing:.1em;padding:2px 7px;border-radius:6px;}
+.lsv.found{color:var(--fgl);border:1px solid rgba(139,195,74,.33);background:rgba(139,195,74,.09);}
+.lsv.notfound{color:var(--tm);border:1px solid var(--br);}
+.lsv.manual{color:var(--man);border:1px solid rgba(255,143,0,.28);background:rgba(255,143,0,.06);}
+.lexp{font-size:.68rem;color:var(--tm);flex-shrink:0;}
+.lsbody{display:none;background:var(--bg);border-bottom:1px solid var(--br);padding:10px 15px;max-height:230px;overflow-y:auto;}
+.lsbody.open{display:block;}
+.lsq{padding:12px 15px;border-bottom:1px solid var(--br);background:rgba(255,193,7,.04);}
+.lsqlabel{font-size:.62rem;font-weight:800;letter-spacing:.2em;color:var(--hg);text-transform:uppercase;margin-bottom:3px;}
+.lsqval{font-size:.86rem;color:var(--tx);font-weight:600;}
+::-webkit-scrollbar{width:5px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:var(--b2);border-radius:3px;}
 </style>
 </head>
 <body>
 <div class="app">
 
-  <!-- Top Nav -->
-  <nav class="topnav">
-    <div class="logo">DVORA</div>
-    <div class="nav-right">
-      <button class="nav-btn" id="settingsBtn" onclick="openSettings()">
-        <span class="icon">⚙</span> Settings
-      </button>
-    </div>
-  </nav>
+<nav class="topnav">
+  <div class="logo" onclick="showView('main')"><span style="font-size:1.35rem;letter-spacing:0">🐝</span> DVORA</div>
+  <div class="nav-right">
+    <button class="tbtn" id="themeBtn" onclick="toggleTheme()">🌙</button>
+    <button class="nav-btn" id="navImdb" onclick="showView('imdb')"><span style="background:#F5C518;color:#000;font-weight:900;font-size:.62rem;padding:1px 5px;border-radius:3px;font-family:'Sora',sans-serif;">IMDb</span></button>
+    <button class="nav-btn" id="navSubs" onclick="showView('subtitles')">💬 Subtitles</button>
+    <button class="nav-btn" id="settingsBtn" onclick="openSettings()">⚙️ Settings</button>
+  </div>
+</nav>
 
-  <!-- Main -->
-  <div class="main-content">
-
-    <div class="search-panel">
-      <label class="field-label">// Search Query</label>
-      <div class="search-row">
-        <input type="text" id="searchInput" class="search-input" placeholder="Enter movie or show name..." autocomplete="off"/>
-        <button id="searchBtn" class="search-btn" onclick="doSearch()">SCAN</button>
+<!-- MAIN SEARCH VIEW -->
+<div class="view active" id="view-main">
+  <div class="mc">
+    <div class="sp">
+      <label class="fl">🍯 Search Movie or Show</label>
+      <div class="sr">
+        <input type="text" id="searchInput" class="si" placeholder="Enter title..." autocomplete="off"/>
+        <button id="searchBtn" class="sb" onclick="doSearch()">🐝 Buzz</button>
       </div>
-      <label class="field-label">// Mode</label>
-      <div style="display:flex; gap:10px; align-items:stretch; flex-wrap:wrap;">
-        <div class="mode-toggle" style="flex:1;">
-          <button class="mode-btn active" id="btnShows" onclick="setMode('shows')">📺 Shows</button>
-          <button class="mode-btn" id="btnMovies" onclick="setMode('movies')">🎬 Movies</button>
-        </div>
-        <button class="subtitle-btn" id="subtitleBtn" onclick="doSubtitleSearch()">
-          <span>💬</span> Search Subtitles
-        </button>
+      <label class="fl">Mode</label>
+      <div class="mt">
+        <button class="mb active" id="btnShows" onclick="setMode('shows')">📺  Shows</button>
+        <button class="mb" id="btnMovies" onclick="setMode('movies')">🎬  Movies</button>
       </div>
     </div>
-
-    <div class="progress-wrap" id="progressWrap">
-      <div class="progress-label" id="progressLabel">SCANNING...</div>
-      <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
-    </div>
-
-    <div id="resultsArea">
-      <div class="empty-state">
-        <span class="empty-glyph">//</span>
-        <div class="empty-text">Awaiting search query...</div>
-      </div>
-    </div>
-
-    <div class="stats-bar" id="statsBar">
-      <div class="stat-item"><div class="stat-num hi" id="statFound">0</div><div class="stat-label">Found</div></div>
-      <div class="stat-item"><div class="stat-num" id="statTotal">0</div><div class="stat-label">Sites Checked</div></div>
-      <div class="stat-item"><div class="stat-num" id="statManual">0</div><div class="stat-label">Manual Checks</div></div>
-    </div>
-
-    <!-- Subtitle Results Panel -->
-    <div class="subtitle-panel" id="subtitlePanel">
-      <div class="subtitle-panel-header">
-        <span class="subtitle-panel-title">💬 Subtitle Results — Wizdom.xyz</span>
-        <button style="background:transparent;border:none;color:var(--text-dim);cursor:pointer;font-size:0.9rem;" onclick="closeSubtitlePanel()">✕</button>
-      </div>
-      <div class="subtitle-panel-body" id="subtitleBody"></div>
+    <div class="pw" id="pw"><div class="pl">🐝 Scanning hive...</div><div class="pt"><div class="pf" id="pf"></div></div></div>
+    <div id="resultsArea"><div class="empty"><span class="eg">🐝</span><div class="et">Awaiting search query...</div></div></div>
+    <div class="statsbar" id="statsBar">
+      <div><div class="stn hi" id="statFound">0</div><div class="stl">Found</div></div>
+      <div><div class="stn" id="statTotal">0</div><div class="stl">Sites Checked</div></div>
+      <div><div class="stn" id="statManual">0</div><div class="stl">Manual Checks</div></div>
     </div>
   </div>
+</div>
 
-  <!-- Settings Overlay -->
-  <div class="settings-overlay" id="settingsOverlay" onclick="overlayClick(event)">
-    <div class="settings-drawer" id="settingsDrawer">
-      <div class="settings-header">
-        <div class="settings-title">⚙ Settings</div>
-        <button class="settings-close" onclick="closeSettings()">✕</button>
+<!-- SUBTITLES VIEW -->
+<div class="view" id="view-subtitles">
+  <div class="sh">
+    <button class="sbk" onclick="showView('main')">← Back</button>
+    <div class="shtitle">🎞️ Hebrew Subtitles</div>
+    <button class="tbtn" onclick="toggleTheme()" style="margin-left:8px">🌙</button>
+  </div>
+  <div class="scontent">
+    <div class="sp" style="margin-bottom:16px">
+      <label class="fl">🍯 Movie or Show Name</label>
+      <div class="sr">
+        <input type="text" id="subInput" class="si" placeholder="Type to search..." autocomplete="off" oninput="debSub()"/>
+        <button class="sb" onclick="doSubSearch()">🐝 Search</button>
       </div>
-
-      <!-- Tabs -->
-      <div class="stabs" id="stabs">
-        <button class="stab active" onclick="switchTab('shows')">Shows URLs</button>
-        <button class="stab" onclick="switchTab('movies')">Movies URLs</button>
-        <button class="stab" onclick="switchTab('manual')">Manual Checks</button>
-        <button class="stab" onclick="switchTab('api')">API Sites</button>
-        <button class="stab" onclick="switchTab('logs')">Search Logs</button>
+      <label class="fl">Mode</label>
+      <div class="mt">
+        <button class="mb active" id="subBtnShows" onclick="setSubMode('shows')">📺  Shows</button>
+        <button class="mb" id="subBtnMovies" onclick="setSubMode('movies')">🎬  Movies</button>
       </div>
+      <div class="pw" id="subpw" style="margin-top:10px;margin-bottom:0"><div class="pt"><div class="pf" style="width:100%;animation:shimmer 1.2s infinite"></div></div></div>
+    </div>
+    <div id="subArea"><div class="empty"><span class="eg">🎞️</span><div class="et">Search for Hebrew subtitles on Wizdom</div></div></div>
+  </div>
+</div>
 
-      <div class="settings-body">
-
-        <!-- Shows tab -->
-        <div class="stab-content active" id="tab-shows">
-          <div class="config-desc">
-            One URL prefix per line. The search term is appended directly.<br>
-            <code>+</code> prefix → spaces become <code>+</code> &nbsp;|&nbsp;
-            <code>-</code> prefix → spaces become <code>-</code> &nbsp;|&nbsp;
-            no prefix → spaces kept as-is.<br>
-            Lines starting with <code>#</code> are comments.
-          </div>
-          <textarea class="config-textarea" id="shows-textarea" rows="12" placeholder="+https://example.com/search?q=&#10;-https://other.com/find/"></textarea>
-          <div class="config-footer">
-            <button class="save-btn" onclick="saveConfig('shows.txt','shows-textarea','shows-status')">SAVE</button>
-            <span class="save-status" id="shows-status"></span>
-          </div>
-        </div>
-
-        <!-- Movies tab -->
-        <div class="stab-content" id="tab-movies">
-          <div class="config-desc">
-            Same format as Shows — one URL prefix per line.<br>
-            <code>+</code> / <code>-</code> prefix controls space replacement.
-          </div>
-          <textarea class="config-textarea" id="movies-textarea" rows="12" placeholder="+https://example.com/search?q="></textarea>
-          <div class="config-footer">
-            <button class="save-btn" onclick="saveConfig('movies.txt','movies-textarea','movies-status')">SAVE</button>
-            <span class="save-status" id="movies-status"></span>
-          </div>
-        </div>
-
-        <!-- Manual tab -->
-        <div class="stab-content" id="tab-manual">
-          <div class="config-desc">
-            These URLs are NOT auto-scanned — they're shown as clickable links for you to check manually in your browser.<br>
-            Same <code>+</code> / <code>-</code> prefix convention applies.
-          </div>
-          <textarea class="config-textarea" id="manual-textarea" rows="12" placeholder="+https://example.com/search?q="></textarea>
-          <div class="config-footer">
-            <button class="save-btn" onclick="saveConfig('manual_checks.txt','manual-textarea','manual-status')">SAVE</button>
-            <span class="save-status" id="manual-status"></span>
-          </div>
-        </div>
-
-        <!-- API tab -->
-        <div class="stab-content" id="tab-api">
-          <div class="config-desc">
-            One entry per line. Use a prefix to select the API type:<br><br>
-            <code>v1:https://ww3.somesite.com</code> — uses <code>/searching?q=</code> JSON endpoint (default)<br>
-            <code>stremio:https://v3-cinemeta.strem.io</code> — uses Cinemeta/Stremio catalog endpoint<br><br>
-            A bare URL with no prefix is treated as <code>v1:</code>.
-          </div>
-          <textarea class="config-textarea" id="api-textarea" rows="12" placeholder="https://ww3.somesite.com"></textarea>
-          <div class="config-footer">
-            <button class="save-btn" onclick="saveConfig('api_sites.txt','api-textarea','api-status')">SAVE</button>
-            <span class="save-status" id="api-status"></span>
-          </div>
-        </div>
-
-        <!-- Logs tab -->
-        <div class="stab-content" id="tab-logs">
-          <div id="logViewerPanel" class="log-viewer-panel">
-            <div class="log-viewer-empty" id="logEmpty">No search results yet. Run a search first.</div>
-            <div id="logSearchMeta" style="display:none">
-              <div class="log-search-query">
-                <div class="log-search-query-label">Last Search</div>
-                <div class="log-search-query-value" id="logQueryDisplay"></div>
-              </div>
-              <div id="logSiteBlocks"></div>
-            </div>
-            <div id="logSubtitleMeta" style="display:none">
-              <div class="log-search-query" style="background:rgba(255,170,0,0.04);border-top:1px solid var(--border);">
-                <div class="log-search-query-label" style="color:var(--subtitle);">Last Subtitle Search</div>
-                <div class="log-search-query-value" id="logSubtitleQueryDisplay"></div>
-              </div>
-              <div id="logSubtitleBlocks"></div>
-            </div>
-          </div>
-        </div>
-
-      </div><!-- /settings-body -->
-    </div><!-- /settings-drawer -->
-  </div><!-- /settings-overlay -->
-
-</div><!-- /app -->
-
-<script>
-// ===== STATE =====
-let mode = 'shows';
-let lastResults = null;
-let lastSubtitleResults = null;
-let activeTab = 'shows';
-
-// ===== MODE =====
-function setMode(m) {
-  mode = m;
-  document.getElementById('btnShows').classList.toggle('active', m === 'shows');
-  document.getElementById('btnMovies').classList.toggle('active', m === 'movies');
-}
-
-// ===== SEARCH =====
-document.getElementById('searchInput').addEventListener('keydown', e => {
-  if (e.key === 'Enter') doSearch();
-});
-
-function setProgress(pct) {
-  document.getElementById('progressFill').style.width = pct + '%';
-}
-
-function doSearch() {
-  const q = document.getElementById('searchInput').value.trim();
-  if (!q) return;
-
-  const btn = document.getElementById('searchBtn');
-  btn.disabled = true;
-  btn.textContent = 'SCANNING...';
-
-  document.getElementById('progressWrap').classList.add('visible');
-  setProgress(15);
-
-  document.getElementById('statsBar').classList.remove('visible');
-  document.getElementById('resultsArea').innerHTML =
-    '<div class="empty-state"><span class="empty-glyph">//</span><div class="empty-text">Scanning sites...</div></div>';
-
-  fetch(`/search?q=${encodeURIComponent(q)}&mode=${mode}`)
-    .then(r => r.json())
-    .then(data => {
-      setProgress(100);
-      setTimeout(() => {
-        document.getElementById('progressWrap').classList.remove('visible');
-        setProgress(0);
-      }, 500);
-      lastResults = data;
-      renderResults(data);
-      btn.disabled = false;
-      btn.textContent = 'SCAN';
-      // Update log tab if settings is open
-      if (document.getElementById('settingsOverlay').classList.contains('open') && activeTab === 'logs') {
-        renderLogs();
-      }
-    })
-    .catch(err => {
-      document.getElementById('resultsArea').innerHTML =
-        `<div class="empty-state"><span class="empty-glyph">!</span><div class="empty-text">Error: ${err.message}</div></div>`;
-      btn.disabled = false;
-      btn.textContent = 'SCAN';
-      document.getElementById('progressWrap').classList.remove('visible');
-    });
-}
-
-// ===== RENDER RESULTS =====
-function renderResults(data) {
-  const area = document.getElementById('resultsArea');
-  area.innerHTML = '';
-
-  if (!data.results || data.results.length === 0) {
-    area.innerHTML = '<div class="empty-state"><span class="empty-glyph">∅</span><div class="empty-text">No sites configured.</div></div>';
-    return;
-  }
-
-  const autoR = data.results.filter(r => r.type === 'auto');
-  const apiR = data.results.filter(r => r.type === 'api');
-  const manR = data.results.filter(r => r.type === 'manual');
-  const foundCount = [...autoR, ...apiR].filter(r => r.found).length;
-
-  const hdr = document.createElement('div');
-  hdr.className = 'results-header';
-  hdr.innerHTML = `<span class="results-title">// Results for: "${esc(data.query)}"</span>
-    <span class="results-count">${foundCount} found</span>`;
-  area.appendChild(hdr);
-
-  let cardIdx = 0;
-
-  if (autoR.length) {
-    area.appendChild(sectionLabel(`— Auto Scan (${mode})`, ''));
-    autoR.forEach(r => area.appendChild(makeCard(r, cardIdx++)));
-  }
-  if (apiR.length) {
-    area.appendChild(sectionLabel('— API Sites', 'api'));
-    apiR.forEach(r => area.appendChild(makeCard(r, cardIdx++)));
-  }
-  if (manR.length) {
-    area.appendChild(sectionLabel('— Manual Checks', 'manual'));
-    manR.forEach(r => area.appendChild(makeCard(r, cardIdx++)));
-  }
-
-  // stats
-  const sb = document.getElementById('statsBar');
-  sb.classList.add('visible');
-  document.getElementById('statFound').textContent = foundCount;
-  document.getElementById('statTotal').textContent = autoR.length + apiR.length;
-  document.getElementById('statManual').textContent = manR.length;
-}
-
-function sectionLabel(text, cls) {
-  const d = document.createElement('div');
-  d.className = 'section-label' + (cls ? ' ' + cls : '');
-  d.textContent = text;
-  return d;
-}
-
-function makeCard(r, idx) {
-  const card = document.createElement('div');
-  card.className = 'result-card';
-  card.style.animationDelay = (idx * 55) + 'ms';
-
-  let dotCls, badgeCls, badgeTxt, cardCls;
-  if (r.type === 'manual') {
-    dotCls = 'dot-manual'; badgeCls = 'badge-manual'; badgeTxt = 'MANUAL'; cardCls = 'manual-card';
-  } else if (r.type === 'api') {
-    dotCls = r.found ? 'dot-found' : 'dot-notfound';
-    badgeCls = r.found ? 'badge-found' : 'badge-api';
-    badgeTxt = r.found ? 'FOUND' : 'API';
-    cardCls = r.found ? 'found' : 'not-found';
-  } else {
-    dotCls = r.found ? 'dot-found' : 'dot-notfound';
-    badgeCls = r.found ? 'badge-found' : 'badge-notfound';
-    badgeTxt = r.found ? 'FOUND' : '—';
-    cardCls = r.found ? 'found' : 'not-found';
-  }
-  card.classList.add(cardCls);
-
-  const linkURL = r.movie_url || r.url;
-  const urlShort = r.url.length > 90 ? r.url.substring(0, 90) + '…' : r.url;
-
-  let extraHTML = '';
-  if (r.matches && r.matches.length > 0) {
-    extraHTML = r.matches.map(m =>
-      `<a href="${esc(m.url)}" target="_blank" class="card-movie-url">→ ${esc(m.name)} <span style="color:var(--text-dim);font-size:0.65rem;">${esc(m.url)}</span></a>`
-    ).join('');
-  } else if (r.movie_url) {
-    extraHTML = `<a href="${esc(r.movie_url)}" target="_blank" class="card-movie-url">→ ${esc(r.movie_url)}</a>`;
-  }
-  if (r.error) extraHTML += `<div class="card-error">⚠ ${esc(r.error)}</div>`;
-
-  const hasLogs = r.logs && r.logs.length > 0 && r.type !== 'manual';
-  const logBtnHTML = hasLogs
-    ? `<button class="log-toggle" onclick="toggleLog(this)" title="Show debug log">LOGS ▾</button>`
-    : '';
-
-  card.innerHTML = `
-    <div class="card-main">
-      <div class="status-dot ${dotCls}"></div>
-      <div class="card-info">
-        <a href="${esc(linkURL)}" target="_blank" class="card-url">${esc(urlShort)}</a>
-        ${extraHTML}
+<!-- IMDB VIEW -->
+<div class="view" id="view-imdb">
+  <div class="sh">
+    <button class="sbk" onclick="showView('main')">← Back</button>
+    <div class="shtitle"><span style="background:#F5C518;color:#000;font-family:'Sora',sans-serif;font-weight:900;font-size:.82rem;padding:2px 8px;border-radius:4px;margin-right:9px;">IMDb</span>Search</div>
+    <button class="tbtn" onclick="toggleTheme()" style="margin-left:8px">🌙</button>
+  </div>
+  <div class="scontent">
+    <div class="sp" style="margin-bottom:15px">
+      <label class="fl">🍯 Movie or Show Name</label>
+      <div class="sr">
+        <input type="text" id="imdbInput" class="si" placeholder="Live search as you type..." autocomplete="off" oninput="debImdb()"/>
       </div>
-      <div class="card-right">
-        ${logBtnHTML}
-        <span class="badge ${badgeCls}">${badgeTxt}</span>
+      <div class="imdbload" id="imdbLoad"></div>
+    </div>
+    <div id="imdbArea"><div class="empty"><span class="eg" style="background:#F5C518;color:#000;border-radius:8px;padding:6px 14px;font-size:.95rem;font-family:'Sora',sans-serif;font-weight:900;">IMDb</span><div class="et" style="margin-top:14px">Type a title to search IMDb</div></div></div>
+  </div>
+</div>
+
+<!-- SETTINGS OVERLAY -->
+<div class="sov" id="sov" onclick="ovClick(event)">
+  <div class="sdrawer">
+    <div class="sheader">
+      <div class="stitle">⚙️  Settings</div>
+      <button class="scls" onclick="closeSettings()">✕</button>
+    </div>
+    <div class="stabs">
+      <button class="stab active" onclick="switchTab('shows')">Shows</button>
+      <button class="stab" onclick="switchTab('movies')">Movies</button>
+      <button class="stab" onclick="switchTab('manual')">Manual</button>
+      <button class="stab" onclick="switchTab('api')">APIs</button>
+      <button class="stab" onclick="switchTab('logs')">Logs</button>
+    </div>
+    <div class="sbody">
+      <div class="stabc active" id="tab-shows">
+        <div class="cdesc">One URL prefix per line. The search term is appended directly.<br>
+          <code>+</code> → spaces become <code>+</code> &nbsp;|&nbsp; <code>-</code> → spaces become <code>-</code> &nbsp;|&nbsp; no prefix → spaces kept.<br>Lines starting with <code>#</code> are comments.</div>
+        <textarea class="cta" id="ta-shows" rows="12" placeholder="+https://example.com/search?q=&#10;-https://other.com/find/"></textarea>
+        <div class="cfoot"><button class="savebtn" onclick="saveCfg('shows.txt','ta-shows','ss-shows')">✓ Save</button><span class="ss" id="ss-shows"></span></div>
+      </div>
+      <div class="stabc" id="tab-movies">
+        <div class="cdesc">Same format as Shows — one URL prefix per line.<br><code>+</code> / <code>-</code> prefix controls space replacement.</div>
+        <textarea class="cta" id="ta-movies" rows="12" placeholder="+https://example.com/search?q="></textarea>
+        <div class="cfoot"><button class="savebtn" onclick="saveCfg('movies.txt','ta-movies','ss-movies')">✓ Save</button><span class="ss" id="ss-movies"></span></div>
+      </div>
+      <div class="stabc" id="tab-manual">
+        <div class="cdesc">These URLs are <strong>not</strong> auto-scanned — shown as clickable links for manual checking.<br>Same <code>+</code> / <code>-</code> prefix applies.</div>
+        <textarea class="cta" id="ta-manual" rows="12" placeholder="+https://example.com/search?q="></textarea>
+        <div class="cfoot"><button class="savebtn" onclick="saveCfg('manual_checks.txt','ta-manual','ss-manual')">✓ Save</button><span class="ss" id="ss-manual"></span></div>
+      </div>
+      <div class="stabc" id="tab-api">
+        <div class="cdesc">One entry per line. Prefix selects API type:<br><br>
+          <code>v1:https://ww3.somesite.com</code> — <code>/searching?q=</code> JSON endpoint<br>
+          <code>stremio:https://v3-cinemeta.strem.io</code> — Stremio catalog endpoint<br><br>
+          Bare URL with no prefix is treated as <code>v1:</code>.</div>
+        <textarea class="cta" id="ta-api" rows="12" placeholder="stremio:https://v3-cinemeta.strem.io&#10;v1:https://ww3.somesite.com"></textarea>
+        <div class="cfoot"><button class="savebtn" onclick="saveCfg('api_sites.txt','ta-api','ss-api')">✓ Save</button><span class="ss" id="ss-api"></span></div>
+      </div>
+      <div class="stabc" id="tab-logs">
+        <div class="lve" id="logEmpty">🐝 No search results yet. Run a search first.</div>
+        <div id="logMeta" style="display:none">
+          <div class="lsq"><div class="lsqlabel">Last Search</div><div class="lsqval" id="logQ"></div></div>
+          <div id="logBlocks"></div>
+        </div>
       </div>
     </div>
-    ${hasLogs ? `<div class="log-panel">${buildLogLines(r.logs)}</div>` : ''}
-  `;
+  </div>
+</div>
+
+</div>
+<script>
+// STATE
+let mode='shows', subMode='shows', lastResults=null, activeTab='shows';
+let imdbTimer=null, subTimer=null;
+
+// THEME
+let isDark=true;
+function toggleTheme(){
+  isDark=!isDark;
+  document.body.classList.toggle('light',!isDark);
+  document.querySelectorAll('.tbtn').forEach(b=>b.textContent=isDark?'🌙':'☀️');
+  localStorage.setItem('dvora_dark',isDark?'1':'0');
+}
+(function(){
+  if(localStorage.getItem('dvora_dark')==='0'){isDark=false;document.body.classList.add('light');document.querySelectorAll('.tbtn').forEach(b=>b.textContent='☀️');}
+})();
+
+// VIEWS
+function showView(name){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  document.getElementById('navImdb').classList.toggle('active',name==='imdb');
+  document.getElementById('navSubs').classList.toggle('active',name==='subtitles');
+  if(name==='imdb') setTimeout(()=>document.getElementById('imdbInput').focus(),50);
+  if(name==='subtitles') setTimeout(()=>document.getElementById('subInput').focus(),50);
+}
+
+// MAIN SEARCH
+function setMode(m){
+  mode=m;
+  document.getElementById('btnShows').classList.toggle('active',m==='shows');
+  document.getElementById('btnMovies').classList.toggle('active',m==='movies');
+}
+document.getElementById('searchInput').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch();});
+function setProg(p){document.getElementById('pf').style.width=p+'%';}
+function doSearch(){
+  const q=document.getElementById('searchInput').value.trim();
+  if(!q)return;
+  const btn=document.getElementById('searchBtn');
+  btn.disabled=true;btn.textContent='🐝 Scanning...';
+  document.getElementById('pw').classList.add('visible');setProg(15);
+  document.getElementById('statsBar').classList.remove('visible');
+  document.getElementById('resultsArea').innerHTML='<div class="empty"><span class="eg">🐝</span><div class="et">Scanning the hive...</div></div>';
+  fetch('/search?q='+encodeURIComponent(q)+'&mode='+mode)
+    .then(r=>r.json()).then(data=>{
+      setProg(100);
+      setTimeout(()=>{document.getElementById('pw').classList.remove('visible');setProg(0);},500);
+      lastResults=data;renderResults(data);
+      btn.disabled=false;btn.textContent='🐝 Buzz';
+      if(document.getElementById('sov').classList.contains('open')&&activeTab==='logs')renderLogs();
+    }).catch(err=>{
+      document.getElementById('resultsArea').innerHTML='<div class="empty"><span class="eg">⚠️</span><div class="et">Error: '+esc(err.message)+'</div></div>';
+      btn.disabled=false;btn.textContent='🐝 Buzz';
+      document.getElementById('pw').classList.remove('visible');
+    });
+}
+function renderResults(data){
+  const area=document.getElementById('resultsArea');
+  area.innerHTML='';
+  if(!data.results||!data.results.length){area.innerHTML='<div class="empty"><span class="eg">🍯</span><div class="et">No sites configured.</div></div>';return;}
+  const autoR=data.results.filter(r=>r.type==='auto');
+  const apiR=data.results.filter(r=>r.type==='api');
+  const manR=data.results.filter(r=>r.type==='manual');
+  const found=[...autoR,...apiR].filter(r=>r.found).length;
+  const hdr=document.createElement('div');
+  hdr.style.cssText='display:flex;align-items:baseline;gap:11px;margin-bottom:12px;';
+  hdr.innerHTML='<span style="font-family:\'Sora\',sans-serif;font-size:.78rem;font-weight:700;letter-spacing:.12em;color:var(--tm)">🍯 Results for: &quot;'+esc(data.query)+'&quot;</span><span style="font-size:.74rem;font-weight:800;color:var(--hg)">'+found+' found</span>';
+  area.appendChild(hdr);
+  let idx=0;
+  if(autoR.length){area.appendChild(mkSD('Auto Scan — '+mode,''));autoR.forEach(r=>area.appendChild(mkCard(r,idx++)));}
+  if(apiR.length){area.appendChild(mkSD('API Sites','api'));apiR.forEach(r=>area.appendChild(mkCard(r,idx++)));}
+  if(manR.length){area.appendChild(mkSD('Manual Checks','man'));manR.forEach(r=>area.appendChild(mkCard(r,idx++)));}
+  const sb=document.getElementById('statsBar');sb.classList.add('visible');
+  document.getElementById('statFound').textContent=found;
+  document.getElementById('statTotal').textContent=autoR.length+apiR.length;
+  document.getElementById('statManual').textContent=manR.length;
+}
+function mkSD(text,cls){
+  const d=document.createElement('div');
+  d.className='sd'+(cls?' '+cls:'');
+  d.innerHTML='<div class="sdl"></div><div class="sdt">'+esc(text)+'</div><div class="sdl"></div>';
+  return d;
+}
+function mkCard(r,idx){
+  const card=document.createElement('div');
+  card.className='rc';card.style.animationDelay=(idx*42)+'ms';
+  let cbcls,semoji,stxt,scls,bcls,btxt;
+  if(r.type==='manual'){cbcls='m';semoji='🔍';stxt='Manual Check';scls='stm';bcls='bm';btxt='MANUAL';card.classList.add('man');}
+  else if(r.type==='api'){cbcls=r.found?'f':'a';semoji=r.found?'✅':'🟡';stxt=r.found?'Found!':'Not Found';scls=r.found?'stf':'stnf';bcls=r.found?'bf':'ba';btxt=r.found?'FOUND':'API';card.classList.add(r.found?'found':'notfound');}
+  else{cbcls=r.found?'f':'nf';semoji=r.found?'✅':'🟡';stxt=r.found?'Found!':'Not Found';scls=r.found?'stf':'stnf';bcls=r.found?'bf':'bnf';btxt=r.found?'FOUND':'—';card.classList.add(r.found?'found':'notfound');}
+  const linkURL=r.movie_url||r.url;
+  const urlS=r.url.length>90?r.url.substring(0,90)+'…':r.url;
+  let extra='';
+  if(r.matches&&r.matches.length)extra=r.matches.map(m=>'<a href="'+esc(m.url)+'" target="_blank" class="cmu">→ '+esc(m.name)+'</a>').join('');
+  else if(r.movie_url)extra='<a href="'+esc(r.movie_url)+'" target="_blank" class="cmu">→ '+esc(r.movie_url)+'</a>';
+  if(r.details)extra+='<div class="cdet">'+esc(r.details)+'</div>';
+  if(r.error)extra+='<div class="cerr">⚠️ '+esc(r.error)+'</div>';
+  const hasL=r.logs&&r.logs.length&&r.type!=='manual';
+  card.innerHTML='<div class="cm" onclick="ccClick(event,\''+esc(linkURL)+'\')">'
+    +'<div class="cb '+cbcls+'"></div>'
+    +'<div class="cd"><div class="csr"><span class="se">'+semoji+'</span><span class="st '+scls+'">'+stxt+'</span></div>'
+    +'<a href="'+esc(linkURL)+'" target="_blank" class="cu" onclick="event.stopPropagation()">'+esc(urlS)+'</a>'+extra+'</div>'
+    +'<div class="cr">'+(hasL?'<button class="lt" onclick="togLog(this)">Logs ▾</button>':'')+'<span class="badge '+bcls+'">'+btxt+'</span></div>'
+    +'</div>'+(hasL?'<div class="lp">'+mkLogLines(r.logs)+'</div>':'');
   return card;
 }
+function ccClick(e,url){if(e.target.closest('.lt')||e.target.closest('a'))return;window.open(url,'_blank');}
+function togLog(btn){const p=btn.closest('.rc').querySelector('.lp');p.classList.toggle('open');btn.classList.toggle('open');btn.textContent=p.classList.contains('open')?'Logs ▴':'Logs ▾';}
+function mkLogLines(logs){return logs.map(l=>{const isV=l.level==='verdict';const vc=isV?(l.message.startsWith('FOUND')?'vf':'vnf'):'';return '<div class="ll log-'+l.level+(isV?' log-verdict '+vc:'')+'"><span class="lpr">'+l.level+'</span><span class="lmsg">'+esc(l.message)+'</span></div>';}).join('');}
 
-function toggleLog(btn) {
-  const panel = btn.closest('.result-card').querySelector('.log-panel');
-  panel.classList.toggle('open');
-  btn.classList.toggle('open');
-  btn.textContent = panel.classList.contains('open') ? 'LOGS ▴' : 'LOGS ▾';
+// SUBTITLES — mirrors app's SubtitlesScreen
+// Debounced live search (400ms), own mode toggle,
+// calls /subtitles which hits both Wizdom + IMDb APIs
+function setSubMode(m){
+  subMode=m;
+  document.getElementById('subBtnShows').classList.toggle('active',m==='shows');
+  document.getElementById('subBtnMovies').classList.toggle('active',m==='movies');
+  const q=document.getElementById('subInput').value.trim();
+  if(q)doSubSearch();
 }
-
-function buildLogLines(logs) {
-  return logs.map(l => {
-    const isVerdict = l.level === 'verdict';
-    const verdictCls = isVerdict ? (l.message.startsWith('FOUND') ? 'verdict-found' : 'verdict-notfound') : '';
-    return `<div class="log-line log-${l.level} ${verdictCls}">
-      <span class="log-prefix">${l.level}</span>
-      <span class="log-msg">${esc(l.message)}</span>
-    </div>`;
-  }).join('');
+document.getElementById('subInput').addEventListener('keydown',e=>{if(e.key==='Enter'){clearTimeout(subTimer);doSubSearch();}});
+function debSub(){
+  clearTimeout(subTimer);
+  const q=document.getElementById('subInput').value.trim();
+  if(!q){document.getElementById('subArea').innerHTML='<div class="empty"><span class="eg">🎞️</span><div class="et">Search for Hebrew subtitles on Wizdom</div></div>';document.getElementById('subpw').classList.remove('visible');return;}
+  document.getElementById('subpw').classList.add('visible');
+  subTimer=setTimeout(doSubSearch,400);
 }
-
-// ===== SETTINGS =====
-function openSettings() {
-  document.getElementById('settingsOverlay').classList.add('open');
-  document.getElementById('settingsBtn').classList.add('active');
-  loadAllConfigs();
-  if (activeTab === 'logs') renderLogs();
+function doSubSearch(){
+  const q=document.getElementById('subInput').value.trim();
+  if(!q)return;
+  document.getElementById('subpw').classList.add('visible');
+  document.getElementById('subArea').innerHTML='<div class="empty"><span class="eg">🐝</span><div class="et">Searching Wizdom + IMDb...</div></div>';
+  fetch('/subtitles?q='+encodeURIComponent(q)+'&mode='+subMode)
+    .then(r=>r.json()).then(data=>{document.getElementById('subpw').classList.remove('visible');renderSub(data);})
+    .catch(err=>{document.getElementById('subpw').classList.remove('visible');document.getElementById('subArea').innerHTML='<div class="empty"><span class="eg">⚠️</span><div class="et">Error: '+esc(err.message)+'</div></div>';});
 }
-
-function closeSettings() {
-  document.getElementById('settingsOverlay').classList.remove('open');
-  document.getElementById('settingsBtn').classList.remove('active');
-}
-
-function overlayClick(e) {
-  if (e.target === document.getElementById('settingsOverlay')) closeSettings();
-}
-
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') closeSettings();
-});
-
-function switchTab(name) {
-  activeTab = name;
-  document.querySelectorAll('.stab').forEach((b, i) => {
-    const tabs = ['shows','movies','manual','api','logs'];
-    b.classList.toggle('active', tabs[i] === name);
-  });
-  document.querySelectorAll('.stab-content').forEach(c => c.classList.remove('active'));
-  document.getElementById('tab-' + name).classList.add('active');
-  if (name === 'logs') renderLogs();
-}
-
-// ===== CONFIG API =====
-const fileMap = {
-  'shows': 'shows.txt',
-  'movies': 'movies.txt',
-  'manual': 'manual_checks.txt',
-  'api': 'api_sites.txt'
-};
-
-function loadAllConfigs() {
-  ['shows','movies','manual','api'].forEach(k => {
-    fetch('/config?file=' + fileMap[k])
-      .then(r => r.json())
-      .then(d => {
-        document.getElementById(k + '-textarea').value = d.content || '';
-      })
-      .catch(() => {});
+function renderSub(data){
+  const area=document.getElementById('subArea');area.innerHTML='';
+  if(!data.results||!data.results.length){area.innerHTML='<div class="empty"><span class="eg">🎞️</span><div class="et">No subtitles found.</div></div>';return;}
+  const found=data.results.filter(r=>r.found);
+  const hdr=document.createElement('div');
+  hdr.style.cssText='display:flex;align-items:baseline;gap:11px;margin-bottom:12px;';
+  hdr.innerHTML='<span style="font-family:\'Sora\',sans-serif;font-size:.78rem;font-weight:700;letter-spacing:.12em;color:var(--tm)">🎞️ Results for: &quot;'+esc(data.query)+'&quot;</span><span style="font-size:.74rem;font-weight:800;color:var(--sub)">'+found.length+' found</span>';
+  area.appendChild(hdr);
+  data.results.forEach((r,i)=>{
+    const card=document.createElement('div');
+    card.className='subcard'+(r.found?' sfound':'');
+    card.style.animationDelay=(i*40)+'ms';
+    if(r.found)card.onclick=()=>window.open(r.url,'_blank');
+    card.innerHTML='<div class="subb '+(r.found?'f':'nf')+'"></div>'
+      +'<div class="subbody">'
+      +'<div class="subtit">'+(r.found?'✅':'🟡')+' '+esc(r.title||'Unknown')+'</div>'
+      +(r.imdbId?'<div class="subimdbrow"><span class="imdbbadge">IMDb</span><span class="subimdbid">'+esc(r.imdbId)+'</span></div>':'')
+      +(r.found?'<div class="suburl">→ '+esc(r.url)+'</div>':'')
+      +(r.details?'<div style="font-size:.7rem;color:var(--tm);margin-top:2px">'+esc(r.details)+'</div>':'')
+      +(r.error?'<div style="font-size:.7rem;color:var(--po);margin-top:2px">⚠️ '+esc(r.error)+'</div>':'')
+      +'</div>'
+      +'<div class="subactions">'
+      +(r.found
+        ?'<span class="sbadge">SUBS</span>'
+         +'<button class="cpbtn" onclick="event.stopPropagation();cp(\''+esc(r.url)+'\',this)">📋 URL</button>'
+         +(r.imdbId?'<button class="cpbtn" onclick="event.stopPropagation();cp(\''+esc(r.imdbId)+'\',this)">📋 ID</button>':'')
+        :'<span class="snbadge">—</span>')
+      +'</div>';
+    area.appendChild(card);
   });
 }
 
-function saveConfig(filename, textareaId, statusId) {
-  const content = document.getElementById(textareaId).value;
-  const statusEl = document.getElementById(statusId);
-  statusEl.textContent = 'Saving...';
-  statusEl.className = 'save-status';
-
-  fetch('/config?file=' + filename, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content })
-  })
-  .then(r => r.json())
-  .then(d => {
-    if (d.status === 'ok') {
-      statusEl.textContent = '✓ Saved';
-      statusEl.className = 'save-status ok';
-      setTimeout(() => statusEl.textContent = '', 2500);
-    } else {
-      statusEl.textContent = '✗ Error: ' + (d.error || 'unknown');
-      statusEl.className = 'save-status err';
-    }
-  })
-  .catch(e => {
-    statusEl.textContent = '✗ ' + e.message;
-    statusEl.className = 'save-status err';
+// IMDB — mirrors app's ImdbScreen
+// Live 350ms debounce, shows poster/title/year/type/ID, copy buttons
+function debImdb(){
+  clearTimeout(imdbTimer);
+  const q=document.getElementById('imdbInput').value.trim();
+  if(!q){document.getElementById('imdbArea').innerHTML='<div class="empty"><span class="eg" style="background:#F5C518;color:#000;border-radius:8px;padding:6px 14px;font-size:.95rem;font-family:\'Sora\',sans-serif;font-weight:900;">IMDb</span><div class="et" style="margin-top:14px">Type a title to search IMDb</div></div>';document.getElementById('imdbLoad').classList.remove('visible');return;}
+  document.getElementById('imdbLoad').classList.add('visible');
+  imdbTimer=setTimeout(doImdb,350);
+}
+function doImdb(){
+  const q=document.getElementById('imdbInput').value.trim();
+  if(!q)return;
+  document.getElementById('imdbLoad').classList.add('visible');
+  fetch('/imdb?q='+encodeURIComponent(q))
+    .then(r=>r.json()).then(data=>{document.getElementById('imdbLoad').classList.remove('visible');renderImdb(data);})
+    .catch(err=>{document.getElementById('imdbLoad').classList.remove('visible');document.getElementById('imdbArea').innerHTML='<div class="empty"><span class="eg">⚠️</span><div class="et">Error: '+esc(err.message)+'</div></div>';});
+}
+function renderImdb(data){
+  const area=document.getElementById('imdbArea');area.innerHTML='';
+  if(!data.results||!data.results.length){area.innerHTML='<div class="empty"><span class="eg">🔍</span><div class="et">No results for &quot;'+esc(data.query)+'&quot;</div></div>';return;}
+  data.results.forEach((item,i)=>{
+    const card=document.createElement('div');
+    card.className='imdbcard';card.style.animationDelay=(i*40)+'ms';
+    card.onclick=()=>window.open(item.imdbUrl,'_blank');
+    const poster=item.posterUrl
+      ?'<img src="'+esc(item.posterUrl)+'" alt="'+esc(item.title)+'" onerror="this.parentNode.innerHTML=\'<div class=\\\'imdbph\\\'>🎬</div>\'">'
+      :'<div class="imdbph">🎬</div>';
+    const typeLabel=item.mediaType||'Movie';
+    card.innerHTML='<div class="imdbinner">'
+      +'<div class="imdbposter">'+poster+'</div>'
+      +'<div class="imdbinfo">'
+      +'<div class="imdbtitle">'+esc(item.title)+'</div>'
+      +'<div class="imdbmeta">'+(item.year?'<span class="imdbyear">'+esc(item.year)+'</span>':'')+'<span class="imdbtype">'+esc(typeLabel)+'</span></div>'
+      +'<div class="imdbidrow"><span class="imdbbadge">IMDb</span><span class="imdbidtx">'+esc(item.imdbId)+'</span></div>'
+      +'</div>'
+      +'<div class="imdbactions" onclick="event.stopPropagation()">'
+      +'<button class="cpbtn" onclick="cp(\''+esc(item.title)+'\',this)">📋 Title</button>'
+      +'<button class="cpbtn" onclick="cp(\''+esc(item.imdbId)+'\',this)">📋 ID</button>'
+      +'<button class="cpbtn" onclick="cp(\''+esc(item.imdbUrl)+'\',this)">📋 URL</button>'
+      +'</div></div>';
+    area.appendChild(card);
   });
 }
 
-// ===== LOG VIEWER =====
-function renderLogs() {
-  const empty = document.getElementById('logEmpty');
-  const meta = document.getElementById('logSearchMeta');
-  const subMeta = document.getElementById('logSubtitleMeta');
-
-  if (!lastResults && !lastSubtitleResults) {
-    empty.style.display = 'block';
-    meta.style.display = 'none';
-    subMeta.style.display = 'none';
-    return;
-  }
-
-  empty.style.display = 'none';
-
-  // Main search logs
-  if (lastResults) {
-    meta.style.display = 'block';
-    document.getElementById('logQueryDisplay').textContent =
-      `"${lastResults.query}"  [${lastResults.results.filter(r=>r.type!='manual' && r.found).length} found / ${lastResults.results.filter(r=>r.type!='manual').length} scanned]`;
-
-    const container = document.getElementById('logSiteBlocks');
-    container.innerHTML = '';
-
-    lastResults.results.forEach(r => {
-      const block = document.createElement('div');
-      block.className = 'log-site-block';
-
-      let dotColor, verdictCls, verdictTxt;
-      if (r.type === 'manual') {
-        dotColor = 'var(--manual)'; verdictCls = 'manual'; verdictTxt = 'MANUAL';
-      } else if (r.found) {
-        dotColor = 'var(--found)'; verdictCls = 'found'; verdictTxt = 'FOUND';
-      } else {
-        dotColor = 'var(--text-dim)'; verdictCls = 'notfound'; verdictTxt = 'NOT FOUND';
-      }
-
-      const typeBadge = r.type === 'api' ? ' [API]' : r.type === 'manual' ? ' [MANUAL]' : '';
-      const urlShort = r.url.length > 80 ? r.url.substring(0, 80) + '…' : r.url;
-      const logs = r.logs || [];
-      const hasLogs = logs.length > 0;
-
-      block.innerHTML = `
-        <div class="log-site-header" onclick="toggleLogBlock(this)">
-          <div class="log-site-dot" style="background:${dotColor};box-shadow:${r.found&&r.type!=='manual'?'0 0 6px '+dotColor:'none'}"></div>
-          <div class="log-site-url">${esc(urlShort)}${esc(typeBadge)}</div>
-          <span class="log-site-verdict ${verdictCls}">${verdictTxt}</span>
-          <span class="log-expand">${hasLogs ? '▾' : ''}</span>
-        </div>
-        ${hasLogs ? `<div class="log-site-body">${buildLogLines(logs)}</div>` : ''}
-      `;
-      container.appendChild(block);
-    });
-  } else {
-    meta.style.display = 'none';
-  }
-
-  // Subtitle search logs
-  if (lastSubtitleResults) {
-    subMeta.style.display = 'block';
-    const { query, items } = lastSubtitleResults;
-    const matchCount = items.filter(i => i.found).length;
-    document.getElementById('logSubtitleQueryDisplay').textContent =
-      `"${query}"  [${matchCount} matched / ${items.length} results — wizdom.xyz]`;
-
-    const subContainer = document.getElementById('logSubtitleBlocks');
-    subContainer.innerHTML = '';
-
-    items.forEach(item => {
-      const block = document.createElement('div');
-      block.className = 'log-site-block';
-
-      const dotColor = item.found ? 'var(--subtitle)' : 'var(--text-dim)';
-      const verdictCls = item.found ? 'found' : 'notfound';
-      const verdictTxt = item.found ? 'MATCH' : 'NO MATCH';
-      const hasLogs = item.logs && item.logs.length > 0;
-      const label = `${item.title_en || '—'}${item.title ? ' / ' + item.title : ''}`;
-      const labelShort = label.length > 70 ? label.substring(0, 70) + '…' : label;
-
-      block.innerHTML = `
-        <div class="log-site-header" onclick="toggleLogBlock(this)">
-          <div class="log-site-dot" style="background:${dotColor};box-shadow:${item.found ? '0 0 6px var(--subtitle)' : 'none'}"></div>
-          <div class="log-site-url">${esc(labelShort)} <span style="color:var(--text-dim);font-size:0.7em;">[SUBTITLE]</span></div>
-          <span class="log-site-verdict ${verdictCls}" style="${item.found ? 'color:var(--subtitle);border-color:rgba(255,170,0,0.3);background:rgba(255,170,0,0.08)' : ''}">${verdictTxt}</span>
-          <span class="log-expand">${hasLogs ? '▾' : ''}</span>
-        </div>
-        ${hasLogs ? `<div class="log-site-body">${buildLogLines(item.logs)}</div>` : ''}
-      `;
-      subContainer.appendChild(block);
-    });
-  } else {
-    subMeta.style.display = 'none';
-  }
+// SETTINGS
+function openSettings(){document.getElementById('sov').classList.add('open');document.getElementById('settingsBtn').classList.add('active');loadCfgs();if(activeTab==='logs')renderLogs();}
+function closeSettings(){document.getElementById('sov').classList.remove('open');document.getElementById('settingsBtn').classList.remove('active');}
+function ovClick(e){if(e.target===document.getElementById('sov'))closeSettings();}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeSettings();});
+function switchTab(name){
+  activeTab=name;
+  document.querySelectorAll('.stab').forEach((b,i)=>b.classList.toggle('active',['shows','movies','manual','api','logs'][i]===name));
+  document.querySelectorAll('.stabc').forEach(c=>c.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  if(name==='logs')renderLogs();
+}
+const fm={shows:'shows.txt',movies:'movies.txt',manual:'manual_checks.txt',api:'api_sites.txt'};
+function loadCfgs(){['shows','movies','manual','api'].forEach(k=>{fetch('/config?file='+fm[k]).then(r=>r.json()).then(d=>{document.getElementById('ta-'+k).value=d.content||'';}).catch(()=>{});});}
+function saveCfg(file,taId,ssId){
+  const content=document.getElementById(taId).value;
+  const el=document.getElementById(ssId);el.textContent='Saving...';el.className='ss';
+  fetch('/config?file='+file,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})})
+    .then(r=>r.json()).then(d=>{
+      if(d.status==='ok'){el.textContent='✓ Saved!';el.className='ss ok';setTimeout(()=>el.textContent='',2500);}
+      else{el.textContent='✗ '+(d.error||'unknown');el.className='ss err';}
+    }).catch(e=>{el.textContent='✗ '+e.message;el.className='ss err';});
 }
 
-function toggleLogBlock(header) {
-  const body = header.nextElementSibling;
-  if (!body || !body.classList.contains('log-site-body')) return;
-  body.classList.toggle('open');
-  header.querySelector('.log-expand').textContent = body.classList.contains('open') ? '▴' : '▾';
+// LOGS
+function renderLogs(){
+  const empty=document.getElementById('logEmpty'),meta=document.getElementById('logMeta');
+  if(!lastResults){empty.style.display='block';meta.style.display='none';return;}
+  empty.style.display='none';meta.style.display='block';
+  document.getElementById('logQ').textContent='"'+lastResults.query+'"  ['+lastResults.results.filter(r=>r.type!='manual'&&r.found).length+' found / '+lastResults.results.filter(r=>r.type!='manual').length+' scanned]';
+  const con=document.getElementById('logBlocks');con.innerHTML='';
+  lastResults.results.forEach(r=>{
+    const blk=document.createElement('div');blk.className='lsb';
+    let dc,vc,vt;
+    if(r.type==='manual'){dc='var(--man)';vc='manual';vt='MANUAL';}
+    else if(r.found){dc='var(--fgl)';vc='found';vt='FOUND';}
+    else{dc='var(--tm)';vc='notfound';vt='NOT FOUND';}
+    const tb=r.type==='api'?' [API]':r.type==='manual'?' [MANUAL]':'';
+    const us=r.url.length>80?r.url.substring(0,80)+'…':r.url;
+    const logs=r.logs||[];const hl=logs.length>0;
+    blk.innerHTML='<div class="lsh" onclick="togLB(this)">'
+      +'<div class="lsd" style="background:'+dc+';'+(r.found&&r.type!=='manual'?'box-shadow:0 0 6px '+dc:'')+'"></div>'
+      +'<div class="lsu">'+esc(us)+esc(tb)+'</div>'
+      +'<span class="lsv '+vc+'">'+vt+'</span>'
+      +'<span class="lexp">'+(hl?'▾':'')+'</span>'
+      +'</div>'+(hl?'<div class="lsbody">'+mkLogLines(logs)+'</div>':'');
+    con.appendChild(blk);
+  });
 }
+function togLB(h){const b=h.nextElementSibling;if(!b||!b.classList.contains('lsbody'))return;b.classList.toggle('open');h.querySelector('.lexp').textContent=b.classList.contains('open')?'▴':'▾';}
 
-// ===== SUBTITLE SEARCH =====
-function closeSubtitlePanel() {
-  document.getElementById('subtitlePanel').classList.remove('visible');
+// UTILS
+function cp(text,btn){
+  navigator.clipboard.writeText(text).then(()=>{const o=btn.textContent;btn.textContent='✓ Copied!';setTimeout(()=>btn.textContent=o,1500);})
+  .catch(()=>{const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);const o=btn.textContent;btn.textContent='✓ Copied!';setTimeout(()=>btn.textContent=o,1500);});
 }
-
-async function doSubtitleSearch() {
-  const q = document.getElementById('searchInput').value.trim();
-  if (!q) return;
-
-  const btn = document.getElementById('subtitleBtn');
-  btn.disabled = true;
-  btn.innerHTML = '<span>💬</span> Searching...';
-
-  const panel = document.getElementById('subtitlePanel');
-  const body = document.getElementById('subtitleBody');
-  panel.classList.add('visible');
-  body.innerHTML = '<div class="sub-empty">Searching wizdom.xyz...</div>';
-
-  const apiURL = `https://wizdom.xyz/api/search?search=${encodeURIComponent(q)}&page=0`;
-
-  try {
-    const resp = await fetch(apiURL);
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    const data = await resp.json();
-
-    if (!Array.isArray(data)) throw new Error('Unexpected response format (not an array)');
-
-    const qLower = q.toLowerCase();
-
-    body.innerHTML = '';
-
-    if (data.length === 0) {
-      lastSubtitleResults = { query: q, items: [{ title_en: '(no results)', title: '', found: false, logs: [
-        { level: 'info', message: `GET ${apiURL}` },
-        { level: 'info', message: `API returned 0 results` },
-        { level: 'verdict', message: `NOT FOUND — API returned 0 results for "${q}"` }
-      ]}]};
-      if (document.getElementById('settingsOverlay').classList.contains('open') && activeTab === 'logs') renderLogs();
-      body.innerHTML = '<div class="sub-notfound-banner">✗ No subtitles found for "' + esc(q) + '"</div><div class="sub-empty">No results returned from Wizdom.</div>';
-      return;
-    }
-
-    const itemMatches = item => {
-      const enMatch = !!(item.title_en && item.title_en.toLowerCase().includes(qLower));
-      const heMatch = !!(item.title && item.title.toLowerCase().includes(qLower));
-      return { enMatch, heMatch, any: enMatch || heMatch };
-    };
-
-    const hasMatch = data.some(item => itemMatches(item).any);
-
-    // Build lastSubtitleResults with verbose logs per item
-    lastSubtitleResults = {
-      query: q,
-      items: data.map((item, i) => {
-        const { enMatch, heMatch, any: found } = itemMatches(item);
-        const logs = [];
-        const lg = (level, msg) => logs.push({ level, message: msg });
-        lg('info', `Result #${i + 1}: title_en="${item.title_en || ''}" title="${item.title || ''}"`);
-        lg('info', `year=${item.year || '?'} type=${item.type || '?'} imdb="${item.imdb || 'N/A'}"`);
-        lg('info', `rating=${item.rating || 'N/A'} votes=${item.votes || 'N/A'}`);
-        if (item.genres) lg('info', `genres: ${item.genres}`);
-        lg('info', `Checking title_en "${item.title_en || ''}" for "${qLower}"`);
-        if (enMatch) lg('match', `✓ MATCH (title_en): "${item.title_en}" contains "${qLower}"`);
-        else lg('skip', `  no match: title_en "${item.title_en || '—'}" does not contain "${qLower}"`);
-        lg('info', `Checking title "${item.title || ''}" for "${qLower}"`);
-        if (heMatch) lg('match', `✓ MATCH (title): "${item.title}" contains "${qLower}"`);
-        else lg('skip', `  no match: title "${item.title || '—'}" does not contain "${qLower}"`);
-        if (found) lg('verdict', `FOUND — subtitle page: wizdom.xyz/${mode === 'movies' ? 'movie' : 'tv'}/${item.imdb || '?'}`);
-        else lg('verdict', `NOT FOUND — neither title_en nor title matched "${qLower}"`);
-        return { title_en: item.title_en, title: item.title, found, logs };
-      })
-    };
-
-    if (document.getElementById('settingsOverlay').classList.contains('open') && activeTab === 'logs') renderLogs();
-
-    const banner = document.createElement('div');
-    if (hasMatch) {
-      banner.className = 'sub-found-banner';
-      banner.textContent = '✓ SUBTITLES FOUND — "' + q + '" matched in Wizdom results';
-    } else {
-      banner.className = 'sub-notfound-banner';
-      banner.textContent = '✗ No exact title match for "' + q + '" — showing all results below';
-    }
-    body.appendChild(banner);
-
-    data.forEach((item, i) => {
-      const { enMatch, heMatch, any: isMatch } = itemMatches(item);
-
-      const card = document.createElement('div');
-      card.className = 'sub-result-card';
-      card.style.animationDelay = (i * 40) + 'ms';
-      if (isMatch) card.style.background = 'linear-gradient(90deg, rgba(0,255,224,0.03), transparent 60%)';
-
-      const posterHTML = item.poster_small
-        ? `<img class="sub-poster" src="${esc(item.poster_small)}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
-          + `<div class="sub-poster-placeholder" style="display:none">🎬</div>`
-        : `<div class="sub-poster-placeholder">🎬</div>`;
-
-      const typeIcon = item.type === 'movie' ? '🎬' : '📺';
-      const rating = item.rating ? `⭐ ${parseFloat(item.rating).toFixed(1)}` : '';
-      const year = item.year ? `· ${item.year}` : '';
-      const typeLabel = item.type ? `· ${item.type}` : '';
-
-      let wizdomURL = '';
-      if (item.imdb) {
-        const wizdomType = mode === 'movies' ? 'movie' : 'tv';
-        wizdomURL = `https://wizdom.xyz/${wizdomType}/${esc(item.imdb)}`;
-      }
-
-      card.innerHTML = `
-        ${posterHTML}
-        <div class="sub-info">
-          <div class="sub-title-en">
-            ${wizdomURL
-              ? `<a href="${wizdomURL}" target="_blank" style="color:inherit;text-decoration:none;" onmouseover="this.style.color='var(--subtitle)'" onmouseout="this.style.color=''">${esc(item.title_en || '—')}</a>`
-              : esc(item.title_en || '—')
-            }${isMatch ? ' <span style="color:var(--found);font-size:0.7rem;">✓ MATCH</span>' : ''}
-          </div>
-          ${item.title ? `<div class="sub-title-he">${esc(item.title)}</div>` : ''}
-          <div class="sub-meta">${typeIcon} ${esc(rating)} ${esc(year)} ${esc(typeLabel)}</div>
-          ${item.genres ? `<div class="sub-genres">${esc(item.genres)}</div>` : ''}
-          ${wizdomURL ? `<div style="margin-top:5px;"><a href="${wizdomURL}" target="_blank" style="font-size:0.68rem;color:var(--subtitle);text-decoration:none;letter-spacing:0.05em;" onmouseover="this.style.textDecoration='underline'" onmouseout="this.style.textDecoration='none'">→ ${wizdomURL}</a></div>` : ''}
-        </div>
-        <span class="sub-badge">${isMatch ? '<span style="color:var(--found)">✓</span> SUBS' : 'SUBS'}</span>
-      `;
-      body.appendChild(card);
-    });
-
-  } catch (err) {
-    lastSubtitleResults = { query: q, items: [{ title_en: '(error)', title: '', found: false, logs: [
-      { level: 'warn', message: 'Error: ' + err.message },
-      { level: 'verdict', message: 'NOT FOUND — request failed' }
-    ]}]};
-    if (document.getElementById('settingsOverlay').classList.contains('open') && activeTab === 'logs') renderLogs();
-    body.innerHTML = `<div class="sub-notfound-banner">⚠ Error: ${esc(err.message)}</div><div class="sub-empty">Could not reach Wizdom API.</div>`;
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = '<span>💬</span> Search Subtitles';
-  }
-}
-
-// ===== UTILS =====
-function esc(str) {
-  if (!str) return '';
-  return String(str)
-    .replace(/&/g,'&amp;')
-    .replace(/</g,'&lt;')
-    .replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;');
-}
+function esc(s){if(!s)return '';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 </script>
 </body>
 </html>

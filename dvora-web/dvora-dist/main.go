@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strings"
@@ -15,10 +16,10 @@ import (
 
 var userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 
-// --- Types ---
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type LogEntry struct {
-	Level   string `json:"level"` // "info", "match", "skip", "warn", "verdict"
+	Level   string `json:"level"`
 	Message string `json:"message"`
 }
 
@@ -28,14 +29,14 @@ type MovieMatch struct {
 }
 
 type SiteResult struct {
-	URL     string       `json:"url"`
-	Found   bool         `json:"found"`
-	Error   string       `json:"error,omitempty"`
-	Type    string       `json:"type"` // "auto", "api", "manual"
-	MovieURL  string     `json:"movie_url,omitempty"`
-	MovieURLs []string   `json:"movie_urls,omitempty"`
-	Matches []MovieMatch `json:"matches,omitempty"`
-	Logs    []LogEntry   `json:"logs"`
+	URL      string       `json:"url"`
+	Found    bool         `json:"found"`
+	Error    string       `json:"error,omitempty"`
+	Details  string       `json:"details,omitempty"`
+	Type     string       `json:"type"`
+	MovieURL string       `json:"movie_url,omitempty"`
+	Matches  []MovieMatch `json:"matches,omitempty"`
+	Logs     []LogEntry   `json:"logs"`
 }
 
 type SearchResponse struct {
@@ -43,13 +44,63 @@ type SearchResponse struct {
 	Results []SiteResult `json:"results"`
 }
 
-// --- HTML helpers ---
+// IMDb suggestion API
+type ImdbResult struct {
+	ImdbID    string `json:"imdbId"`
+	Title     string `json:"title"`
+	Year      string `json:"year"`
+	MediaType string `json:"mediaType"`
+	PosterURL string `json:"posterUrl"`
+	ImdbURL   string `json:"imdbUrl"`
+}
 
-func extractLinksFromHTML(body []byte) []string {
+type imdbSuggResp struct {
+	D []imdbSuggItem `json:"d"`
+}
+
+type imdbSuggItem struct {
+	ID string     `json:"id"`
+	L  string     `json:"l"`
+	Y  int        `json:"y"`
+	Q  string     `json:"q"`
+	I  *imdbImage `json:"i"`
+}
+
+type imdbImage struct {
+	ImageURL string `json:"imageUrl"`
+}
+
+// Wizdom
+type wizdomItem struct {
+	Title   string `json:"title"`
+	TitleEn string `json:"title_en"`
+	Imdb    string `json:"imdb"`
+	Type    string `json:"type"`
+}
+
+// Subtitle results
+type SubResult struct {
+	URL     string `json:"url"`
+	Found   bool   `json:"found"`
+	Title   string `json:"title"`
+	ImdbID  string `json:"imdbId"`
+	Details string `json:"details,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+type SubResponse struct {
+	Query   string      `json:"query"`
+	Mode    string      `json:"mode"`
+	Results []SubResult `json:"results"`
+}
+
+// ─── HTML parsing ─────────────────────────────────────────────────────────────
+
+func extractLinks(body []byte) []string {
 	re := regexp.MustCompile(`(?i)href=["']([^"']+)["']`)
-	matches := re.FindAllSubmatch(body, -1)
+	ms := re.FindAllSubmatch(body, -1)
 	var links []string
-	for _, m := range matches {
+	for _, m := range ms {
 		if len(m) > 1 {
 			links = append(links, string(m[1]))
 		}
@@ -57,27 +108,15 @@ func extractLinksFromHTML(body []byte) []string {
 	return links
 }
 
-func findNoResultsIndicator(body []byte) string {
+func noResultsIndicator(body []byte) string {
 	lower := strings.ToLower(string(body))
-	indicators := []string{
-		"no result found.",
-		"no result found",
-		"no results found",
-		"no results",
-		"nothing found",
-		"not found",
-		"no matches",
-		"0 results",
-		"could not find",
-		"couldn't find",
-		"search returned no results",
-		"sorry, no results",
-		"no items found",
-		"your search did not match",
-		"did not match any",
-		"no search results",
-	}
-	for _, ind := range indicators {
+	for _, ind := range []string{
+		"no result found.", "no result found", "no results found", "no results",
+		"nothing found", "not found", "no matches", "0 results",
+		"could not find", "couldn't find", "search returned no results",
+		"sorry, no results", "no items found", "your search did not match",
+		"did not match any", "no search results",
+	} {
 		if strings.Contains(lower, ind) {
 			return ind
 		}
@@ -85,243 +124,183 @@ func findNoResultsIndicator(body []byte) string {
 	return ""
 }
 
-// --- Core Logic ---
+// ─── Site scan ────────────────────────────────────────────────────────────────
 
-func checkSiteForContent(url, searchTerm string) (bool, []LogEntry, error) {
+func scanSite(siteURL, searchTerm string) (bool, string, []LogEntry, error) {
 	var logs []LogEntry
-	add := func(level, msg string) { logs = append(logs, LogEntry{level, msg}) }
+	add := func(lvl, msg string) { logs = append(logs, LogEntry{lvl, msg}) }
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", siteURL, nil)
 	if err != nil {
-		return false, logs, err
+		return false, "", logs, err
 	}
 	req.Header.Set("User-Agent", userAgent)
-
-	add("info", fmt.Sprintf("GET %s", url))
+	add("info", "GET "+siteURL)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return false, logs, err
+		return false, "", logs, err
 	}
 	defer resp.Body.Close()
-
-	add("info", fmt.Sprintf("Response: HTTP %d %s", resp.StatusCode, resp.Status))
-
-	if resp.StatusCode != http.StatusOK {
-		return false, logs, fmt.Errorf("HTTP %s", resp.Status)
+	add("info", fmt.Sprintf("HTTP %d", resp.StatusCode))
+	if resp.StatusCode != 200 {
+		return false, "", logs, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return false, logs, err
+	body, _ := io.ReadAll(resp.Body)
+	links := extractLinks(body)
+	add("info", fmt.Sprintf("Extracted %d links", len(links)))
+
+	words := strings.Fields(strings.ToLower(searchTerm))
+	if len(words) == 0 {
+		return false, "", logs, nil
 	}
-
-	links := extractLinksFromHTML(body)
-	add("info", fmt.Sprintf("Extracted %d href links from page HTML", len(links)))
-
-	searchWords := strings.Fields(strings.ToLower(searchTerm))
-	if len(searchWords) == 0 {
-		return false, logs, nil
-	}
-
-	// Build regex pattern
-	var patternBuilder strings.Builder
-	for i, word := range searchWords {
+	var pb strings.Builder
+	for i, w := range words {
 		if i > 0 {
-			patternBuilder.WriteString(`[\s\-\+\.\/]+`)
+			pb.WriteString(`[\s\-\+\.\/]+`)
 		}
-		patternBuilder.WriteString(regexp.QuoteMeta(word))
+		pb.WriteString(regexp.QuoteMeta(w))
 	}
-	patternStr := patternBuilder.String()
-	searchPattern := regexp.MustCompile(patternStr)
-	add("info", fmt.Sprintf("Built regex pattern: /%s/", patternStr))
+	pat := regexp.MustCompile(pb.String())
+	add("info", "Regex: /"+pb.String()+"/")
 
-	skipDomains := []string{
-		"addtoany.com", "facebook.com", "twitter.com", "reddit.com",
-		"pinterest.com", "whatsapp.com", "t.me", "mailto:", "/login",
-		"/register", "/signup", "/feed",
-	}
+	skip := []string{"addtoany.com", "facebook.com", "twitter.com", "reddit.com",
+		"pinterest.com", "whatsapp.com", "t.me", "mailto:", "/login", "/register", "/signup", "/feed", "#"}
 
-	matchCount := 0
-	skippedCount := 0
-	var matchedLinks []string
-
+	var matched []string
+	skipped := 0
 	for _, link := range links {
-		linkLower := strings.ToLower(link)
-
-		skip := false
-		skipReason := ""
-		for _, d := range skipDomains {
-			if strings.Contains(linkLower, d) {
-				skip = true
-				skipReason = "blocklist: " + d
+		ll := strings.ToLower(link)
+		s := false
+		for _, d := range skip {
+			if strings.Contains(ll, d) {
+				s = true
 				break
 			}
 		}
-		if !skip {
-			if strings.HasPrefix(linkLower, "/search/") ||
-				strings.HasPrefix(linkLower, "search/") ||
-				strings.HasPrefix(linkLower, "/search?") {
-				skip = true
-				skipReason = "search/pagination path"
-			}
+		if !s && (strings.HasPrefix(ll, "/search/") || strings.HasPrefix(ll, "search/") || strings.HasPrefix(ll, "/search?")) {
+			s = true
 		}
-
-		if skip {
-			skippedCount++
-			_ = skipReason
+		if s {
+			skipped++
 			continue
 		}
-
-		if searchPattern.MatchString(linkLower) {
-			matchCount++
-			matchedLinks = append(matchedLinks, link)
+		if pat.MatchString(ll) {
+			matched = append(matched, link)
 		}
 	}
+	add("info", fmt.Sprintf("Skipped %d, matched %d", skipped, len(matched)))
 
-	add("info", fmt.Sprintf("Skipped %d links (social/auth/search paths)", skippedCount))
-	add("info", fmt.Sprintf("Pattern matched %d of remaining links", matchCount))
-
-	if matchCount > 0 {
-		for i, ml := range matchedLinks {
+	if len(matched) > 0 {
+		for i, m := range matched {
 			if i >= 5 {
-				add("match", fmt.Sprintf("  ... and %d more matching links", len(matchedLinks)-5))
+				add("match", fmt.Sprintf("  ...and %d more", len(matched)-5))
 				break
 			}
-			add("match", fmt.Sprintf("✓ MATCH: %s", ml))
+			add("match", "✓ "+m)
 		}
-		add("verdict", fmt.Sprintf("FOUND — %d link(s) matched regex /%s/", matchCount, patternStr))
-		return true, logs, nil
+		add("verdict", fmt.Sprintf("FOUND — %d link(s) matched", len(matched)))
+		return true, fmt.Sprintf("Matches found: %d", len(matched)), logs, nil
 	}
-
-	if indicator := findNoResultsIndicator(body); indicator != "" {
-		add("warn", fmt.Sprintf("Page contains no-results text: \"%s\"", indicator))
-		add("verdict", fmt.Sprintf("NOT FOUND — 0 link matches + explicit no-results indicator: \"%s\"", indicator))
-		return false, logs, nil
+	if ind := noResultsIndicator(body); ind != "" {
+		add("warn", `No-results text: "`+ind+`"`)
+		add("verdict", `NOT FOUND — no-results indicator: "`+ind+`"`)
+		return false, "Detected: " + ind, logs, nil
 	}
-
-	add("verdict", fmt.Sprintf("NOT FOUND — 0 links matched regex /%s/ and no no-results text detected", patternStr))
-	return false, logs, nil
+	add("verdict", "NOT FOUND — 0 links matched")
+	return false, "No matches found", logs, nil
 }
 
-func checkMovieAPI(baseURL, searchTerm string) (bool, []MovieMatch, []LogEntry, error) {
+// ─── Movie API (v1) ───────────────────────────────────────────────────────────
+
+func scanMovieAPI(baseURL, searchTerm string) (bool, []MovieMatch, []LogEntry, error) {
 	var logs []LogEntry
-	add := func(level, msg string) { logs = append(logs, LogEntry{level, msg}) }
+	add := func(lvl, msg string) { logs = append(logs, LogEntry{lvl, msg}) }
 
-	searchQuery := strings.ReplaceAll(searchTerm, " ", "+")
-	apiURL := baseURL + "/searching?q=" + searchQuery + "&limit=40&offset=0"
-
-	add("info", fmt.Sprintf("API GET %s", apiURL))
+	q := strings.ReplaceAll(searchTerm, " ", "+")
+	apiURL := baseURL + "/searching?q=" + q + "&limit=40&offset=0"
+	add("info", "API GET "+apiURL)
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest("GET", apiURL, nil)
-	if err != nil {
-		return false, nil, logs, err
-	}
+	req, _ := http.NewRequest("GET", apiURL, nil)
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "application/json")
-
 	resp, err := client.Do(req)
 	if err != nil {
 		return false, nil, logs, err
 	}
 	defer resp.Body.Close()
-
-	add("info", fmt.Sprintf("Response: HTTP %d %s", resp.StatusCode, resp.Status))
-
-	if resp.StatusCode != http.StatusOK {
-		return false, nil, logs, fmt.Errorf("HTTP %s", resp.Status)
+	add("info", fmt.Sprintf("HTTP %d", resp.StatusCode))
+	if resp.StatusCode != 200 {
+		return false, nil, logs, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
+	body, _ := io.ReadAll(resp.Body)
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return false, nil, logs, err
-	}
-
-	var apiResponse struct {
+	var ar struct {
 		Data []struct {
 			T string `json:"t"`
 			Y int    `json:"y"`
-			D string `json:"d"`
 		} `json:"data"`
-		Meta struct {
-			TotalItems int `json:"total_items"`
-		} `json:"meta"`
 	}
-	if err := json.Unmarshal(body, &apiResponse); err != nil {
-		return false, nil, logs, fmt.Errorf("JSON parse error: %v", err)
+	if err := json.Unmarshal(body, &ar); err != nil {
+		return false, nil, logs, err
 	}
+	add("info", fmt.Sprintf("%d results", len(ar.Data)))
 
-	add("info", fmt.Sprintf("API returned %d results (total_items: %d)", len(apiResponse.Data), apiResponse.Meta.TotalItems))
-
-	searchLower := strings.ToLower(searchTerm)
-	add("info", fmt.Sprintf("Checking each title for substring: \"%s\"", searchLower))
-
-	searchURL := baseURL + "/search/?q=" + searchQuery
+	sl := strings.ToLower(searchTerm)
+	searchURL := baseURL + "/search/?q=" + q
 	var matches []MovieMatch
-	for _, item := range apiResponse.Data {
+	for _, item := range ar.Data {
 		if len(matches) >= 10 {
 			break
 		}
-		titleLower := strings.ToLower(item.T)
-		if strings.Contains(titleLower, searchLower) {
+		if strings.Contains(strings.ToLower(item.T), sl) {
 			matches = append(matches, MovieMatch{Name: item.T, URL: searchURL})
-			add("match", fmt.Sprintf("✓ MATCH: \"%s\" (%s %d) — contains \"%s\"", item.T, item.D, item.Y, searchLower))
+			add("match", fmt.Sprintf(`✓ "%s" (%d)`, item.T, item.Y))
 		} else {
-			add("skip", fmt.Sprintf("  no match: \"%s\"", item.T))
+			add("skip", fmt.Sprintf(`  no match: "%s"`, item.T))
 		}
 	}
-
 	if len(matches) > 0 {
-		add("verdict", fmt.Sprintf("FOUND — %d result(s) matched \"%s\"", len(matches), searchTerm))
+		add("verdict", fmt.Sprintf("FOUND — %d result(s)", len(matches)))
 		return true, matches, logs, nil
 	}
-
-	add("verdict", fmt.Sprintf("NOT FOUND — none of %d API results matched \"%s\"", len(apiResponse.Data), searchTerm))
+	add("verdict", fmt.Sprintf("NOT FOUND — 0 of %d matched", len(ar.Data)))
 	return false, nil, logs, nil
 }
 
-func checkStremioAPI(baseURL, searchTerm, mode string) (bool, []MovieMatch, []LogEntry, error) {
+// ─── Stremio API ──────────────────────────────────────────────────────────────
+
+func scanStremio(baseURL, searchTerm, mode string) (bool, []MovieMatch, []LogEntry, error) {
 	var logs []LogEntry
-	add := func(level, msg string) { logs = append(logs, LogEntry{level, msg}) }
+	add := func(lvl, msg string) { logs = append(logs, LogEntry{lvl, msg}) }
 
-	mediaType := "series"
+	mt := "series"
 	if mode == "movies" {
-		mediaType = "movie"
+		mt = "movie"
 	}
-
-	searchQuery := strings.ReplaceAll(searchTerm, " ", "+")
-	apiURL := baseURL + "/catalog/" + mediaType + "/top/search=" + searchQuery + ".json"
-
-	add("info", fmt.Sprintf("Stremio API GET %s", apiURL))
+	q := strings.ReplaceAll(searchTerm, " ", "+")
+	apiURL := baseURL + "/catalog/" + mt + "/top/search=" + q + ".json"
+	add("info", "Stremio GET "+apiURL)
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest("GET", apiURL, nil)
-	if err != nil {
-		return false, nil, logs, err
-	}
+	req, _ := http.NewRequest("GET", apiURL, nil)
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "application/json")
-
 	resp, err := client.Do(req)
 	if err != nil {
 		return false, nil, logs, err
 	}
 	defer resp.Body.Close()
-
-	add("info", fmt.Sprintf("Response: HTTP %d %s", resp.StatusCode, resp.Status))
-
-	if resp.StatusCode != http.StatusOK {
-		return false, nil, logs, fmt.Errorf("HTTP %s", resp.Status)
+	add("info", fmt.Sprintf("HTTP %d", resp.StatusCode))
+	if resp.StatusCode != 200 {
+		return false, nil, logs, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
+	body, _ := io.ReadAll(resp.Body)
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return false, nil, logs, err
-	}
-
-	var apiResponse struct {
+	var ar struct {
 		Metas []struct {
 			ID          string `json:"id"`
 			ImdbID      string `json:"imdb_id"`
@@ -330,45 +309,191 @@ func checkStremioAPI(baseURL, searchTerm, mode string) (bool, []MovieMatch, []Lo
 			ReleaseInfo string `json:"releaseInfo"`
 		} `json:"metas"`
 	}
-	if err := json.Unmarshal(body, &apiResponse); err != nil {
-		return false, nil, logs, fmt.Errorf("JSON parse error: %v", err)
+	if err := json.Unmarshal(body, &ar); err != nil {
+		return false, nil, logs, err
 	}
+	add("info", fmt.Sprintf("%d results", len(ar.Metas)))
 
-	add("info", fmt.Sprintf("API returned %d results", len(apiResponse.Metas)))
-
-	searchLower := strings.ToLower(searchTerm)
-	add("info", fmt.Sprintf("Checking each name for substring: \"%s\"", searchLower))
-
+	sl := strings.ToLower(searchTerm)
 	var matches []MovieMatch
-	for _, item := range apiResponse.Metas {
+	for _, item := range ar.Metas {
 		if len(matches) >= 10 {
 			break
 		}
-		nameLower := strings.ToLower(item.Name)
-		if strings.Contains(nameLower, searchLower) {
+		if strings.Contains(strings.ToLower(item.Name), sl) {
 			id := item.ImdbID
 			if id == "" {
 				id = item.ID
 			}
-			stremioURL := "https://web.stremio.com/#/detail/" + item.Type + "/" + id + "/" + id
-			matches = append(matches, MovieMatch{Name: item.Name, URL: stremioURL})
-			add("match", fmt.Sprintf("✓ MATCH: \"%s\" (%s) → %s", item.Name, item.ReleaseInfo, stremioURL))
+			su := "https://web.stremio.com/#/detail/" + item.Type + "/" + id + "/" + id
+			matches = append(matches, MovieMatch{Name: item.Name, URL: su})
+			add("match", fmt.Sprintf(`✓ "%s" (%s)`, item.Name, item.ReleaseInfo))
 		} else {
-			add("skip", fmt.Sprintf("  no match: \"%s\"", item.Name))
+			add("skip", fmt.Sprintf(`  no match: "%s"`, item.Name))
 		}
 	}
-
 	if len(matches) > 0 {
-		add("verdict", fmt.Sprintf("FOUND — %d result(s) matched \"%s\"", len(matches), searchTerm))
+		add("verdict", fmt.Sprintf("FOUND — %d result(s)", len(matches)))
 		return true, matches, logs, nil
 	}
-
-	add("verdict", fmt.Sprintf("NOT FOUND — none of %d results matched \"%s\"", len(apiResponse.Metas), searchTerm))
+	add("verdict", fmt.Sprintf("NOT FOUND — 0 of %d matched", len(ar.Metas)))
 	return false, nil, logs, nil
 }
 
-func readLines(filePath string) ([]string, error) {
-	f, err := os.Open(filePath)
+// ─── IMDb suggestion API ─────────────────────────────────────────────────────
+// Mirrors app's searchImdb():
+//   endpoint: https://v3.sg.media-imdb.com/suggestion/<firstChar>/<query>.json
+//   filters:  only tt* IDs (titles), skip nm* (people), take ≤10
+
+func searchIMDb(searchTerm string) ([]ImdbResult, error) {
+	q := strings.ToLower(strings.TrimSpace(searchTerm))
+	q = strings.ReplaceAll(q, " ", "_")
+
+	firstChar := "a"
+	for _, c := range q {
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+			firstChar = string(c)
+			break
+		}
+	}
+
+	imdbURL := fmt.Sprintf("https://v3.sg.media-imdb.com/suggestion/%s/%s.json",
+		firstChar, url.PathEscape(q))
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest("GET", imdbURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+
+	var parsed imdbSuggResp
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, err
+	}
+
+	var results []ImdbResult
+	for _, item := range parsed.D {
+		if !strings.HasPrefix(item.ID, "tt") {
+			continue
+		}
+		poster := ""
+		if item.I != nil {
+			poster = item.I.ImageURL
+		}
+		year := ""
+		if item.Y > 0 {
+			year = fmt.Sprintf("%d", item.Y)
+		}
+		results = append(results, ImdbResult{
+			ImdbID:    item.ID,
+			Title:     item.L,
+			Year:      year,
+			MediaType: item.Q,
+			PosterURL: poster,
+			ImdbURL:   "https://www.imdb.com/title/" + item.ID + "/",
+		})
+		if len(results) >= 10 {
+			break
+		}
+	}
+	return results, nil
+}
+
+// ─── Subtitle search ──────────────────────────────────────────────────────────
+// Mirrors app's scanSubtitles():
+//  1. Wizdom search API  → collect imdbId for title-matching results
+//  2. IMDb suggestion API → collect imdbIds not already found
+//  3. Build wizdom.xyz/<type>/<imdbId> URL per unique imdbId
+
+func searchSubtitles(searchTerm, mode string) SubResponse {
+	typePath := "tv"
+	if mode == "movies" {
+		typePath = "movie"
+	}
+
+	wizdomIds := make(map[string]string) // imdbId → display title
+
+	// Source 1: Wizdom search API
+	wizdomAPIURL := "https://wizdom.xyz/api/search?search=" + url.QueryEscape(searchTerm) + "&page=0"
+	client := &http.Client{Timeout: 10 * time.Second}
+	if req, err := http.NewRequest("GET", wizdomAPIURL, nil); err == nil {
+		req.Header.Set("User-Agent", userAgent)
+		if resp, err := client.Do(req); err == nil {
+			defer resp.Body.Close()
+			if resp.StatusCode == 200 {
+				body, _ := io.ReadAll(resp.Body)
+				var items []wizdomItem
+				if json.Unmarshal(body, &items) == nil {
+					sl := strings.ToLower(searchTerm)
+					for _, item := range items {
+						if item.Imdb == "" {
+							continue
+						}
+						enM := strings.Contains(strings.ToLower(item.TitleEn), sl)
+						heM := strings.Contains(strings.ToLower(item.Title), sl)
+						if enM || heM {
+							title := item.TitleEn
+							if title == "" {
+								title = item.Title
+							}
+							if title == "" {
+								title = "Unknown"
+							}
+							wizdomIds[item.Imdb] = title
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Source 2: IMDb suggestion API
+	if imdbResults, err := searchIMDb(searchTerm); err == nil {
+		for _, r := range imdbResults {
+			if _, exists := wizdomIds[r.ImdbID]; !exists {
+				wizdomIds[r.ImdbID] = r.Title
+			}
+		}
+	}
+
+	var results []SubResult
+	if len(wizdomIds) == 0 {
+		results = append(results, SubResult{
+			URL:     wizdomAPIURL,
+			Found:   false,
+			Details: "No matching titles found on Wizdom or IMDb",
+		})
+	} else {
+		for imdbID, title := range wizdomIds {
+			finalURL := "https://wizdom.xyz/" + typePath + "/" + imdbID
+			results = append(results, SubResult{
+				URL:    finalURL,
+				Found:  true,
+				Title:  title,
+				ImdbID: imdbID,
+			})
+		}
+	}
+
+	return SubResponse{Query: searchTerm, Mode: mode, Results: results}
+}
+
+// ─── File helpers ─────────────────────────────────────────────────────────────
+
+func readLines(path string) ([]string, error) {
+	f, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
@@ -376,36 +501,31 @@ func readLines(filePath string) ([]string, error) {
 		return nil, err
 	}
 	defer f.Close()
-
 	var lines []string
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
 		if line != "" && !strings.HasPrefix(line, "#") {
 			lines = append(lines, line)
 		}
 	}
-	return lines, scanner.Err()
+	return lines, sc.Err()
 }
 
-func readRaw(filePath string) string {
-	b, err := os.ReadFile(filePath)
-	if err != nil {
-		return ""
-	}
+func readRaw(path string) string {
+	b, _ := os.ReadFile(path)
 	return string(b)
 }
 
-// --- HTTP Handlers ---
+// ─── HTTP Handlers ────────────────────────────────────────────────────────────
 
 func searchHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 
-	query := r.URL.Query().Get("q")
+	q := r.URL.Query().Get("q")
 	mode := r.URL.Query().Get("mode")
-
-	if query == "" {
+	if q == "" {
 		http.Error(w, `{"error":"missing query"}`, 400)
 		return
 	}
@@ -420,25 +540,23 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 	if mode == "movies" {
 		autoFile = "movies.txt"
 	}
-
 	autoLines, _ := readLines(autoFile)
 	for _, line := range autoLines {
-		var formattedInput, base string
+		var fi, base string
 		switch {
 		case strings.HasPrefix(line, "+"):
-			formattedInput = strings.ReplaceAll(query, " ", "+")
+			fi = strings.ReplaceAll(q, " ", "+")
 			base = line[1:]
 		case strings.HasPrefix(line, "-"):
-			formattedInput = strings.ReplaceAll(query, " ", "-")
+			fi = strings.ReplaceAll(q, " ", "-")
 			base = line[1:]
 		default:
-			formattedInput = query
+			fi = q
 			base = line
 		}
-		url := base + formattedInput
-
-		found, logs, err := checkSiteForContent(url, query)
-		sr := SiteResult{URL: url, Found: found, Type: "auto", Logs: logs}
+		su := base + fi
+		found, details, logs, err := scanSite(su, q)
+		sr := SiteResult{URL: su, Found: found, Details: details, Type: "auto", Logs: logs}
 		if err != nil {
 			sr.Error = err.Error()
 			sr.Logs = append(sr.Logs, LogEntry{"warn", "Error: " + err.Error()})
@@ -448,84 +566,97 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 
 	apiLines, _ := readLines("api_sites.txt")
 	for _, line := range apiLines {
-		var found bool
-		var movieURL string
-		var logs []LogEntry
-		var err error
-		var displayURL string
-
-		switch {
-		case strings.HasPrefix(line, "stremio:"):
+		if strings.HasPrefix(line, "stremio:") {
 			baseURL := strings.TrimPrefix(line, "stremio:")
-			mediaType := "series"
+			mt := "series"
 			if mode == "movies" {
-				mediaType = "movie"
+				mt = "movie"
 			}
-			searchQuery := strings.ReplaceAll(query, " ", "+")
-			displayURL = baseURL + "/catalog/" + mediaType + "/top/search=" + searchQuery + ".json"
-			var matches []MovieMatch
-			found, matches, logs, err = checkStremioAPI(baseURL, query, mode)
+			qe := strings.ReplaceAll(q, " ", "+")
+			dispURL := baseURL + "/catalog/" + mt + "/top/search=" + qe + ".json"
+			found, matches, logs, err := scanStremio(baseURL, q, mode)
+			mu := ""
 			if len(matches) > 0 {
-				movieURL = matches[0].URL
+				mu = matches[0].URL
 			}
-			var urls []string
-			for _, m := range matches {
-				urls = append(urls, m.URL)
-			}
-			sr := SiteResult{URL: displayURL, Found: found, Type: "api", MovieURL: movieURL, MovieURLs: urls, Matches: matches, Logs: logs}
+			sr := SiteResult{URL: dispURL, Found: found, Type: "api", MovieURL: mu, Matches: matches, Logs: logs}
 			if err != nil {
 				sr.Error = err.Error()
 				sr.Logs = append(sr.Logs, LogEntry{"warn", "Error: " + err.Error()})
 			}
 			results = append(results, sr)
-			continue
-		default:
-			// v1: prefix or bare URL — original /searching?q= logic
+		} else {
 			baseURL := strings.TrimPrefix(line, "v1:")
-			searchQuery := strings.ReplaceAll(query, " ", "+")
-			displayURL = baseURL + "/searching?q=" + searchQuery + "&limit=40&offset=0"
-			var matches []MovieMatch
-			found, matches, logs, err = checkMovieAPI(baseURL, query)
+			qe := strings.ReplaceAll(q, " ", "+")
+			dispURL := baseURL + "/searching?q=" + qe + "&limit=40&offset=0"
+			found, matches, logs, err := scanMovieAPI(baseURL, q)
+			mu := ""
 			if len(matches) > 0 {
-				movieURL = matches[0].URL
+				mu = matches[0].URL
 			}
-			var urls []string
-			for _, m := range matches {
-				urls = append(urls, m.URL)
-			}
-			sr := SiteResult{URL: displayURL, Found: found, Type: "api", MovieURL: movieURL, MovieURLs: urls, Matches: matches, Logs: logs}
+			sr := SiteResult{URL: dispURL, Found: found, Type: "api", MovieURL: mu, Matches: matches, Logs: logs}
 			if err != nil {
 				sr.Error = err.Error()
 				sr.Logs = append(sr.Logs, LogEntry{"warn", "Error: " + err.Error()})
 			}
 			results = append(results, sr)
-			continue
 		}
 	}
 
-	manualLines, _ := readLines("manual_checks.txt")
-	for _, line := range manualLines {
-		var formattedInput, base string
+	manLines, _ := readLines("manual_checks.txt")
+	for _, line := range manLines {
+		var fi, base string
 		switch {
 		case strings.HasPrefix(line, "+"):
-			formattedInput = strings.ReplaceAll(query, " ", "+")
+			fi = strings.ReplaceAll(q, " ", "+")
 			base = line[1:]
 		case strings.HasPrefix(line, "-"):
-			formattedInput = strings.ReplaceAll(query, " ", "-")
+			fi = strings.ReplaceAll(q, " ", "-")
 			base = line[1:]
 		default:
-			formattedInput = query
+			fi = q
 			base = line
 		}
-		url := base + formattedInput
 		results = append(results, SiteResult{
-			URL:  url,
+			URL:  base + fi,
 			Type: "manual",
-			Logs: []LogEntry{{"info", "Manual check — visit this URL directly to verify"}},
+			Logs: []LogEntry{{"info", "Manual check — open in browser to verify"}},
 		})
 	}
 
-	resp := SearchResponse{Query: query, Results: results}
+	json.NewEncoder(w).Encode(SearchResponse{Query: q, Results: results})
+}
+
+func imdbHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	q := r.URL.Query().Get("q")
+	if q == "" {
+		http.Error(w, `{"error":"missing query"}`, 400)
+		return
+	}
+	results, err := searchIMDb(q)
+	if err != nil {
+		w.WriteHeader(500)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"query": q, "results": results})
+}
+
+func subtitleHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	q := r.URL.Query().Get("q")
+	mode := r.URL.Query().Get("mode")
+	if q == "" {
+		http.Error(w, `{"error":"missing query"}`, 400)
+		return
+	}
+	if mode != "shows" && mode != "movies" {
+		mode = "shows"
+	}
+	resp := searchSubtitles(q, mode)
 	json.NewEncoder(w).Encode(resp)
 }
 
@@ -534,12 +665,10 @@ func configHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
-
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(204)
 		return
 	}
-
 	file := r.URL.Query().Get("file")
 	allowed := map[string]bool{
 		"shows.txt": true, "movies.txt": true,
@@ -549,17 +678,12 @@ func configHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid file"}`, 400)
 		return
 	}
-
 	if r.Method == http.MethodGet {
-		content := readRaw(file)
-		json.NewEncoder(w).Encode(map[string]string{"content": content})
+		json.NewEncoder(w).Encode(map[string]string{"content": readRaw(file)})
 		return
 	}
-
 	if r.Method == http.MethodPost {
-		var body struct {
-			Content string `json:"content"`
-		}
+		var body struct{ Content string `json:"content"` }
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, `{"error":"bad JSON"}`, 400)
 			return
@@ -571,7 +695,6 @@ func configHandler(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 		return
 	}
-
 	http.Error(w, `{"error":"method not allowed"}`, 405)
 }
 
@@ -587,11 +710,11 @@ func main() {
 			log.Printf("Created empty %s", f)
 		}
 	}
-
 	http.HandleFunc("/", indexHandler)
 	http.HandleFunc("/search", searchHandler)
+	http.HandleFunc("/imdb", imdbHandler)
+	http.HandleFunc("/subtitles", subtitleHandler)
 	http.HandleFunc("/config", configHandler)
-
 	port := "8080"
 	log.Printf("Dvora running at http://localhost:%s", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
