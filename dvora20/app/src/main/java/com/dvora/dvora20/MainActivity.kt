@@ -864,7 +864,7 @@ fun ImdbResultCard(item: ImdbResult) {
                         onClick  = { copyToClipboard(context, item.imdbId) },
                         modifier = Modifier.size(28.dp)
                     ) {
-                        Icon(Icons.Default.Tag, "Copy IMDb ID", tint = Color(0xFFF5C518), modifier = Modifier.size(15.dp))
+                        Icon(Icons.Default.ContentCopy, "Copy IMDb ID", tint = Color(0xFFF5C518), modifier = Modifier.size(15.dp))
                     }
                 }
             }
