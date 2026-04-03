@@ -210,40 +210,66 @@ class DvoraScanner {
     }
 
     suspend fun scanSubtitles(searchTerm: String, searchType: SourceType): List<SearchResult> = withContext(Dispatchers.IO) {
-        val query = searchTerm.replace(" ", "+")
+        val typePath     = if (searchType == SourceType.SHOW) "tv" else "movie"
+        val query        = searchTerm.replace(" ", "+")
         val apiSearchUrl = "https://wizdom.xyz/api/search?search=$query&page=0"
 
+        // Collect IMDb IDs from two sources in parallel:
+        // 1. Wizdom own search API (by title name)
+        // 2. IMDb suggestion API (by name -> imdb IDs)
+        // Then hit wizdom.xyz/<type>/<imdbId> for each unique ID found.
+
+        val wizdomIds = mutableMapOf<String, String>() // imdbId -> display title
+
+        // Source 1: Wizdom search
         try {
             val request = Request.Builder()
                 .url(apiSearchUrl)
                 .header("User-Agent", userAgent)
                 .build()
-
             client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@withContext listOf(SearchResult(apiSearchUrl, false, errorMessage = "HTTP ${response.code}"))
-
-                val body = response.body?.string() ?: return@withContext listOf(SearchResult(apiSearchUrl, false, errorMessage = "Empty body"))
-                val listType = object : TypeToken<List<WizdomResult>>() {}.type
-                val wizdomResults: List<WizdomResult> = Gson().fromJson(body, listType)
-
-                val matches = wizdomResults.filter {
-                    it.title_en?.contains(searchTerm, ignoreCase = true) == true ||
-                            it.title?.contains(searchTerm, ignoreCase = true) == true
-                }
-
-                if (matches.isNotEmpty()) {
-                    return@withContext matches.filter { it.imdb != null }.map { match ->
-                        val typePath = if (searchType == SourceType.SHOW) "tv" else "movie"
-                        val finalUrl = "https://wizdom.xyz/$typePath/${match.imdb}"
-                        val displayTitle = match.title_en ?: match.title ?: "Unknown"
-                        SearchResult(finalUrl, true, foundDetails = "Match: $displayTitle")
+                if (response.isSuccessful) {
+                    val body = response.body?.string()
+                    if (body != null) {
+                        val listType = object : TypeToken<List<WizdomResult>>() {}.type
+                        val wizdomResults: List<WizdomResult> = Gson().fromJson(body, listType)
+                        wizdomResults
+                            .filter {
+                                it.imdb != null && (
+                                        it.title_en?.contains(searchTerm, ignoreCase = true) == true ||
+                                                it.title?.contains(searchTerm, ignoreCase = true) == true
+                                        )
+                            }
+                            .forEach { match ->
+                                val displayTitle = match.title_en ?: match.title ?: "Unknown"
+                                wizdomIds[match.imdb!!] = displayTitle
+                            }
                     }
                 }
-
-                return@withContext listOf(SearchResult(apiSearchUrl, false, foundDetails = "No matching subtitles found on Wizdom."))
             }
-        } catch (e: Exception) {
-            listOf(SearchResult(apiSearchUrl, false, errorMessage = e.message) )
+        } catch (_: Exception) {}
+
+        // Source 2: IMDb suggestion API -> extract IMDb IDs -> look up on Wizdom
+        try {
+            val imdbResults = searchImdb(searchTerm)
+            imdbResults.forEach { imdbResult ->
+                // Only add if not already found via Wizdom search
+                if (!wizdomIds.containsKey(imdbResult.imdbId)) {
+                    wizdomIds[imdbResult.imdbId] = imdbResult.title
+                }
+            }
+        } catch (_: Exception) {}
+
+        if (wizdomIds.isEmpty()) {
+            return@withContext listOf(
+                SearchResult(apiSearchUrl, false, foundDetails = "No matching subtitles found on Wizdom.")
+            )
+        }
+
+        // Build one result per unique IMDb ID
+        return@withContext wizdomIds.map { (imdbId, displayTitle) ->
+            val finalUrl = "https://wizdom.xyz/$typePath/$imdbId"
+            SearchResult(finalUrl, true, foundDetails = "Match: $displayTitle ($imdbId)")
         }
     }
 
@@ -297,10 +323,12 @@ class DvoraScanner {
         }
     }
 
+
     // IMDb search
     // Uses IMDb's suggestion/autocomplete API - returns real JSON, no JS rendering needed,
     // no API key required. Same pattern as Go version: fetch JSON, parse, filter, return.
     // Endpoint: https://v3.sg.media-imdb.com/suggestion/x/<query>.json
+    // Rating is taken from the suggestion API's own 's' field when present,
     suspend fun searchImdb(searchTerm: String): List<ImdbResult> = withContext(Dispatchers.IO) {
         val query     = searchTerm.trim().lowercase().replace(" ", "_")
         val firstChar = query.firstOrNull { it.isLetter() } ?: 'a'

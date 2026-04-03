@@ -594,7 +594,7 @@ fun SubtitlesScreen(
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = BeeColors.HoneyGold)
             }
             Text(
-                "🎞️  Hebrew Subtitles",
+                "🎞️  Subtitles",
                 style      = MaterialTheme.typography.titleLarge,
                 color      = BeeColors.HoneyGold,
                 fontWeight = FontWeight.Bold,
@@ -842,8 +842,8 @@ fun ImdbResultCard(item: ImdbResult) {
                         }
                     }
                 }
-                Spacer(Modifier.height(8.dp))
-                // IMDb link label
+                Spacer(Modifier.height(6.dp))
+                // IMDb ID row with copy button
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
                         modifier         = Modifier
@@ -853,10 +853,17 @@ fun ImdbResultCard(item: ImdbResult) {
                         Text("IMDb", fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black)
                     }
                     Spacer(Modifier.width(5.dp))
-                    Text(item.imdbId, fontSize = 11.sp, color = subColor)
+                    Text(item.imdbId, fontSize = 11.sp, color = subColor, modifier = Modifier.weight(1f))
+                    // Copy IMDb ID
+                    IconButton(
+                        onClick  = { copyToClipboard(context, item.imdbId) },
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(Icons.Default.Tag, "Copy IMDb ID", tint = Color(0xFFF5C518), modifier = Modifier.size(15.dp))
+                    }
                 }
             }
-            // Copy button
+            // Copy full IMDb URL button
             IconButton(onClick = { copyToClipboard(context, item.imdbUrl) }) {
                 Icon(Icons.Default.ContentCopy, "Copy link", tint = BeeColors.DeepAmber)
             }
