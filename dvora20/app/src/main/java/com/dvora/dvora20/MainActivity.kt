@@ -594,7 +594,7 @@ fun SubtitlesScreen(
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = BeeColors.HoneyGold)
             }
             Text(
-                "🎞️  Subtitles",
+                "🎞️  Hebrew Subtitles",
                 style      = MaterialTheme.typography.titleLarge,
                 color      = BeeColors.HoneyGold,
                 fontWeight = FontWeight.Bold,
