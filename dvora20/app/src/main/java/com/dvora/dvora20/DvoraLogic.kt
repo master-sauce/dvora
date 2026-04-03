@@ -269,7 +269,7 @@ class DvoraScanner {
         // Build one result per unique IMDb ID
         return@withContext wizdomIds.map { (imdbId, displayTitle) ->
             val finalUrl = "https://wizdom.xyz/$typePath/$imdbId"
-            SearchResult(finalUrl, true, foundDetails = "Match: $displayTitle ($imdbId)")
+            SearchResult(finalUrl, true, foundDetails = "Match: $displayTitle")
         }
     }
 
