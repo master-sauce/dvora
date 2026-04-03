@@ -165,7 +165,7 @@ object SearchLogs {
 fun copyToClipboard(context: Context, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText("url", text))
-    Toast.makeText(context, "Copied!", Toast.LENGTH_SHORT).show()
+//    Toast.makeText(context, "Copied!", Toast.LENGTH_SHORT).show()
 }
 
 fun openUrl(context: Context, url: String) {
@@ -821,7 +821,12 @@ fun ImdbResultCard(item: ImdbResult) {
 
             // Info
             Column(modifier = Modifier.weight(1f)) {
-                Text(item.title, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = textColor, maxLines = 2)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(item.title, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = textColor, maxLines = 2, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { copyToClipboard(context, item.title) }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.ContentCopy, "Copy title", tint = BeeColors.DeepAmber, modifier = Modifier.size(15.dp))
+                    }
+                }
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (item.year != null)
