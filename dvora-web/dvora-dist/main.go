@@ -759,6 +759,11 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "index.html")
 }
 
+func appJSHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/javascript")
+	http.ServeFile(w, r, "app.js")
+}
+
 func main() {
 	for _, f := range []string{"shows.txt", "movies.txt", "manual_checks.txt", "api_sites.txt"} {
 		if _, err := os.Stat(f); os.IsNotExist(err) {
@@ -767,6 +772,7 @@ func main() {
 		}
 	}
 	http.HandleFunc("/", indexHandler)
+	http.HandleFunc("/app.js", appJSHandler)
 	http.HandleFunc("/search", searchHandler)
 	http.HandleFunc("/imdb", imdbHandler)
 	http.HandleFunc("/subtitles", subtitleHandler)
