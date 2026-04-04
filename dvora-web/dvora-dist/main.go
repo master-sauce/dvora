@@ -81,12 +81,31 @@ type wizdomItem struct {
 
 // Subtitle results
 type SubResult struct {
-	URL     string `json:"url"`
-	Found   bool   `json:"found"`
-	Title   string `json:"title"`
-	ImdbID  string `json:"imdbId"`
-	Details string `json:"details,omitempty"`
-	Error   string `json:"error,omitempty"`
+	URL        string `json:"url"`
+	Found      bool   `json:"found"`
+	Title      string `json:"title"`
+	ImdbID     string `json:"imdbId"`
+	Year       int    `json:"year,omitempty"`
+	Rating     string `json:"rating,omitempty"`
+	Genres     string `json:"genres,omitempty"`
+	PosterURL  string `json:"posterUrl,omitempty"`
+	Type       string `json:"type,omitempty"`
+	SubsCount  int    `json:"subsCount,omitempty"`
+	Details    string `json:"details,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
+
+// wizdomRelease maps the /api/releases/{imdbId} response
+type wizdomRelease struct {
+	Imdb        string        `json:"imdb"`
+	Title       string        `json:"title"`
+	TitleEn     string        `json:"title_en"`
+	Year        int           `json:"year"`
+	Rating      string        `json:"rating"`
+	Genres      string        `json:"genres"`
+	PosterSmall string        `json:"poster_small"`
+	Type        string        `json:"type"` // "movie" or "tv"
+	Subs        []interface{} `json:"subs"` // non-empty = subtitles exist
 }
 
 type SubResponse struct {
@@ -412,16 +431,15 @@ func searchIMDb(searchTerm string) ([]ImdbResult, error) {
 // ─── Subtitle search ──────────────────────────────────────────────────────────
 
 func searchSubtitles(searchTerm, mode string) SubResponse {
-	typePath := "tv"
-	if mode == "movies" {
-		typePath = "movie"
-	}
+	client       := &http.Client{Timeout: 10 * time.Second}
+	query        := url.QueryEscape(searchTerm)
+	apiSearchURL := "https://wizdom.xyz/api/search?search=" + query + "&page=0"
 
-	wizdomIds := make(map[string]string)
+	// ── Step 1: collect candidate IMDb IDs ────────────────────────────────────
+	candidateIds := make(map[string]bool)
 
-	wizdomAPIURL := "https://wizdom.xyz/api/search?search=" + url.QueryEscape(searchTerm) + "&page=0"
-	client := &http.Client{Timeout: 10 * time.Second}
-	if req, err := http.NewRequest("GET", wizdomAPIURL, nil); err == nil {
+	// Source A: Wizdom search API
+	if req, err := http.NewRequest("GET", apiSearchURL, nil); err == nil {
 		req.Header.Set("User-Agent", userAgent)
 		if resp, err := client.Do(req); err == nil {
 			defer resp.Body.Close()
@@ -431,20 +449,10 @@ func searchSubtitles(searchTerm, mode string) SubResponse {
 				if json.Unmarshal(body, &items) == nil {
 					sl := strings.ToLower(searchTerm)
 					for _, item := range items {
-						if item.Imdb == "" {
-							continue
-						}
-						enM := strings.Contains(strings.ToLower(item.TitleEn), sl)
-						heM := strings.Contains(strings.ToLower(item.Title), sl)
-						if enM || heM {
-							title := item.TitleEn
-							if title == "" {
-								title = item.Title
-							}
-							if title == "" {
-								title = "Unknown"
-							}
-							wizdomIds[item.Imdb] = title
+						if item.Imdb == "" { continue }
+						if strings.Contains(strings.ToLower(item.TitleEn), sl) ||
+							strings.Contains(strings.ToLower(item.Title), sl) {
+							candidateIds[item.Imdb] = true
 						}
 					}
 				}
@@ -452,91 +460,100 @@ func searchSubtitles(searchTerm, mode string) SubResponse {
 		}
 	}
 
+	// Source B: IMDb suggestion API
 	if imdbResults, err := searchIMDb(searchTerm); err == nil {
 		for _, r := range imdbResults {
-			if _, exists := wizdomIds[r.ImdbID]; !exists {
-				wizdomIds[r.ImdbID] = r.Title
-			}
+			candidateIds[r.ImdbID] = true
 		}
 	}
 
-	var results []SubResult
-	if len(wizdomIds) == 0 {
-		results = append(results, SubResult{
-			URL:     wizdomAPIURL,
+	if len(candidateIds) == 0 {
+		return SubResponse{Query: searchTerm, Mode: mode, Results: []SubResult{{
+			URL:     apiSearchURL,
 			Found:   false,
 			Details: "No matching titles found on Wizdom or IMDb",
-		})
-	} else {
-		// Verify each candidate against the Wizdom releases API to eliminate false positives.
-		// Only mark Found=true if the releases endpoint returns HTTP 200 with valid data.
-		type verifyResult struct {
-			imdbID string
-			title  string
-			found  bool
-			errMsg string
-		}
-		ch := make(chan verifyResult, len(wizdomIds))
-		var wg sync.WaitGroup
+		}}}
+	}
 
-		for imdbID, title := range wizdomIds {
-			wg.Add(1)
-			go func(imdbID, title string) {
-				defer wg.Done()
-				relURL := "https://wizdom.xyz/api/releases/" + imdbID
-				req, err := http.NewRequest("GET", relURL, nil)
-				if err != nil {
-					ch <- verifyResult{imdbID, title, false, err.Error()}
-					return
-				}
-				req.Header.Set("User-Agent", userAgent)
-				req.Header.Set("Accept", "application/json")
-				resp, err := client.Do(req)
-				if err != nil {
-					ch <- verifyResult{imdbID, title, false, err.Error()}
-					return
-				}
-				defer resp.Body.Close()
-				if resp.StatusCode != 200 {
-					ch <- verifyResult{imdbID, title, false, fmt.Sprintf("Wizdom releases API returned HTTP %d", resp.StatusCode)}
-					return
-				}
-				// Read body and check it's a non-empty/non-null JSON array
-				body, _ := io.ReadAll(resp.Body)
-				trimmed := strings.TrimSpace(string(body))
-				if trimmed == "" || trimmed == "null" || trimmed == "[]" || trimmed == "{}" {
-					ch <- verifyResult{imdbID, title, false, "Wizdom releases API returned empty result"}
-					return
-				}
-				ch <- verifyResult{imdbID, title, true, ""}
-			}(imdbID, title)
-		}
-		wg.Wait()
-		close(ch)
+	// ── Step 2: verify via /api/releases/{imdbId} ─────────────────────────────
+	// This is the authoritative source: gives us real type, metadata, and the
+	// actual subs list. Only emit a result when subs is non-empty.
+	type releaseResult struct {
+		sr SubResult
+		ok bool
+	}
+	ch := make(chan releaseResult, len(candidateIds))
+	var wg sync.WaitGroup
 
-		anyFound := false
-		for vr := range ch {
-			finalURL := "https://wizdom.xyz/" + typePath + "/" + vr.imdbID
-			sr := SubResult{
-				URL:    finalURL,
-				Found:  vr.found,
-				Title:  vr.title,
-				ImdbID: vr.imdbID,
+	for imdbID := range candidateIds {
+		wg.Add(1)
+		go func(imdbID string) {
+			defer wg.Done()
+			relURL := "https://wizdom.xyz/api/releases/" + imdbID
+			req, err := http.NewRequest("GET", relURL, nil)
+			if err != nil { ch <- releaseResult{ok: false}; return }
+			req.Header.Set("User-Agent", userAgent)
+			req.Header.Set("Accept", "application/json")
+			resp, err := client.Do(req)
+			if err != nil { ch <- releaseResult{ok: false}; return }
+			defer resp.Body.Close()
+			if resp.StatusCode != 200 { ch <- releaseResult{ok: false}; return }
+
+			body, _ := io.ReadAll(resp.Body)
+			trimmed := strings.TrimSpace(string(body))
+			if trimmed == "" || trimmed == "null" || trimmed == "[]" || trimmed == "{}" {
+				ch <- releaseResult{ok: false}
+				return
 			}
-			if !vr.found {
-				sr.Error = vr.errMsg
-			} else {
-				anyFound = true
+
+			var rel wizdomRelease
+			if err := json.Unmarshal(body, &rel); err != nil {
+				ch <- releaseResult{ok: false}
+				return
 			}
-			results = append(results, sr)
-		}
-		if !anyFound && len(results) == 0 {
-			results = append(results, SubResult{
-				URL:     wizdomAPIURL,
-				Found:   false,
-				Details: "No subtitles available on Wizdom for any matched title",
-			})
-		}
+
+			// Skip if no subtitles
+			if len(rel.Subs) == 0 { ch <- releaseResult{ok: false}; return }
+
+			// Use the API's own type field to build the URL
+			typePath := "tv"
+			if rel.Type == "movie" { typePath = "movie" }
+			finalURL := "https://wizdom.xyz/" + typePath + "/" + imdbID
+
+			title := rel.TitleEn
+			if title == "" { title = rel.Title }
+			if title == "" { title = "Unknown" }
+
+			ch <- releaseResult{ok: true, sr: SubResult{
+				URL:       finalURL,
+				Found:     true,
+				Title:     title,
+				ImdbID:    imdbID,
+				Year:      rel.Year,
+				Rating:    rel.Rating,
+				Genres:    rel.Genres,
+				PosterURL: rel.PosterSmall,
+				Type:      rel.Type,
+				SubsCount: len(rel.Subs),
+				Details:   fmt.Sprintf("%s · %d subtitle version(s)", title, len(rel.Subs)),
+			}}
+		}(imdbID)
+	}
+	wg.Wait()
+	close(ch)
+
+	var results []SubResult
+	for rr := range ch {
+		if rr.ok { results = append(results, rr.sr) }
+	}
+
+	// If nothing passed verification, return a single not-found entry
+	if len(results) == 0 {
+		return SubResponse{Query: searchTerm, Mode: mode, Results: []SubResult{{
+			URL:     apiSearchURL,
+			Found:   false,
+			Details: fmt.Sprintf("No Hebrew subtitles found for \"%s\"", searchTerm),
+		}}}
 	}
 
 	return SubResponse{Query: searchTerm, Mode: mode, Results: results}

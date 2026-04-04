@@ -576,9 +576,11 @@ fun SubtitlesScreen(
         if (searchTerm.isBlank()) { results = emptyList(); SearchLogs.lastLogs = emptyList(); return@LaunchedEffect }
         delay(400)
         isSearching = true
-        val found           = scanner.scanSubtitles(searchTerm, searchType)
-        results             = found
-        SearchLogs.lastLogs = found
+        val all             = scanner.scanSubtitles(searchTerm, searchType)
+        // Only show results that actually have subtitles — not-found entries
+        // are kept in logs but never displayed on the subtitles screen.
+        results             = all.filter { it.found }
+        SearchLogs.lastLogs = all
         isSearching         = false
     }
 
