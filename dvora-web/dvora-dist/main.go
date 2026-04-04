@@ -468,13 +468,73 @@ func searchSubtitles(searchTerm, mode string) SubResponse {
 			Details: "No matching titles found on Wizdom or IMDb",
 		})
 	} else {
+		// Verify each candidate against the Wizdom releases API to eliminate false positives.
+		// Only mark Found=true if the releases endpoint returns HTTP 200 with valid data.
+		type verifyResult struct {
+			imdbID string
+			title  string
+			found  bool
+			errMsg string
+		}
+		ch := make(chan verifyResult, len(wizdomIds))
+		var wg sync.WaitGroup
+
 		for imdbID, title := range wizdomIds {
-			finalURL := "https://wizdom.xyz/" + typePath + "/" + imdbID
-			results = append(results, SubResult{
+			wg.Add(1)
+			go func(imdbID, title string) {
+				defer wg.Done()
+				relURL := "https://wizdom.xyz/api/releases/" + imdbID
+				req, err := http.NewRequest("GET", relURL, nil)
+				if err != nil {
+					ch <- verifyResult{imdbID, title, false, err.Error()}
+					return
+				}
+				req.Header.Set("User-Agent", userAgent)
+				req.Header.Set("Accept", "application/json")
+				resp, err := client.Do(req)
+				if err != nil {
+					ch <- verifyResult{imdbID, title, false, err.Error()}
+					return
+				}
+				defer resp.Body.Close()
+				if resp.StatusCode != 200 {
+					ch <- verifyResult{imdbID, title, false, fmt.Sprintf("Wizdom releases API returned HTTP %d", resp.StatusCode)}
+					return
+				}
+				// Read body and check it's a non-empty/non-null JSON array
+				body, _ := io.ReadAll(resp.Body)
+				trimmed := strings.TrimSpace(string(body))
+				if trimmed == "" || trimmed == "null" || trimmed == "[]" || trimmed == "{}" {
+					ch <- verifyResult{imdbID, title, false, "Wizdom releases API returned empty result"}
+					return
+				}
+				ch <- verifyResult{imdbID, title, true, ""}
+			}(imdbID, title)
+		}
+		wg.Wait()
+		close(ch)
+
+		anyFound := false
+		for vr := range ch {
+			finalURL := "https://wizdom.xyz/" + typePath + "/" + vr.imdbID
+			sr := SubResult{
 				URL:    finalURL,
-				Found:  true,
-				Title:  title,
-				ImdbID: imdbID,
+				Found:  vr.found,
+				Title:  vr.title,
+				ImdbID: vr.imdbID,
+			}
+			if !vr.found {
+				sr.Error = vr.errMsg
+			} else {
+				anyFound = true
+			}
+			results = append(results, sr)
+		}
+		if !anyFound && len(results) == 0 {
+			results = append(results, SubResult{
+				URL:     wizdomAPIURL,
+				Found:   false,
+				Details: "No subtitles available on Wizdom for any matched title",
 			})
 		}
 	}
@@ -759,6 +819,11 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "index.html")
 }
 
+func appJSHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/javascript")
+	http.ServeFile(w, r, "app.js")
+}
+
 func main() {
 	for _, f := range []string{"shows.txt", "movies.txt", "manual_checks.txt", "api_sites.txt"} {
 		if _, err := os.Stat(f); os.IsNotExist(err) {
@@ -767,6 +832,7 @@ func main() {
 		}
 	}
 	http.HandleFunc("/", indexHandler)
+	http.HandleFunc("/app.js", appJSHandler)
 	http.HandleFunc("/search", searchHandler)
 	http.HandleFunc("/imdb", imdbHandler)
 	http.HandleFunc("/subtitles", subtitleHandler)
