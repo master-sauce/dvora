@@ -297,12 +297,12 @@ function mkRichSubCard(r,idx){
   const typeLabel=r.type?'· '+r.type:'';
 
   let subsCountHTML='';
-  if(r.subsCount>0){
-    const label=r.type==='movie'
-      ?r.subsCount+' subtitle version'+(r.subsCount!==1?'s':'')
-      :r.subsCount+' season'+(r.subsCount!==1?'s':'');
-    subsCountHTML='<div class="sub-rcount">📝 '+label+'</div>';
-  }
+//   if(r.subsCount>0){
+//     const label=r.type==='movie'
+//       ?r.subsCount+' subtitle version'+(r.subsCount!==1?'s':'')
+//       :r.subsCount+' season'+(r.subsCount!==1?'s':'');
+//     subsCountHTML='<div class="sub-rcount">📝 '+label+'</div>';
+//   }
 
   const card=document.createElement('div');
   card.className='sub-rich sfound';
