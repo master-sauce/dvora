@@ -15,7 +15,7 @@ data class SearchResult(
     val found: Boolean,
     val errorMessage: String? = null,
     val foundDetails: String? = null,
-    val verboseLogs: String? = null // For detailed logs only
+    val verboseLogs: String? = null
 )
 
 data class ImdbResult(
@@ -30,11 +30,11 @@ data class ImdbResult(
 // IMDb suggestion API models
 data class ImdbSuggestionResponse(val d: List<ImdbSuggestionItem>?)
 data class ImdbSuggestionItem(
-    val id: String?,   // "tt1234567" for titles, "nm..." for people
-    val l:  String?,   // title / name
-    val y:  Int?,      // year
-    val q:  String?,   // "TV series", "TV mini-series", "video game", etc. null = movie
-    val i:  ImdbImage? // poster
+    val id: String?,
+    val l:  String?,
+    val y:  Int?,
+    val q:  String?,
+    val i:  ImdbImage?
 )
 data class ImdbImage(
     val imageUrl: String?,
@@ -51,6 +51,33 @@ data class WizdomResult(
     val title_en: String?,
     val imdb: String?,
     val type: String?
+)
+
+// Full release detail returned by /api/releases/{imdbId}
+data class WizdomRelease(
+    val imdb:         String?,
+    val title:        String?,   // Hebrew title
+    val title_en:     String?,   // English title
+    val year:         Int?,
+    val rating:       String?,
+    val genres:       String?,
+    val poster_small: String?,
+    val type:         String?,   // "movie" or "tv"
+    val subs:         List<Any>? // non-empty = subtitles exist
+)
+
+// Rich subtitle result — built from /api/releases/{imdbId} data
+data class SubtitleResult(
+    val url:       String,
+    val imdbId:    String,
+    val title:     String,
+    val titleHe:   String?,
+    val year:      Int?,
+    val rating:    String?,
+    val genres:    String?,
+    val posterUrl: String?,
+    val type:      String?,
+    val subsCount: Int
 )
 
 // Stremio API Models
@@ -72,6 +99,15 @@ class DvoraScanner {
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
+        .build()
+
+    // No-redirect client for /api/releases/ — Wizdom returns 3xx with a JSON body for TV.
+    // Following the redirect loses the response body, so we must NOT follow it.
+    private val relClient = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .followRedirects(false)
+        .followSslRedirects(false)
         .build()
 
     private val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
@@ -108,7 +144,6 @@ class DvoraScanner {
 
                 val body = response.body?.string() ?: return@withContext SearchResult(fullUrl, false, errorMessage = "Empty body")
                 val doc = Jsoup.parse(body, fullUrl)
-
                 val links = doc.select("a[href]")
 
                 val searchWords = searchTerm.split(" ").filter { it.isNotBlank() }
@@ -153,9 +188,7 @@ class DvoraScanner {
                     }
 
                     if (searchPattern.matcher(linkLower).find() || searchPattern.matcher(textLower).find()) {
-                        if (!matchedLinks.contains(href)) {
-                            matchedLinks.add(href)
-                        }
+                        if (!matchedLinks.contains(href)) matchedLinks.add(href)
                     }
                 }
 
@@ -165,7 +198,6 @@ class DvoraScanner {
                     logBuilder.append("Matching links (up to 10):\n")
                     matchedLinks.take(10).forEach { logBuilder.append("- $it\n") }
                 }
-
                 logBuilder.append("\nSkip statistics (Blocked Patterns):\n")
                 if (skipCounts.isEmpty()) {
                     logBuilder.append("No links were skipped.\n")
@@ -174,7 +206,6 @@ class DvoraScanner {
                         logBuilder.append("- Blocked '$pattern': $count times\n")
                     }
                 }
-
                 val verbose = logBuilder.toString()
 
                 if (matchedLinks.isNotEmpty()) {
@@ -195,7 +226,6 @@ class DvoraScanner {
                     "no items found", "your search did not match",
                     "did not match any", "no search results"
                 )
-
                 val detectedIndicator = noResultsIndicators.find { pageContent.contains(it) }
                 return@withContext SearchResult(
                     url = fullUrl,
@@ -209,31 +239,36 @@ class DvoraScanner {
         }
     }
 
-    suspend fun scanSubtitles(searchTerm: String, searchType: SourceType): List<SearchResult> = withContext(Dispatchers.IO) {
+    // ── Subtitle search ────────────────────────────────────────────────────────
+    // Step 1 — collect candidate IMDb IDs from two sources:
+    //   A. Wizdom's own search API, filtered to title-relevant matches
+    //   B. IMDb suggestion API (adds IDs not already found via Wizdom)
+    // Step 2 — verify each candidate via /api/releases/{imdbId}
+    //   • 4xx / 5xx        → skip (no data / server error)
+    //   • empty / null subs → skip (no Hebrew subtitles)
+    //   • non-empty subs   → confirmed; build SubtitleResult from API data
+    // The media type (movie/tv) is taken from the release, not from user selection.
+    suspend fun scanSubtitles(searchTerm: String, searchType: SourceType): List<SubtitleResult> = withContext(Dispatchers.IO) {
+        // URL path is driven by the user's toggle, not the API's type field
         val typePath     = if (searchType == SourceType.SHOW) "tv" else "movie"
         val query        = searchTerm.replace(" ", "+")
         val apiSearchUrl = "https://wizdom.xyz/api/search?search=$query&page=0"
 
-        // Collect IMDb IDs from two sources in parallel:
-        // 1. Wizdom own search API (by title name)
-        // 2. IMDb suggestion API (by name -> imdb IDs)
-        // Then hit wizdom.xyz/<type>/<imdbId> for each unique ID found.
+        val wizdomMap = mutableMapOf<String, String>() // imdbId → display title
 
-        val wizdomIds = mutableMapOf<String, String>() // imdbId -> display title
-
-        // Source 1: Wizdom search
+        // ── Source A: Wizdom search API ───────────────────────────────────────────
         try {
-            val request = Request.Builder()
+            val req = Request.Builder()
                 .url(apiSearchUrl)
                 .header("User-Agent", userAgent)
                 .build()
-            client.newCall(request).execute().use { response ->
-                if (response.isSuccessful) {
-                    val body = response.body?.string()
+            client.newCall(req).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val body = resp.body?.string()
                     if (body != null) {
                         val listType = object : TypeToken<List<WizdomResult>>() {}.type
-                        val wizdomResults: List<WizdomResult> = Gson().fromJson(body, listType)
-                        wizdomResults
+                        val items: List<WizdomResult> = Gson().fromJson(body, listType)
+                        items
                             .filter {
                                 it.imdb != null && (
                                         it.title_en?.contains(searchTerm, ignoreCase = true) == true ||
@@ -241,71 +276,68 @@ class DvoraScanner {
                                         )
                             }
                             .forEach { match ->
-                                val displayTitle = match.title_en ?: match.title ?: "Unknown"
-                                wizdomIds[match.imdb!!] = displayTitle
+                                wizdomMap[match.imdb!!] = match.title_en ?: match.title ?: "Unknown"
                             }
                     }
                 }
             }
         } catch (_: Exception) {}
 
-        // Source 2: IMDb suggestion API -> extract IMDb IDs -> look up on Wizdom
+        // ── Source B: IMDb suggestion API ─────────────────────────────────────────
         try {
-            val imdbResults = searchImdb(searchTerm)
-            imdbResults.forEach { imdbResult ->
-                // Only add if not already found via Wizdom search
-                if (!wizdomIds.containsKey(imdbResult.imdbId)) {
-                    wizdomIds[imdbResult.imdbId] = imdbResult.title
-                }
+            searchImdb(searchTerm).forEach { imdbResult ->
+                if (!wizdomMap.containsKey(imdbResult.imdbId))
+                    wizdomMap[imdbResult.imdbId] = imdbResult.title
             }
         } catch (_: Exception) {}
 
-        if (wizdomIds.isEmpty()) {
-            return@withContext listOf(
-                SearchResult(apiSearchUrl, false, foundDetails = "No matching subtitles found on Wizdom.")
-            )
-        }
+        if (wizdomMap.isEmpty()) return@withContext emptyList()
 
-        // Verify each candidate against the Wizdom releases API to eliminate false positives.
-        // Only mark found=true if the endpoint returns HTTP 200 with real (non-empty) data.
-        val verifiedResults = wizdomIds.map { (imdbId, displayTitle) ->
-            val releasesUrl = "https://wizdom.xyz/api/releases/$imdbId"
+        // ── Verify each candidate via /api/releases/{imdbId} ─────────────────────
+        // For TV shows the response is a seasons/episodes structure — NOT a flat "subs" array.
+        // So we only check that the endpoint returns a non-empty, non-error body.
+        // The URL path (/tv/ or /movie/) is always taken from the user toggle.
+        val results = wizdomMap.keys.mapNotNull { imdbId ->
+            val relUrl   = "https://wizdom.xyz/api/releases/$imdbId"
+            val finalUrl = "https://wizdom.xyz/$typePath/$imdbId"
             try {
                 val req = Request.Builder()
-                    .url(releasesUrl)
+                    .url(relUrl)
                     .header("User-Agent", userAgent)
                     .header("Accept", "application/json")
                     .build()
-                client.newCall(req).execute().use { resp ->
-                    val finalUrl = "https://wizdom.xyz/$typePath/$imdbId"
-                    if (!resp.isSuccessful) {
-                        // e.g. HTTP 500, 404 — no subtitles available
-                        return@use SearchResult(
-                            url          = finalUrl,
-                            found        = false,
-                            errorMessage = "Wizdom releases API returned HTTP ${resp.code}",
-                            foundDetails = "No subtitles available for $displayTitle"
-                        )
-                    }
-                    val body = resp.body?.string()?.trim() ?: ""
-                    if (body.isEmpty() || body == "null" || body == "[]" || body == "{}") {
-                        return@use SearchResult(
-                            url          = finalUrl,
-                            found        = false,
-                            foundDetails = "No subtitles available for $displayTitle"
-                        )
-                    }
-                    SearchResult(finalUrl, true, foundDetails = "Match: $displayTitle")
+                relClient.newCall(req).execute().use { resp ->
+                    // Accept 2xx and 3xx (Wizdom returns 3xx with body for TV), skip 4xx/5xx
+                    if (resp.code >= 400) return@mapNotNull null
+
+                    val body = resp.body?.string()?.trim() ?: return@mapNotNull null
+                    // Skip genuinely empty responses
+                    if (body.isEmpty() || body == "null" || body == "[]" || body == "{}") return@mapNotNull null
+
+                    // Parse for rich metadata — best effort, never blocks the result
+                    val release = try { Gson().fromJson(body, WizdomRelease::class.java) }
+                    catch (_: Exception) { null }
+
+                    val displayTitle = wizdomMap[imdbId] ?: "Unknown"
+                    val title        = release?.title_en ?: release?.title ?: displayTitle
+
+                    SubtitleResult(
+                        url       = finalUrl,
+                        imdbId    = imdbId,
+                        title     = title,
+                        titleHe   = release?.title?.takeIf { it != title },
+                        year      = release?.year,
+                        rating    = release?.rating,
+                        genres    = release?.genres,
+                        posterUrl = release?.poster_small,
+                        type      = typePath,           // from user toggle
+                        subsCount = release?.subs?.size ?: 0
+                    )
                 }
-            } catch (e: Exception) {
-                val finalUrl = "https://wizdom.xyz/$typePath/$imdbId"
-                SearchResult(finalUrl, false, errorMessage = e.message, foundDetails = "Verification failed for $displayTitle")
-            }
+            } catch (_: Exception) { null }
         }
 
-        // If every candidate failed verification, return them so the UI shows "not found"
-        // rather than an empty list (which would fall through to a generic error state).
-        return@withContext verifiedResults
+        return@withContext results
     }
 
     suspend fun scanStremio(baseUrl: String, searchTerm: String, searchType: SourceType): List<SearchResult> = withContext(Dispatchers.IO) {
@@ -358,12 +390,6 @@ class DvoraScanner {
         }
     }
 
-
-    // IMDb search
-    // Uses IMDb's suggestion/autocomplete API - returns real JSON, no JS rendering needed,
-    // no API key required. Same pattern as Go version: fetch JSON, parse, filter, return.
-    // Endpoint: https://v3.sg.media-imdb.com/suggestion/x/<query>.json
-    // Rating is taken from the suggestion API's own 's' field when present,
     suspend fun searchImdb(searchTerm: String): List<ImdbResult> = withContext(Dispatchers.IO) {
         val query     = searchTerm.trim().lowercase().replace(" ", "_")
         val firstChar = query.firstOrNull { it.isLetter() } ?: 'a'
@@ -383,7 +409,6 @@ class DvoraScanner {
                 val parsed = Gson().fromJson(body, ImdbSuggestionResponse::class.java)
                 val items  = parsed.d ?: return@use emptyList()
 
-                // Filter to titles only (tt prefix), skip people (nm prefix)
                 items.filter { it.id?.startsWith("tt") == true }
                     .take(10)
                     .mapNotNull { item ->

@@ -48,9 +48,7 @@ import kotlinx.coroutines.launch
 // BEE THEME — COLORS & SCHEMES
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/** Immutable palette used by both light and dark schemes. */
 object BeeColors {
-    // Shared warm tones
     val HoneyGold       = Color(0xFFFFC107)
     val DeepAmber       = Color(0xFFFF8F00)
     val PollenOrange    = Color(0xFFFF6D00)
@@ -58,20 +56,15 @@ object BeeColors {
     val FoundGreenDark  = Color(0xFF8BC34A)
     val NotFoundRed     = Color(0xFFB71C1C)
     val NotFoundAmber   = Color(0xFFFF8F00)
-
-    // Light-mode surfaces
     val WaxWhite        = Color(0xFFFFFDE7)
     val HoneycombYellow = Color(0xFFFFECB3)
     val BeeBlack        = Color(0xFF1A1200)
-
-    // Dark-mode surfaces
-    val DarkComb        = Color(0xFF1C1500)  // deepest dark bg
-    val DarkCell        = Color(0xFF2A1F00)  // card/surface dark
-    val DarkStripe      = Color(0xFF3A2B00)  // elevated surface
-    val DarkOnSurface   = Color(0xFFFFE082)  // readable warm text on dark
+    val DarkComb        = Color(0xFF1C1500)
+    val DarkCell        = Color(0xFF2A1F00)
+    val DarkStripe      = Color(0xFF3A2B00)
+    val DarkOnSurface   = Color(0xFFFFE082)
 }
 
-/** Light bee color scheme — cream and amber */
 private val BeeLightScheme = lightColorScheme(
     primary              = BeeColors.HoneyGold,
     onPrimary            = BeeColors.BeeBlack,
@@ -94,7 +87,6 @@ private val BeeLightScheme = lightColorScheme(
     onError              = Color.White,
 )
 
-/** Dark bee color scheme — deep amber on near-black */
 private val BeeDarkScheme = darkColorScheme(
     primary              = BeeColors.HoneyGold,
     onPrimary            = BeeColors.BeeBlack,
@@ -117,10 +109,8 @@ private val BeeDarkScheme = darkColorScheme(
     onError              = BeeColors.BeeBlack,
 )
 
-// ── CompositionLocal for dark-mode toggle ────────────────────────────────────
 val LocalDarkMode = compositionLocalOf { mutableStateOf(false) }
 
-/** Returns a color that adapts to the current bee theme mode. */
 @Composable
 fun beeAdapt(light: Color, dark: Color): Color =
     if (LocalDarkMode.current.value) dark else light
@@ -165,7 +155,6 @@ object SearchLogs {
 fun copyToClipboard(context: Context, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText("url", text))
-//    Toast.makeText(context, "Copied!", Toast.LENGTH_SHORT).show()
 }
 
 fun openUrl(context: Context, url: String) {
@@ -228,7 +217,6 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                     actionIconContentColor = BeeColors.HoneyGold
                 ),
                 actions = {
-                    // Dark / Light toggle button
                     IconButton(onClick = onToggleDarkMode) {
                         Icon(
                             imageVector        = if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode,
@@ -240,7 +228,6 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                         Icon(Icons.Default.Subtitles, "Subtitles", tint = BeeColors.HoneyGold)
                     }
                     IconButton(onClick = { showImdb = true; showSubtitles = false; showSettings = false }) {
-                        // IMDb logo badge — gold "IMDb" text in a rounded rectangle
                         Box(
                             modifier         = Modifier
                                 .size(40.dp)
@@ -249,10 +236,10 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text       = "IMDb",
-                                fontSize   = 7.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color      = Color.Black,
+                                text          = "IMDb",
+                                fontSize      = 7.sp,
+                                fontWeight    = FontWeight.ExtraBold,
+                                color         = Color.Black,
                                 letterSpacing = 0.sp
                             )
                         }
@@ -305,7 +292,6 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                         .padding(16.dp)
                         .fillMaxSize()
                 ) {
-                    // ── Search card ────────────────────────────────────────
                     Card(
                         shape     = RoundedCornerShape(16.dp),
                         colors    = CardDefaults.cardColors(containerColor = cardBg),
@@ -345,7 +331,6 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
 
                     Spacer(Modifier.height(12.dp))
 
-                    // ── Search button ──────────────────────────────────────
                     Button(
                         onClick = {
                             if (searchTerm.isBlank()) return@Button
@@ -353,9 +338,6 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                             results     = emptyList()
                             scope.launch {
                                 val activeSources = if (searchType == SourceType.SHOW) shows else movies
-
-                                // Each site is awaited individually so the UI updates
-                                // the moment a result arrives instead of waiting for all.
                                 activeSources.forEach { source ->
                                     val result = scanner.scanSite(source, searchTerm)
                                     results = results + result
@@ -377,8 +359,8 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                         enabled  = !isSearching,
                         shape    = RoundedCornerShape(12.dp),
                         colors   = ButtonDefaults.buttonColors(
-                            containerColor        = headerBg,
-                            contentColor          = BeeColors.HoneyGold,
+                            containerColor         = headerBg,
+                            contentColor           = BeeColors.HoneyGold,
                             disabledContainerColor = if (isDark) Color(0xFF2A2000) else Color(0xFF4A3B00),
                             disabledContentColor   = BeeColors.HoneyGold.copy(alpha = 0.4f)
                         )
@@ -558,31 +540,31 @@ fun SubtitlesScreen(
     onToggleDark: () -> Unit,
     modifier:     Modifier = Modifier
 ) {
-    val context     = LocalContext.current
-    val isDark      = LocalDarkMode.current.value
-    val headerBg    = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
-    val scaffoldBg  = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
+    val isDark     = LocalDarkMode.current.value
+    val headerBg   = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
+    val scaffoldBg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
 
     var searchTerm  by remember { mutableStateOf("") }
     var searchType  by remember { mutableStateOf(SourceType.SHOW) }
-    var results     by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
+    var results     by remember { mutableStateOf<List<SubtitleResult>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
 
     BackHandler { onBack() }
 
-    // Live search: re-runs whenever searchTerm or searchType changes.
-    // 400ms debounce on text changes; type toggle fires immediately.
+    // Re-run whenever the search term OR the show/movie toggle changes.
+    // 400ms debounce on text; type toggle fires immediately (searchTerm unchanged = no delay needed
+    // but LaunchedEffect cancels and restarts either way, which is the correct behaviour).
     LaunchedEffect(searchTerm, searchType) {
-        if (searchTerm.isBlank()) { results = emptyList(); SearchLogs.lastLogs = emptyList(); return@LaunchedEffect }
+        if (searchTerm.isBlank()) { results = emptyList(); return@LaunchedEffect }
         delay(400)
         isSearching = true
-        val found           = scanner.scanSubtitles(searchTerm, searchType)
-        results             = found
-        SearchLogs.lastLogs = found
-        isSearching         = false
+        results     = scanner.scanSubtitles(searchTerm, searchType)
+        isSearching = false
     }
 
     Column(modifier = modifier.fillMaxSize().background(scaffoldBg).padding(16.dp)) {
+
+        // ── Header ────────────────────────────────────────────────────────────
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
@@ -612,35 +594,226 @@ fun SubtitlesScreen(
         Spacer(Modifier.height(16.dp))
 
         OutlinedTextField(
-            value = searchTerm, onValueChange = { searchTerm = it },
-            label = { Text("Movie or Show Name") },
-            modifier = Modifier.fillMaxWidth(), singleLine = true,
-            colors = beeTextFieldColors()
+            value         = searchTerm,
+            onValueChange = { searchTerm = it },
+            label         = { Text("Movie or Show Name") },
+            modifier      = Modifier.fillMaxWidth(),
+            singleLine    = true,
+            colors        = beeTextFieldColors()
         )
 
+        Spacer(Modifier.height(12.dp))
+
+        // ── Show / Movie toggle ───────────────────────────────────────────────
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier          = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+            modifier          = Modifier.fillMaxWidth()
         ) {
-            BeeRadioOption("📺 Shows",  searchType == SourceType.SHOW,  { searchType = SourceType.SHOW },  Modifier.weight(1f))
+            BeeRadioOption(
+                label    = "📺 Shows",
+                selected = searchType == SourceType.SHOW,
+                onClick  = { searchType = SourceType.SHOW },
+                modifier = Modifier.weight(1f)
+            )
             Spacer(Modifier.width(8.dp))
-            BeeRadioOption("🎬 Movies", searchType == SourceType.MOVIE, { searchType = SourceType.MOVIE }, Modifier.weight(1f))
+            BeeRadioOption(
+                label    = "🎬 Movies",
+                selected = searchType == SourceType.MOVIE,
+                onClick  = { searchType = SourceType.MOVIE },
+                modifier = Modifier.weight(1f)
+            )
         }
 
-        // Progress bar replaces the button
+        Spacer(Modifier.height(10.dp))
+
         if (isSearching) {
             LinearProgressIndicator(
                 modifier   = Modifier.fillMaxWidth(),
                 color      = BeeColors.DeepAmber,
                 trackColor = BeeColors.DeepAmber.copy(alpha = 0.2f)
             )
-            Spacer(Modifier.height(16.dp))
+            Spacer(Modifier.height(12.dp))
         } else {
             Spacer(Modifier.height(4.dp))
         }
 
-        LazyColumn(modifier = Modifier.weight(1f)) {
-            items(results) { ResultItem(it, showDetails = true) }
+        // Empty state
+        if (results.isEmpty() && !isSearching && searchTerm.isNotBlank()) {
+            Box(
+                Modifier.fillMaxWidth().padding(top = 32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    "No Hebrew subtitles found for \"$searchTerm\"",
+                    color      = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)),
+                    fontSize   = 13.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+
+        LazyColumn(
+            modifier       = Modifier.weight(1f),
+            contentPadding = PaddingValues(vertical = 4.dp)
+        ) {
+            items(results) { SubtitleResultCard(it) }
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SUBTITLE RESULT CARD
+// ═══════════════════════════════════════════════════════════════════════════════
+
+@Composable
+fun SubtitleResultCard(item: SubtitleResult) {
+    val context   = LocalContext.current
+    val cardBg    = beeAdapt(Color(0xFFF1F8E9), Color(0xFF1B2A10))
+    val textColor = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
+    val subColor  = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.7f))
+
+    Card(
+        modifier  = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 5.dp)
+            .clickable { openUrl(context, item.url) },
+        shape     = RoundedCornerShape(14.dp),
+        colors    = CardDefaults.cardColors(containerColor = cardBg),
+        elevation = CardDefaults.cardElevation(3.dp),
+        border    = androidx.compose.foundation.BorderStroke(1.dp, BeeColors.FoundGreen.copy(alpha = 0.35f))
+    ) {
+        Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.Top) {
+
+            // ── Poster ────────────────────────────────────────────────────────
+            Box(
+                modifier = Modifier
+                    .width(70.dp)
+                    .height(100.dp)
+                    .background(beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe), RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (item.posterUrl != null) {
+                    AsyncImage(
+                        model              = ImageRequest.Builder(context).data(item.posterUrl).crossfade(true).build(),
+                        contentDescription = item.title,
+                        contentScale       = ContentScale.Crop,
+                        modifier           = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Text(if (item.type == "movie") "🎬" else "📺", fontSize = 26.sp)
+                }
+            }
+
+            Spacer(Modifier.width(12.dp))
+
+            // ── Info ──────────────────────────────────────────────────────────
+            Column(modifier = Modifier.weight(1f)) {
+
+                // Title + SUBS badge
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        item.title,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize   = 15.sp,
+                        color      = textColor,
+                        maxLines   = 2,
+                        modifier   = Modifier.weight(1f)
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Surface(
+                        shape  = RoundedCornerShape(6.dp),
+                        color  = BeeColors.FoundGreen.copy(alpha = 0.15f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BeeColors.FoundGreen.copy(alpha = 0.5f))
+                    ) {
+                        Text(
+                            "✓ SUBS",
+                            fontSize   = 9.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color      = beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark),
+                            modifier   = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                        )
+                    }
+                }
+
+                // Hebrew title (if different from English)
+                if (item.titleHe != null) {
+                    Text(
+                        item.titleHe,
+                        fontSize = 12.sp,
+                        color    = subColor,
+                        modifier = Modifier.padding(top = 1.dp)
+                    )
+                }
+
+                Spacer(Modifier.height(5.dp))
+
+                // Year · Rating · Type chip
+                Row(
+                    verticalAlignment     = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    if (item.year != null)
+                        Text(item.year.toString(), fontSize = 12.sp, color = BeeColors.HoneyGold, fontWeight = FontWeight.Bold)
+                    if (item.rating != null)
+                        Text(
+                            "⭐ ${"%.1f".format(item.rating.toFloatOrNull() ?: 0f)}",
+                            fontSize   = 12.sp,
+                            color      = BeeColors.HoneyGold,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    if (item.type != null) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe)
+                        ) {
+                            Text(
+                                if (item.type == "movie") "Movie" else "TV",
+                                fontSize   = 10.sp,
+                                color      = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold),
+                                fontWeight = FontWeight.Bold,
+                                modifier   = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+
+                if (item.genres != null) {
+                    Spacer(Modifier.height(3.dp))
+                    Text(item.genres, fontSize = 11.sp, color = subColor, maxLines = 1)
+                }
+
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "📝 ${item.subsCount} subtitle version${if (item.subsCount != 1) "s" else ""}",
+                    fontSize   = 11.sp,
+                    color      = beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark),
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                Spacer(Modifier.height(3.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .background(Color(0xFFF5C518), RoundedCornerShape(3.dp))
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                    ) {
+                        Text("IMDb", fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black)
+                    }
+                    Spacer(Modifier.width(5.dp))
+                    Text(item.imdbId, fontSize = 10.sp, color = subColor)
+                }
+            }
+
+            // ── Actions ───────────────────────────────────────────────────────
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                IconButton(onClick = { openUrl(context, item.url) }) {
+                    Icon(Icons.Default.OpenInNew, "Open", tint = BeeColors.FoundGreenDark)
+                }
+                IconButton(onClick = { copyToClipboard(context, item.url) }) {
+                    Icon(Icons.Default.ContentCopy, "Copy link", tint = BeeColors.DeepAmber)
+                }
+            }
         }
     }
 }
@@ -657,7 +830,6 @@ fun ImdbScreen(
     modifier:     Modifier = Modifier
 ) {
     val context    = LocalContext.current
-    val scope      = rememberCoroutineScope()
     val isDark     = LocalDarkMode.current.value
     val headerBg   = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
     val scaffoldBg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
@@ -669,7 +841,6 @@ fun ImdbScreen(
 
     BackHandler { onBack() }
 
-    // Live search: debounce 350ms so we don't hammer the API on every keystroke
     LaunchedEffect(searchTerm) {
         if (searchTerm.isBlank()) { results = emptyList(); errorMsg = null; return@LaunchedEffect }
         delay(350)
@@ -683,7 +854,6 @@ fun ImdbScreen(
 
     Column(modifier = modifier.fillMaxSize().background(scaffoldBg)) {
 
-        // ── Header ────────────────────────────────────────────────────────────
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
@@ -694,7 +864,6 @@ fun ImdbScreen(
             IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = BeeColors.HoneyGold)
             }
-            // IMDb logo
             Box(
                 modifier         = Modifier
                     .padding(horizontal = 4.dp)
@@ -703,10 +872,10 @@ fun ImdbScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text       = "IMDb",
-                    fontSize   = 13.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color      = Color.Black,
+                    text          = "IMDb",
+                    fontSize      = 13.sp,
+                    fontWeight    = FontWeight.ExtraBold,
+                    color         = Color.Black,
                     letterSpacing = 0.sp
                 )
             }
@@ -726,7 +895,6 @@ fun ImdbScreen(
             }
         }
 
-        // ── Search field + button ─────────────────────────────────────────────
         Column(modifier = Modifier.padding(16.dp)) {
             OutlinedTextField(
                 value         = searchTerm,
@@ -736,18 +904,16 @@ fun ImdbScreen(
                 singleLine    = true,
                 colors        = beeTextFieldColors()
             )
-            // Loading indicator shown inline while live search is running
             if (isSearching) {
                 Spacer(Modifier.height(8.dp))
                 LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth(),
-                    color    = Color(0xFFF5C518),
+                    modifier   = Modifier.fillMaxWidth(),
+                    color      = Color(0xFFF5C518),
                     trackColor = Color(0xFFF5C518).copy(alpha = 0.2f)
                 )
             }
         }
 
-        // ── Results ───────────────────────────────────────────────────────────
         if (errorMsg != null) {
             Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
                 Text(errorMsg!!, color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)))
@@ -755,7 +921,7 @@ fun ImdbScreen(
         }
 
         LazyColumn(
-            modifier      = Modifier.weight(1f),
+            modifier       = Modifier.weight(1f),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
         ) {
             items(results) { ImdbResultCard(it) }
@@ -781,27 +947,18 @@ fun ImdbResultCard(item: ImdbResult) {
     ) {
         Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.Top) {
 
-            // Poster
             if (item.posterUrl != null) {
                 Box(
                     modifier = Modifier
                         .width(70.dp)
                         .height(100.dp)
-                        .background(
-                            beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe),
-                            RoundedCornerShape(8.dp)
-                        )
+                        .background(beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe), RoundedCornerShape(8.dp))
                 ) {
                     AsyncImage(
-                        model             = ImageRequest.Builder(context)
-                            .data(item.posterUrl)
-                            .crossfade(true)
-                            .build(),
+                        model              = ImageRequest.Builder(context).data(item.posterUrl).crossfade(true).build(),
                         contentDescription = item.title,
-                        contentScale      = ContentScale.Crop,
-                        modifier          = Modifier
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(8.dp))
+                        contentScale       = ContentScale.Crop,
+                        modifier           = Modifier.fillMaxSize().clip(RoundedCornerShape(8.dp))
                     )
                 }
             } else {
@@ -809,17 +966,13 @@ fun ImdbResultCard(item: ImdbResult) {
                     modifier         = Modifier
                         .width(70.dp)
                         .height(100.dp)
-                        .background(
-                            beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe),
-                            RoundedCornerShape(8.dp)
-                        ),
+                        .background(beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe), RoundedCornerShape(8.dp)),
                     contentAlignment = Alignment.Center
                 ) { Text("🎬", fontSize = 26.sp) }
             }
 
             Spacer(Modifier.width(12.dp))
 
-            // Info
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(item.title, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = textColor, maxLines = 2, modifier = Modifier.weight(1f))
@@ -833,25 +986,21 @@ fun ImdbResultCard(item: ImdbResult) {
                         Text(item.year, fontSize = 12.sp, color = BeeColors.HoneyGold, fontWeight = FontWeight.SemiBold)
                     if (item.mediaType != null) {
                         Spacer(Modifier.width(8.dp))
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = Color(0xFFF5C518)
-                        ) {
+                        Surface(shape = RoundedCornerShape(4.dp), color = Color(0xFFF5C518)) {
                             Text(
                                 item.mediaType,
-                                fontSize = 10.sp,
-                                color    = Color.Black,
+                                fontSize   = 10.sp,
+                                color      = Color.Black,
                                 fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                modifier   = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                             )
                         }
                     }
                 }
                 Spacer(Modifier.height(6.dp))
-                // IMDb ID row with copy button
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
-                        modifier         = Modifier
+                        modifier = Modifier
                             .background(Color(0xFFF5C518), RoundedCornerShape(3.dp))
                             .padding(horizontal = 4.dp, vertical = 1.dp)
                     ) {
@@ -859,16 +1008,11 @@ fun ImdbResultCard(item: ImdbResult) {
                     }
                     Spacer(Modifier.width(5.dp))
                     Text(item.imdbId, fontSize = 11.sp, color = subColor, modifier = Modifier.weight(1f))
-                    // Copy IMDb ID
-                    IconButton(
-                        onClick  = { copyToClipboard(context, item.imdbId) },
-                        modifier = Modifier.size(28.dp)
-                    ) {
+                    IconButton(onClick = { copyToClipboard(context, item.imdbId) }, modifier = Modifier.size(28.dp)) {
                         Icon(Icons.Default.ContentCopy, "Copy IMDb ID", tint = Color(0xFFF5C518), modifier = Modifier.size(15.dp))
                     }
                 }
             }
-            // Copy full IMDb URL button
             IconButton(onClick = { copyToClipboard(context, item.imdbUrl) }) {
                 Icon(Icons.Default.ContentCopy, "Copy link", tint = BeeColors.DeepAmber)
             }
@@ -893,7 +1037,7 @@ fun SettingsScreen(
 ) {
     BackHandler { onBack() }
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Shows", "Movies", "APIs", "Manual", "Logs")
+    val tabs     = listOf("Shows", "Movies", "APIs", "Manual", "Logs")
     val isDark   = LocalDarkMode.current.value
     val headerBg = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
     val bgColor  = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
@@ -901,7 +1045,7 @@ fun SettingsScreen(
     Column(modifier = modifier.fillMaxSize().background(bgColor)) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().background(headerBg).padding(4.dp)
+            modifier          = Modifier.fillMaxWidth().background(headerBg).padding(4.dp)
         ) {
             IconButton(onClick = onBack) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = BeeColors.HoneyGold)
