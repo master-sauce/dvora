@@ -53,33 +53,6 @@ data class WizdomResult(
     val type: String?
 )
 
-// Full release detail from /api/releases/{imdbId}
-data class WizdomRelease(
-    val imdb: String?,
-    val title: String?,
-    val title_en: String?,
-    val year: Int?,
-    val rating: String?,
-    val genres: String?,
-    val poster_small: String?,
-    val type: String?,       // "movie" or "tv"
-    val subs: List<Any>?     // non-empty = subtitles actually exist
-)
-
-// Rich subtitle result — returned by scanSubtitles, built from /api/releases/{imdbId}
-data class SubtitleResult(
-    val url:       String,
-    val imdbId:    String,
-    val title:     String,       // English title
-    val titleHe:   String?,      // Hebrew title (may be null)
-    val year:      Int?,
-    val rating:    String?,      // e.g. "7.90"
-    val genres:    String?,      // e.g. "אקשן / הרפתקאות"
-    val posterUrl: String?,
-    val type:      String?,      // "movie" or "tv"
-    val subsCount: Int           // number of subtitle versions
-)
-
 // Stremio API Models
 data class StremioResponse(val metas: List<StremioMeta>?)
 data class StremioMeta(
@@ -236,14 +209,19 @@ class DvoraScanner {
         }
     }
 
-    suspend fun scanSubtitles(searchTerm: String, searchType: SourceType): List<SubtitleResult> = withContext(Dispatchers.IO) {
+    suspend fun scanSubtitles(searchTerm: String, searchType: SourceType): List<SearchResult> = withContext(Dispatchers.IO) {
+        val typePath     = if (searchType == SourceType.SHOW) "tv" else "movie"
         val query        = searchTerm.replace(" ", "+")
         val apiSearchUrl = "https://wizdom.xyz/api/search?search=$query&page=0"
 
-        // Step 1: Collect candidate IMDb IDs from Wizdom search + IMDb suggestion API
-        val candidateIds = mutableSetOf<String>()
+        // Collect IMDb IDs from two sources in parallel:
+        // 1. Wizdom own search API (by title name)
+        // 2. IMDb suggestion API (by name -> imdb IDs)
+        // Then hit wizdom.xyz/<type>/<imdbId> for each unique ID found.
 
-        // Source 1: Wizdom search API
+        val wizdomIds = mutableMapOf<String, String>() // imdbId -> display title
+
+        // Source 1: Wizdom search
         try {
             val request = Request.Builder()
                 .url(apiSearchUrl)
@@ -262,25 +240,35 @@ class DvoraScanner {
                                                 it.title?.contains(searchTerm, ignoreCase = true) == true
                                         )
                             }
-                            .mapNotNullTo(candidateIds) { it.imdb }
+                            .forEach { match ->
+                                val displayTitle = match.title_en ?: match.title ?: "Unknown"
+                                wizdomIds[match.imdb!!] = displayTitle
+                            }
                     }
                 }
             }
         } catch (_: Exception) {}
 
-        // Source 2: IMDb suggestion API
+        // Source 2: IMDb suggestion API -> extract IMDb IDs -> look up on Wizdom
         try {
-            searchImdb(searchTerm).mapTo(candidateIds) { it.imdbId }
+            val imdbResults = searchImdb(searchTerm)
+            imdbResults.forEach { imdbResult ->
+                // Only add if not already found via Wizdom search
+                if (!wizdomIds.containsKey(imdbResult.imdbId)) {
+                    wizdomIds[imdbResult.imdbId] = imdbResult.title
+                }
+            }
         } catch (_: Exception) {}
 
-        if (candidateIds.isEmpty()) {
-            return@withContext emptyList()
+        if (wizdomIds.isEmpty()) {
+            return@withContext listOf(
+                SearchResult(apiSearchUrl, false, foundDetails = "No matching subtitles found on Wizdom.")
+            )
         }
 
-        // Step 2: For each candidate, call /api/releases/{imdbId}.
-        // This is the single source of truth: it returns the real type ("movie"/"tv"),
-        // rich metadata, and the subs list. Only emit a result if subs is non-empty.
-        val results = candidateIds.mapNotNull { imdbId ->
+        // Verify each candidate against the Wizdom releases API to eliminate false positives.
+        // Only mark found=true if the endpoint returns HTTP 200 with real (non-empty) data.
+        val verifiedResults = wizdomIds.map { (imdbId, displayTitle) ->
             val releasesUrl = "https://wizdom.xyz/api/releases/$imdbId"
             try {
                 val req = Request.Builder()
@@ -289,50 +277,35 @@ class DvoraScanner {
                     .header("Accept", "application/json")
                     .build()
                 client.newCall(req).execute().use { resp ->
-                    if (!resp.isSuccessful) return@mapNotNull null  // 404/500 = skip entirely
-
-                    val body = resp.body?.string()?.trim() ?: return@mapNotNull null
-                    if (body.isEmpty() || body == "null" || body == "[]" || body == "{}") return@mapNotNull null
-
-                    val release = Gson().fromJson(body, WizdomRelease::class.java)
-                        ?: return@mapNotNull null
-
-                    // Only include if subtitles actually exist
-                    if (release.subs.isNullOrEmpty()) return@mapNotNull null
-
-                    // Build URL from the API's own type field, not our search mode
-                    val typePath = when (release.type) {
-                        "movie" -> "movie"
-                        "tv"    -> "tv"
-                        else    -> "tv"  // safe fallback
+                    val finalUrl = "https://wizdom.xyz/$typePath/$imdbId"
+                    if (!resp.isSuccessful) {
+                        // e.g. HTTP 500, 404 — no subtitles available
+                        return@use SearchResult(
+                            url          = finalUrl,
+                            found        = false,
+                            errorMessage = "Wizdom releases API returned HTTP ${resp.code}",
+                            foundDetails = "No subtitles available for $displayTitle"
+                        )
                     }
-                    val finalUrl  = "https://wizdom.xyz/$typePath/$imdbId"
-                    val title     = release.title_en ?: release.title ?: "Unknown"
-                    val subsCount = release.subs.size
-
-                    SubtitleResult(
-                        url       = finalUrl,
-                        imdbId    = imdbId,
-                        title     = title,
-                        titleHe   = release.title?.takeIf { it != title },
-                        year      = release.year,
-                        rating    = release.rating,
-                        genres    = release.genres,
-                        posterUrl = release.poster_small,
-                        type      = release.type,
-                        subsCount = subsCount
-                    )
+                    val body = resp.body?.string()?.trim() ?: ""
+                    if (body.isEmpty() || body == "null" || body == "[]" || body == "{}") {
+                        return@use SearchResult(
+                            url          = finalUrl,
+                            found        = false,
+                            foundDetails = "No subtitles available for $displayTitle"
+                        )
+                    }
+                    SearchResult(finalUrl, true, foundDetails = "Match: $displayTitle")
                 }
-            } catch (_: Exception) {
-                null  // network error = skip silently
+            } catch (e: Exception) {
+                val finalUrl = "https://wizdom.xyz/$typePath/$imdbId"
+                SearchResult(finalUrl, false, errorMessage = e.message, foundDetails = "Verification failed for $displayTitle")
             }
         }
 
-        if (results.isEmpty()) {
-            return@withContext emptyList()
-        }
-
-        return@withContext results
+        // If every candidate failed verification, return them so the UI shows "not found"
+        // rather than an empty list (which would fall through to a generic error state).
+        return@withContext verifiedResults
     }
 
     suspend fun scanStremio(baseUrl: String, searchTerm: String, searchType: SourceType): List<SearchResult> = withContext(Dispatchers.IO) {

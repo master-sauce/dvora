@@ -565,7 +565,7 @@ fun SubtitlesScreen(
 
     var searchTerm  by remember { mutableStateOf("") }
     var searchType  by remember { mutableStateOf(SourceType.SHOW) }
-    var results     by remember { mutableStateOf<List<SubtitleResult>>(emptyList()) }
+    var results     by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
 
     BackHandler { onBack() }
@@ -576,9 +576,10 @@ fun SubtitlesScreen(
         if (searchTerm.isBlank()) { results = emptyList(); SearchLogs.lastLogs = emptyList(); return@LaunchedEffect }
         delay(400)
         isSearching = true
-        // scanSubtitles now returns only verified SubtitleResult entries (non-empty subs)
-        results     = scanner.scanSubtitles(searchTerm, searchType)
-        isSearching = false
+        val found           = scanner.scanSubtitles(searchTerm, searchType)
+        results             = found
+        SearchLogs.lastLogs = found
+        isSearching         = false
     }
 
     Column(modifier = modifier.fillMaxSize().background(scaffoldBg).padding(16.dp)) {
@@ -638,170 +639,8 @@ fun SubtitlesScreen(
             Spacer(Modifier.height(4.dp))
         }
 
-        if (results.isEmpty() && !isSearching && searchTerm.isNotBlank()) {
-            Box(Modifier.fillMaxWidth().padding(top = 32.dp), contentAlignment = Alignment.Center) {
-                Text(
-                    "No Hebrew subtitles found for \"$searchTerm\"",
-                    color    = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium
-                )
-            }
-        }
-
-        LazyColumn(
-            modifier       = Modifier.weight(1f),
-            contentPadding = PaddingValues(vertical = 4.dp)
-        ) {
-            items(results) { SubtitleResultCard(it) }
-        }
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// SUBTITLE RESULT CARD
-// ═══════════════════════════════════════════════════════════════════════════════
-
-@Composable
-fun SubtitleResultCard(item: SubtitleResult) {
-    val context   = LocalContext.current
-    val cardBg    = beeAdapt(Color(0xFFF1F8E9), Color(0xFF1B2A10))
-    val textColor = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
-    val subColor  = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.7f))
-
-    Card(
-        modifier  = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 5.dp)
-            .clickable { openUrl(context, item.url) },
-        shape     = RoundedCornerShape(14.dp),
-        colors    = CardDefaults.cardColors(containerColor = cardBg),
-        elevation = CardDefaults.cardElevation(3.dp),
-        border    = androidx.compose.foundation.BorderStroke(1.dp, BeeColors.FoundGreen.copy(alpha = 0.35f))
-    ) {
-        Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.Top) {
-
-            // ── Poster ────────────────────────────────────────────────────────
-            Box(
-                modifier = Modifier
-                    .width(70.dp)
-                    .height(100.dp)
-                    .background(beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe), RoundedCornerShape(8.dp))
-                    .clip(RoundedCornerShape(8.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                if (item.posterUrl != null) {
-                    AsyncImage(
-                        model              = ImageRequest.Builder(context)
-                            .data(item.posterUrl)
-                            .crossfade(true)
-                            .build(),
-                        contentDescription = item.title,
-                        contentScale       = ContentScale.Crop,
-                        modifier           = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Text(if (item.type == "movie") "🎬" else "📺", fontSize = 26.sp)
-                }
-            }
-
-            Spacer(Modifier.width(12.dp))
-
-            // ── Info ──────────────────────────────────────────────────────────
-            Column(modifier = Modifier.weight(1f)) {
-
-                // Title + SUBS badge
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        item.title,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize   = 15.sp,
-                        color      = textColor,
-                        maxLines   = 2,
-                        modifier   = Modifier.weight(1f)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = BeeColors.FoundGreen.copy(alpha = 0.15f),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, BeeColors.FoundGreen.copy(alpha = 0.5f))
-                    ) {
-                        Text(
-                            "✓ SUBS",
-                            fontSize   = 9.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color      = beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark),
-                            modifier   = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                        )
-                    }
-                }
-
-                // Hebrew title
-                if (item.titleHe != null) {
-                    Text(item.titleHe, fontSize = 12.sp, color = subColor, modifier = Modifier.padding(top = 1.dp))
-                }
-
-                Spacer(Modifier.height(5.dp))
-
-                // Year · Rating · Type
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    if (item.year != null)
-                        Text(item.year.toString(), fontSize = 12.sp, color = BeeColors.HoneyGold, fontWeight = FontWeight.Bold)
-                    if (item.rating != null) {
-                        Text("⭐ ${"%.1f".format(item.rating.toFloatOrNull() ?: 0f)}", fontSize = 12.sp, color = BeeColors.HoneyGold, fontWeight = FontWeight.SemiBold)
-                    }
-                    if (item.type != null) {
-                        Surface(shape = RoundedCornerShape(4.dp), color = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe)) {
-                            Text(
-                                if (item.type == "movie") "Movie" else "TV",
-                                fontSize   = 10.sp,
-                                color      = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold),
-                                fontWeight = FontWeight.Bold,
-                                modifier   = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
-                            )
-                        }
-                    }
-                }
-
-                // Genres
-                if (item.genres != null) {
-                    Spacer(Modifier.height(3.dp))
-                    Text(item.genres, fontSize = 11.sp, color = subColor, maxLines = 1)
-                }
-
-                // Subtitle versions count
-                Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "📝 ${item.subsCount} subtitle version${if (item.subsCount != 1) "s" else ""}",
-                        fontSize   = 11.sp,
-                        color      = beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark),
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-
-                // IMDb ID row
-                Spacer(Modifier.height(3.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .background(Color(0xFFF5C518), RoundedCornerShape(3.dp))
-                            .padding(horizontal = 4.dp, vertical = 1.dp)
-                    ) { Text("IMDb", fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black) }
-                    Spacer(Modifier.width(5.dp))
-                    Text(item.imdbId, fontSize = 10.sp, color = subColor)
-                }
-            }
-
-            // ── Actions ───────────────────────────────────────────────────────
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                IconButton(onClick = { openUrl(context, item.url) }) {
-                    Icon(Icons.Default.OpenInNew, "Open", tint = BeeColors.FoundGreenDark)
-                }
-                IconButton(onClick = { copyToClipboard(context, item.url) }) {
-                    Icon(Icons.Default.ContentCopy, "Copy link", tint = BeeColors.DeepAmber)
-                }
-            }
+        LazyColumn(modifier = Modifier.weight(1f)) {
+            items(results) { ResultItem(it, showDetails = true) }
         }
     }
 }
