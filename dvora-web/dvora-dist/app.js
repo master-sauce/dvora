@@ -90,7 +90,6 @@ function handleStreamMsg(msg){
     if(msg.section==='api') cls='api';
     else if(msg.section==='manual') cls='man';
     area.appendChild(mkSD(msg.title,cls));
-    // For auto section create two sub-buckets: found on top, notfound below
     if(msg.section==='auto'){
       const foundBucket=document.createElement('div');
       foundBucket.id='auto-found-bucket';
@@ -107,17 +106,12 @@ function handleStreamMsg(msg){
     st.allResults.push(r);
 
     if(r.type==='auto'){
-      // Route found cards to top bucket, not-found to bottom bucket
       const foundBucket=document.getElementById('auto-found-bucket');
       const notFoundBucket=document.getElementById('auto-notfound-bucket');
       const card=mkCard(r,st.cardIndex++);
-      if(r.found && foundBucket){
-        foundBucket.appendChild(card);
-      } else if(notFoundBucket){
-        notFoundBucket.appendChild(card);
-      } else {
-        area.appendChild(card);
-      }
+      if(r.found&&foundBucket) foundBucket.appendChild(card);
+      else if(notFoundBucket) notFoundBucket.appendChild(card);
+      else area.appendChild(card);
     } else {
       area.appendChild(mkCard(r,st.cardIndex++));
     }
@@ -205,6 +199,8 @@ function debSub(){
   subTimer=setTimeout(doSubSearch,400);
 }
 
+// Single server call — verification + rich metadata fetched server-side.
+// No more CORS calls to Wizdom from the browser.
 async function doSubSearch(){
   const q=document.getElementById('subInput').value.trim();
   if(!q) return;
@@ -214,73 +210,51 @@ async function doSubSearch(){
   const sessionLogs=[];
   const lg=(level,msg)=>sessionLogs.push({level,message:msg});
 
-  try {
-    lg('info','Server search: /subtitles?q='+q+'&mode='+subMode);
-    const sResp=await fetch('/subtitles?q='+encodeURIComponent(q)+'&mode='+subMode);
+  try{
+    const apiUrl='/subtitles?q='+encodeURIComponent(q)+'&mode='+subMode;
+    lg('info','GET '+apiUrl);
+
+    const sResp=await fetch(apiUrl);
     if(!sResp.ok) throw new Error('Server error: HTTP '+sResp.status);
     const sData=await sResp.json();
 
     const allResults=sData.results||[];
     const foundResults=allResults.filter(r=>r.found&&r.imdbId);
-    lg('info','Server returned '+allResults.length+' result(s), '+foundResults.length+' with imdbId matched');
+    lg('info','Server returned '+allResults.length+' candidate(s), '+foundResults.length+' verified with subtitles');
 
     if(foundResults.length===0){
-      lg('verdict','NOT FOUND — no matching titles on Wizdom or IMDb');
-      lastSubtitleResults={query:q,mode:subMode,results:[],wizdomFetched:false,wizdomMap:{},sessionLogs};
+      lg('verdict','NOT FOUND — no verified Hebrew subtitles on Wizdom');
+      lastSubtitleResults={query:q,mode:subMode,results:[],sessionLogs};
       if(document.getElementById('sov').classList.contains('open')&&activeTab==='logs') renderLogs();
       document.getElementById('subpw').classList.remove('visible');
-      document.getElementById('subArea').innerHTML='<div class="sub-banner-nf">✗ No subtitles found for &quot;'+esc(q)+'&quot;</div>'
-        +'<div class="sub-empty-msg">No matching titles found on Wizdom or IMDb.</div>';
+      document.getElementById('subArea').innerHTML=
+        '<div class="sub-banner-nf">✗ No subtitles found for &quot;'+esc(q)+'&quot;</div>'
+        +'<div class="sub-empty-msg">No matching titles with Hebrew subtitles found on Wizdom.</div>';
       return;
     }
 
-    document.getElementById('subArea').innerHTML='<div class="empty"><span class="eg">🎞️</span><div class="et">Loading subtitle details...</div></div>';
-    lg('info','Fetching Wizdom rich data: https://wizdom.xyz/api/search?search='+q+'&page=0');
-
-    let wizdomMap={};
-    try {
-      const wResp=await fetch('https://wizdom.xyz/api/search?search='+encodeURIComponent(q)+'&page=0');
-      if(wResp.ok){
-        const wData=await wResp.json();
-        if(Array.isArray(wData)){
-          wData.forEach(item=>{ if(item.imdb) wizdomMap[item.imdb]=item; });
-          lg('info','Wizdom returned '+wData.length+' item(s), '+Object.keys(wizdomMap).length+' with imdb id');
-        }
-      } else {
-        lg('warn','Wizdom API HTTP '+wResp.status+' — falling back to simple display');
-      }
-    } catch(e){
-      lg('warn','Wizdom fetch failed: '+e.message+' — falling back to simple display');
-    }
-
     foundResults.forEach((r,i)=>{
-      const wiz=wizdomMap[r.imdbId];
-      lg('info','Result #'+(i+1)+': "'+r.title+'" — imdbId: '+r.imdbId);
-      if(wiz){
-        lg('match','✓ Wizdom rich data: title_en="'+(wiz.title_en||'—')+'" title="'+(wiz.title||'—')+'"'+(wiz.rating?' rating='+wiz.rating:''));
-      } else {
-        lg('skip','  no Wizdom rich data for '+r.imdbId+' — using server title');
-      }
+      lg('info','#'+(i+1)+': "'+r.title+'"'+(r.imdbId?' ('+r.imdbId+')':'')+(r.rating?' ⭐'+r.rating:'')+(r.subsCount?' · '+r.subsCount+(r.type==='movie'?' versions':' seasons'):''));
       lg('verdict','FOUND — '+r.url);
     });
 
-    lastSubtitleResults={query:q,mode:subMode,results:foundResults,wizdomFetched:Object.keys(wizdomMap).length>0,wizdomMap,sessionLogs};
+    lastSubtitleResults={query:q,mode:subMode,results:foundResults,sessionLogs};
     if(document.getElementById('sov').classList.contains('open')&&activeTab==='logs') renderLogs();
-
     document.getElementById('subpw').classList.remove('visible');
-    renderSub(sData, wizdomMap);
+    renderSub(sData);
 
-  } catch(err){
-    lg('warn','Fatal error: '+err.message);
+  }catch(err){
+    lg('warn','Fatal: '+err.message);
     lg('verdict','NOT FOUND — request failed');
-    lastSubtitleResults={query:q,mode:subMode,results:[],wizdomFetched:false,wizdomMap:{},sessionLogs};
+    lastSubtitleResults={query:q,mode:subMode,results:[],sessionLogs};
     if(document.getElementById('sov').classList.contains('open')&&activeTab==='logs') renderLogs();
     document.getElementById('subpw').classList.remove('visible');
     document.getElementById('subArea').innerHTML='<div class="empty"><span class="eg">⚠️</span><div class="et">Error: '+esc(err.message)+'</div></div>';
   }
 }
 
-function renderSub(sData, wizdomMap){
+// All data now comes directly from sData — no wizdomMap needed.
+function renderSub(sData){
   const area=document.getElementById('subArea');area.innerHTML='';
   const found=(sData.results||[]).filter(r=>r.found);
   if(!found.length){
@@ -288,10 +262,9 @@ function renderSub(sData, wizdomMap){
       +'<div class="sub-empty-msg">No matching titles found on Wizdom or IMDb.</div>';
     return;
   }
-  const richCount=found.filter(r=>wizdomMap[r.imdbId]).length;
   const banner=document.createElement('div');
   banner.className='sub-banner-f';
-  banner.textContent='✅ SUBTITLES FOUND — '+found.length+' result'+(found.length>1?'s':'')+' for "'+sData.query+'"'+(richCount?' · '+richCount+' with full details':'');
+  banner.textContent='✅ SUBTITLES FOUND — '+found.length+' result'+(found.length>1?'s':'')+' for "'+sData.query+'"';
   area.appendChild(banner);
   const hdr=document.createElement('div');
   hdr.style.cssText='display:flex;align-items:baseline;gap:10px;margin-bottom:11px;flex-wrap:wrap;';
@@ -299,26 +272,38 @@ function renderSub(sData, wizdomMap){
     +'<span style="font-size:.74rem;font-weight:800;color:var(--sub)">'+found.length+' found</span>';
   area.appendChild(hdr);
   found.forEach((r,i)=>{
-    const wizItem=r.imdbId?wizdomMap[r.imdbId]:null;
-    area.appendChild(wizItem?mkRichSubCard(r,wizItem,i):mkSimpleSubCard(r,i));
+    // Use rich card if server returned any metadata, otherwise simple card
+    const isRich=!!(r.posterUrl||r.rating||r.genres||r.titleHe||r.year);
+    area.appendChild(isRich?mkRichSubCard(r,i):mkSimpleSubCard(r,i));
   });
 }
 
-function mkRichSubCard(r,wiz,idx){
-  const wizType=subMode==='movies'?'movie':'tv';
-  const wizURL=r.url||('https://wizdom.xyz/'+wizType+'/'+r.imdbId);
+// Rich card — uses SubResult fields directly, no separate wizdom object needed.
+function mkRichSubCard(r,idx){
+  const wizURL=r.url;
+  const typeIcon=r.type==='movie'?'🎬':'📺';
+
   let posterHTML;
-  if(wiz.poster_small){
-    posterHTML='<img class="sub-poster" src="'+esc(wiz.poster_small)+'" alt="" '
+  if(r.posterUrl){
+    posterHTML='<img class="sub-poster" src="'+esc(r.posterUrl)+'" alt="" '
       +'onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
-      +'<div class="sub-poster-ph" style="display:none">'+(wiz.type==='movie'?'🎬':'📺')+'</div>';
+      +'<div class="sub-poster-ph" style="display:none">'+typeIcon+'</div>';
   } else {
-    posterHTML='<div class="sub-poster-ph">'+(wiz.type==='movie'?'🎬':'📺')+'</div>';
+    posterHTML='<div class="sub-poster-ph">'+typeIcon+'</div>';
   }
-  const typeIcon=wiz.type==='movie'?'🎬':'📺';
-  const rating=wiz.rating?'⭐ '+parseFloat(wiz.rating).toFixed(1):'';
-  const year=wiz.year?'· '+wiz.year:'';
-  const typeLabel=wiz.type?'· '+wiz.type:'';
+
+  const rating=r.rating?'⭐ '+parseFloat(r.rating).toFixed(1):'';
+  const year=r.year?'· '+r.year:'';
+  const typeLabel=r.type?'· '+r.type:'';
+
+  let subsCountHTML='';
+  if(r.subsCount>0){
+    const label=r.type==='movie'
+      ?r.subsCount+' subtitle version'+(r.subsCount!==1?'s':'')
+      :r.subsCount+' season'+(r.subsCount!==1?'s':'');
+    subsCountHTML='<div class="sub-rcount">📝 '+label+'</div>';
+  }
+
   const card=document.createElement('div');
   card.className='sub-rich sfound';
   card.style.animationDelay=(idx*40)+'ms';
@@ -326,11 +311,12 @@ function mkRichSubCard(r,wiz,idx){
   card.innerHTML=posterHTML
     +'<div class="sub-ri">'
       +'<div class="sub-ren">'
-        +'<a href="'+esc(wizURL)+'" target="_blank" onclick="event.stopPropagation()">'+esc(wiz.title_en||r.title||'—')+'</a>'
+        +'<a href="'+esc(wizURL)+'" target="_blank" onclick="event.stopPropagation()">'+esc(r.title||'—')+'</a>'
       +'</div>'
-      +(wiz.title&&wiz.title!==wiz.title_en?'<div class="sub-rhe">'+esc(wiz.title)+'</div>':'')
+      +(r.titleHe?'<div class="sub-rhe">'+esc(r.titleHe)+'</div>':'')
       +'<div class="sub-rmeta">'+typeIcon+' '+esc(rating)+' '+esc(year)+' '+esc(typeLabel)+'</div>'
-      +(wiz.genres?'<div class="sub-rgenres">'+esc(wiz.genres)+'</div>':'')
+      +(r.genres?'<div class="sub-rgenres">'+esc(r.genres)+'</div>':'')
+      +subsCountHTML
       +'<div class="sub-rurl">→ '+esc(wizURL)+'</div>'
     +'</div>'
     +'<div class="sub-ractions">'
@@ -479,6 +465,7 @@ function renderLogs(){
     document.getElementById('logSubQ').textContent='"'+sr.query+'"  ['+foundN+' found · '+sr.mode+']';
     const con=document.getElementById('logSubBlocks');con.innerHTML='';
 
+    // Session-level log block (one entry covering the whole search)
     if(sr.sessionLogs&&sr.sessionLogs.length){
       const blk=document.createElement('div');blk.className='lsb';
       const overall=foundN>0;
@@ -491,16 +478,17 @@ function renderLogs(){
       con.appendChild(blk);
     }
 
+    // Per-result blocks — rich data now comes from the result itself
     sr.results.forEach(r=>{
-      const wiz=sr.wizdomMap&&sr.wizdomMap[r.imdbId];
       const blk=document.createElement('div');blk.className='lsb';
-      const label=esc(wiz?wiz.title_en||r.title:r.title||'Unknown')+' <span style="color:var(--tm);font-size:.7em">'+esc(r.imdbId)+'</span>';
+      const label=esc(r.title||'Unknown')+' <span style="color:var(--tm);font-size:.7em">'+esc(r.imdbId||'')+'</span>';
+      const hasRich=!!(r.posterUrl||r.rating||r.genres);
       const perLogs=[
-        {level:'info',message:'imdbId: '+r.imdbId},
+        {level:'info',message:'imdbId: '+(r.imdbId||'—')},
         {level:'info',message:'Wizdom URL: '+r.url},
-        wiz
-          ?{level:'match',message:'✓ Rich data: title_en="'+(wiz.title_en||'—')+'" year='+(wiz.year||'?')+' rating='+(wiz.rating||'N/A')}
-          :{level:'skip',message:'  No Wizdom rich data — simple card displayed'},
+        hasRich
+          ?{level:'match',message:'✓ Verified — title="'+r.title+'" year='+(r.year||'?')+' rating='+(r.rating||'N/A')+(r.subsCount?' subs='+r.subsCount+(r.type==='movie'?' versions':' seasons'):'')}
+          :{level:'info',message:'Verified — title="'+(r.title||'Unknown')+'" (no rich metadata)'},
         {level:'verdict',message:'FOUND — '+r.url}
       ];
       blk.innerHTML='<div class="lsh" onclick="togLB(this)">'

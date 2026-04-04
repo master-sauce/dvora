@@ -71,7 +71,7 @@ type imdbImage struct {
 	ImageURL string `json:"imageUrl"`
 }
 
-// Wizdom
+// Wizdom search API item
 type wizdomItem struct {
 	Title   string `json:"title"`
 	TitleEn string `json:"title_en"`
@@ -79,20 +79,64 @@ type wizdomItem struct {
 	Type    string `json:"type"`
 }
 
-// Subtitle results
+// Wizdom releases API — rich metadata per title.
+// Subs is RawMessage because movies return an array and TV returns a seasons object.
+type WizdomRelease struct {
+	Imdb        string          `json:"imdb"`
+	Title       string          `json:"title"`        // Hebrew title
+	TitleEn     string          `json:"title_en"`     // English title
+	Year        int             `json:"year"`
+	Rating      string          `json:"rating"`
+	Genres      string          `json:"genres"`
+	PosterSmall string          `json:"poster_small"`
+	Type        string          `json:"type"` // "movie" or "tv"
+	Subs        json.RawMessage `json:"subs"`
+}
+
+// SubResult — returned to the frontend, includes rich Wizdom data
 type SubResult struct {
-	URL     string `json:"url"`
-	Found   bool   `json:"found"`
-	Title   string `json:"title"`
-	ImdbID  string `json:"imdbId"`
-	Details string `json:"details,omitempty"`
-	Error   string `json:"error,omitempty"`
+	URL       string `json:"url"`
+	Found     bool   `json:"found"`
+	Title     string `json:"title"`
+	TitleHe   string `json:"titleHe,omitempty"`
+	ImdbID    string `json:"imdbId,omitempty"`
+	Year      int    `json:"year,omitempty"`
+	Rating    string `json:"rating,omitempty"`
+	Genres    string `json:"genres,omitempty"`
+	PosterURL string `json:"posterUrl,omitempty"`
+	Type      string `json:"type,omitempty"`
+	SubsCount int    `json:"subsCount,omitempty"`
+	Details   string `json:"details,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 type SubResponse struct {
 	Query   string      `json:"query"`
 	Mode    string      `json:"mode"`
 	Results []SubResult `json:"results"`
+}
+
+// ─── countSubs ────────────────────────────────────────────────────────────────
+// Movies → subs is an array of versions.
+// TV     → subs is a seasons object: { "1": {...}, "2": {...} }.
+// Returns the element/key count, or 0 if empty/unparseable.
+func countSubs(raw json.RawMessage) int {
+	if len(raw) == 0 {
+		return 0
+	}
+	t := strings.TrimSpace(string(raw))
+	if t == "" || t == "null" || t == "[]" || t == "{}" {
+		return 0
+	}
+	var arr []json.RawMessage
+	if json.Unmarshal(raw, &arr) == nil {
+		return len(arr)
+	}
+	var obj map[string]json.RawMessage
+	if json.Unmarshal(raw, &obj) == nil {
+		return len(obj)
+	}
+	return 1 // non-empty but opaque structure → at least 1
 }
 
 // ─── HTML parsing ─────────────────────────────────────────────────────────────
@@ -168,7 +212,8 @@ func scanSite(siteURL, searchTerm string) (bool, string, []LogEntry, error) {
 	add("info", "Regex: /"+pb.String()+"/")
 
 	skip := []string{"addtoany.com", "facebook.com", "twitter.com", "reddit.com",
-		"pinterest.com", "whatsapp.com", "t.me", "mailto:", "/login", "/register", "/signup", "/feed", "#"}
+		"pinterest.com", "whatsapp.com", "t.me", "mailto:", "/login", "/register",
+		"/signup", "/feed", "#"}
 
 	var matched []string
 	skipped := 0
@@ -181,7 +226,8 @@ func scanSite(siteURL, searchTerm string) (bool, string, []LogEntry, error) {
 				break
 			}
 		}
-		if !s && (strings.HasPrefix(ll, "/search/") || strings.HasPrefix(ll, "search/") || strings.HasPrefix(ll, "/search?")) {
+		if !s && (strings.HasPrefix(ll, "/search/") || strings.HasPrefix(ll, "search/") ||
+			strings.HasPrefix(ll, "/search?")) {
 			s = true
 		}
 		if s {
@@ -410,48 +456,66 @@ func searchIMDb(searchTerm string) ([]ImdbResult, error) {
 }
 
 // ─── Subtitle search ──────────────────────────────────────────────────────────
-
+// Step 1 — collect candidate IMDb IDs from Wizdom search + IMDb suggestion API.
+// Step 2 — verify each candidate against wizdom.xyz/api/releases/{id}:
+//   • Uses a no-redirect client — Wizdom returns 3xx with JSON body for TV shows.
+//     Following the redirect would lose the response body.
+//   • 4xx / 5xx → skip (title has no data on Wizdom).
+//   • Empty / null body → skip.
+//   • Non-empty body → confirmed. Parse WizdomRelease for rich metadata.
+// The URL path (tv/movie) always comes from the user's mode toggle, never from
+// the release's own type field (which can be null or inconsistent).
 func searchSubtitles(searchTerm, mode string) SubResponse {
 	typePath := "tv"
 	if mode == "movies" {
 		typePath = "movie"
 	}
 
-	wizdomIds := make(map[string]string)
+	wizdomIds := make(map[string]string) // imdbId → display title
 
+	// ── Source A: Wizdom search API ───────────────────────────────────────────
 	wizdomAPIURL := "https://wizdom.xyz/api/search?search=" + url.QueryEscape(searchTerm) + "&page=0"
-	client := &http.Client{Timeout: 10 * time.Second}
-	if req, err := http.NewRequest("GET", wizdomAPIURL, nil); err == nil {
+	func() {
+		req, err := http.NewRequest("GET", wizdomAPIURL, nil)
+		if err != nil {
+			return
+		}
 		req.Header.Set("User-Agent", userAgent)
-		if resp, err := client.Do(req); err == nil {
-			defer resp.Body.Close()
-			if resp.StatusCode == 200 {
-				body, _ := io.ReadAll(resp.Body)
-				var items []wizdomItem
-				if json.Unmarshal(body, &items) == nil {
-					sl := strings.ToLower(searchTerm)
-					for _, item := range items {
-						if item.Imdb == "" {
-							continue
-						}
-						enM := strings.Contains(strings.ToLower(item.TitleEn), sl)
-						heM := strings.Contains(strings.ToLower(item.Title), sl)
-						if enM || heM {
-							title := item.TitleEn
-							if title == "" {
-								title = item.Title
-							}
-							if title == "" {
-								title = "Unknown"
-							}
-							wizdomIds[item.Imdb] = title
-						}
-					}
+		c := &http.Client{Timeout: 10 * time.Second}
+		resp, err := c.Do(req)
+		if err != nil {
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			return
+		}
+		body, _ := io.ReadAll(resp.Body)
+		var items []wizdomItem
+		if json.Unmarshal(body, &items) != nil {
+			return
+		}
+		sl := strings.ToLower(searchTerm)
+		for _, item := range items {
+			if item.Imdb == "" {
+				continue
+			}
+			enM := strings.Contains(strings.ToLower(item.TitleEn), sl)
+			heM := strings.Contains(strings.ToLower(item.Title), sl)
+			if enM || heM {
+				title := item.TitleEn
+				if title == "" {
+					title = item.Title
 				}
+				if title == "" {
+					title = "Unknown"
+				}
+				wizdomIds[item.Imdb] = title
 			}
 		}
-	}
+	}()
 
+	// ── Source B: IMDb suggestion API ─────────────────────────────────────────
 	if imdbResults, err := searchIMDb(searchTerm); err == nil {
 		for _, r := range imdbResults {
 			if _, exists := wizdomIds[r.ImdbID]; !exists {
@@ -460,23 +524,99 @@ func searchSubtitles(searchTerm, mode string) SubResponse {
 		}
 	}
 
-	var results []SubResult
 	if len(wizdomIds) == 0 {
-		results = append(results, SubResult{
-			URL:     wizdomAPIURL,
-			Found:   false,
-			Details: "No matching titles found on Wizdom or IMDb",
-		})
-	} else {
-		for imdbID, title := range wizdomIds {
-			finalURL := "https://wizdom.xyz/" + typePath + "/" + imdbID
-			results = append(results, SubResult{
-				URL:    finalURL,
-				Found:  true,
-				Title:  title,
-				ImdbID: imdbID,
-			})
+		return SubResponse{
+			Query: searchTerm, Mode: mode,
+			Results: []SubResult{},
 		}
+	}
+
+	// ── Step 2: verify each candidate via /api/releases/{imdbId} ─────────────
+	// No-redirect client: Wizdom sends HTTP 3xx for TV with the JSON in the body.
+	relClient := &http.Client{
+		Timeout: 10 * time.Second,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+
+	ch := make(chan SubResult, len(wizdomIds))
+	var wg sync.WaitGroup
+
+	for imdbID, displayTitle := range wizdomIds {
+		wg.Add(1)
+		go func(imdbID, displayTitle string) {
+			defer wg.Done()
+
+			relURL := "https://wizdom.xyz/api/releases/" + imdbID
+			finalURL := "https://wizdom.xyz/" + typePath + "/" + imdbID
+
+			req, err := http.NewRequest("GET", relURL, nil)
+			if err != nil {
+				return
+			}
+			req.Header.Set("User-Agent", userAgent)
+			req.Header.Set("Accept", "application/json")
+
+			resp, err := relClient.Do(req)
+			if err != nil {
+				return
+			}
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+
+			// Skip error responses
+			if resp.StatusCode >= 400 {
+				return
+			}
+
+			// Skip genuinely empty responses
+			trimmed := strings.TrimSpace(string(body))
+			if trimmed == "" || trimmed == "null" || trimmed == "[]" || trimmed == "{}" {
+				return
+			}
+
+			// Parse rich metadata — best effort, never blocks the result
+			var release WizdomRelease
+			json.Unmarshal(body, &release)
+
+			title := release.TitleEn
+			if title == "" {
+				title = release.Title
+			}
+			if title == "" {
+				title = displayTitle
+			}
+
+			titleHe := ""
+			if release.Title != "" && release.Title != title {
+				titleHe = release.Title
+			}
+
+			ch <- SubResult{
+				URL:       finalURL,
+				Found:     true,
+				Title:     title,
+				TitleHe:   titleHe,
+				ImdbID:    imdbID,
+				Year:      release.Year,
+				Rating:    release.Rating,
+				Genres:    release.Genres,
+				PosterURL: release.PosterSmall,
+				Type:      typePath, // always from user toggle, not from release.Type
+				SubsCount: countSubs(release.Subs),
+			}
+		}(imdbID, displayTitle)
+	}
+
+	go func() { wg.Wait(); close(ch) }()
+
+	var results []SubResult
+	for sr := range ch {
+		results = append(results, sr)
+	}
+	if results == nil {
+		results = []SubResult{}
 	}
 
 	return SubResponse{Query: searchTerm, Mode: mode, Results: results}
@@ -739,7 +879,9 @@ func configHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodPost {
-		var body struct{ Content string `json:"content"` }
+		var body struct {
+			Content string `json:"content"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, `{"error":"bad JSON"}`, 400)
 			return
