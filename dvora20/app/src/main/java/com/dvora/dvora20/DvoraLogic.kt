@@ -266,11 +266,46 @@ class DvoraScanner {
             )
         }
 
-        // Build one result per unique IMDb ID
-        return@withContext wizdomIds.map { (imdbId, displayTitle) ->
-            val finalUrl = "https://wizdom.xyz/$typePath/$imdbId"
-            SearchResult(finalUrl, true, foundDetails = "Match: $displayTitle")
+        // Verify each candidate against the Wizdom releases API to eliminate false positives.
+        // Only mark found=true if the endpoint returns HTTP 200 with real (non-empty) data.
+        val verifiedResults = wizdomIds.map { (imdbId, displayTitle) ->
+            val releasesUrl = "https://wizdom.xyz/api/releases/$imdbId"
+            try {
+                val req = Request.Builder()
+                    .url(releasesUrl)
+                    .header("User-Agent", userAgent)
+                    .header("Accept", "application/json")
+                    .build()
+                client.newCall(req).execute().use { resp ->
+                    val finalUrl = "https://wizdom.xyz/$typePath/$imdbId"
+                    if (!resp.isSuccessful) {
+                        // e.g. HTTP 500, 404 — no subtitles available
+                        return@use SearchResult(
+                            url          = finalUrl,
+                            found        = false,
+                            errorMessage = "Wizdom releases API returned HTTP ${resp.code}",
+                            foundDetails = "No subtitles available for $displayTitle"
+                        )
+                    }
+                    val body = resp.body?.string()?.trim() ?: ""
+                    if (body.isEmpty() || body == "null" || body == "[]" || body == "{}") {
+                        return@use SearchResult(
+                            url          = finalUrl,
+                            found        = false,
+                            foundDetails = "No subtitles available for $displayTitle"
+                        )
+                    }
+                    SearchResult(finalUrl, true, foundDetails = "Match: $displayTitle")
+                }
+            } catch (e: Exception) {
+                val finalUrl = "https://wizdom.xyz/$typePath/$imdbId"
+                SearchResult(finalUrl, false, errorMessage = e.message, foundDetails = "Verification failed for $displayTitle")
+            }
         }
+
+        // If every candidate failed verification, return them so the UI shows "not found"
+        // rather than an empty list (which would fall through to a generic error state).
+        return@withContext verifiedResults
     }
 
     suspend fun scanStremio(baseUrl: String, searchTerm: String, searchType: SourceType): List<SearchResult> = withContext(Dispatchers.IO) {
