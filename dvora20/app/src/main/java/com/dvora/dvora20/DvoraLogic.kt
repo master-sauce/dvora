@@ -66,6 +66,20 @@ data class WizdomRelease(
     val subs: List<Any>?     // non-empty = subtitles actually exist
 )
 
+// Rich subtitle result — returned by scanSubtitles, built from /api/releases/{imdbId}
+data class SubtitleResult(
+    val url:       String,
+    val imdbId:    String,
+    val title:     String,       // English title
+    val titleHe:   String?,      // Hebrew title (may be null)
+    val year:      Int?,
+    val rating:    String?,      // e.g. "7.90"
+    val genres:    String?,      // e.g. "אקשן / הרפתקאות"
+    val posterUrl: String?,
+    val type:      String?,      // "movie" or "tv"
+    val subsCount: Int           // number of subtitle versions
+)
+
 // Stremio API Models
 data class StremioResponse(val metas: List<StremioMeta>?)
 data class StremioMeta(
@@ -222,7 +236,7 @@ class DvoraScanner {
         }
     }
 
-    suspend fun scanSubtitles(searchTerm: String, searchType: SourceType): List<SearchResult> = withContext(Dispatchers.IO) {
+    suspend fun scanSubtitles(searchTerm: String, searchType: SourceType): List<SubtitleResult> = withContext(Dispatchers.IO) {
         val query        = searchTerm.replace(" ", "+")
         val apiSearchUrl = "https://wizdom.xyz/api/search?search=$query&page=0"
 
@@ -260,9 +274,7 @@ class DvoraScanner {
         } catch (_: Exception) {}
 
         if (candidateIds.isEmpty()) {
-            return@withContext listOf(
-                SearchResult(apiSearchUrl, false, foundDetails = "No matching titles found on Wizdom or IMDb.")
-            )
+            return@withContext emptyList()
         }
 
         // Step 2: For each candidate, call /api/releases/{imdbId}.
@@ -296,23 +308,19 @@ class DvoraScanner {
                     }
                     val finalUrl  = "https://wizdom.xyz/$typePath/$imdbId"
                     val title     = release.title_en ?: release.title ?: "Unknown"
-                    val yearStr   = release.year?.let { " ($it)" } ?: ""
                     val subsCount = release.subs.size
 
-                    SearchResult(
-                        url          = finalUrl,
-                        found        = true,
-                        foundDetails = "$title$yearStr · $subsCount subtitle version${if (subsCount != 1) "s" else ""}",
-                        verboseLogs  = buildString {
-                            appendLine("IMDb:    $imdbId")
-                            appendLine("Title:   $title")
-                            appendLine("Type:    ${release.type}")
-                            release.year?.let   { appendLine("Year:    $it") }
-                            release.rating?.let { appendLine("Rating:  $it") }
-                            release.genres?.let { appendLine("Genres:  $it") }
-                            appendLine("Subs:    $subsCount version${if (subsCount != 1) "s" else ""}")
-                            appendLine("URL:     $finalUrl")
-                        }
+                    SubtitleResult(
+                        url       = finalUrl,
+                        imdbId    = imdbId,
+                        title     = title,
+                        titleHe   = release.title?.takeIf { it != title },
+                        year      = release.year,
+                        rating    = release.rating,
+                        genres    = release.genres,
+                        posterUrl = release.poster_small,
+                        type      = release.type,
+                        subsCount = subsCount
                     )
                 }
             } catch (_: Exception) {
@@ -321,9 +329,7 @@ class DvoraScanner {
         }
 
         if (results.isEmpty()) {
-            return@withContext listOf(
-                SearchResult(apiSearchUrl, false, foundDetails = "No Hebrew subtitles found for \"$searchTerm\"")
-            )
+            return@withContext emptyList()
         }
 
         return@withContext results
