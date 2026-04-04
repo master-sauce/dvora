@@ -1,5 +1,5 @@
 // ── STATE ─────────────────────────────────────────────────────────────────────
-let mode='shows', subMode='shows';
+let mode='shows';
 let lastResults=null, lastSubtitleResults=null;
 let activeTab='shows';
 let imdbTimer=null, subTimer=null;
@@ -183,13 +183,7 @@ function togLog(btn){const p=btn.closest('.rc').querySelector('.lp');p.classList
 function mkLogLines(logs){return logs.map(l=>{const isV=l.level==='verdict';const vc=isV?(l.message.startsWith('FOUND')?'vf':'vnf'):'';return '<div class="ll log-'+l.level+(isV?' log-verdict '+vc:'')+'"><span class="lpr">'+l.level+'</span><span class="lmsg">'+esc(l.message)+'</span></div>';}).join('');}
 
 // ── SUBTITLES ─────────────────────────────────────────────────────────────────
-function setSubMode(m){
-  subMode=m;
-  document.getElementById('subBtnShows').classList.toggle('active',m==='shows');
-  document.getElementById('subBtnMovies').classList.toggle('active',m==='movies');
-  const q=document.getElementById('subInput').value.trim();
-  if(q) doSubSearch();
-}
+
 document.getElementById('subInput').addEventListener('keydown',e=>{
   if(e.key==='Enter'){clearTimeout(subTimer);doSubSearch();}
 });
@@ -215,8 +209,8 @@ async function doSubSearch(){
   const lg=(level,msg)=>sessionLogs.push({level,message:msg});
 
   try {
-    lg('info','Server search: /subtitles?q='+q+'&mode='+subMode);
-    const sResp=await fetch('/subtitles?q='+encodeURIComponent(q)+'&mode='+subMode);
+    lg('info','Server search: /subtitles?q='+q);
+    const sResp=await fetch('/subtitles?q='+encodeURIComponent(q));
     if(!sResp.ok) throw new Error('Server error: HTTP '+sResp.status);
     const sData=await sResp.json();
 
@@ -231,7 +225,7 @@ async function doSubSearch(){
       lg('verdict','FOUND — '+r.url);
     });
 
-    lastSubtitleResults={query:q,mode:subMode,results:found,sessionLogs};
+    lastSubtitleResults={query:q,results:found,sessionLogs};
     if(document.getElementById('sov').classList.contains('open')&&activeTab==='logs') renderLogs();
 
     document.getElementById('subpw').classList.remove('visible');
@@ -240,7 +234,7 @@ async function doSubSearch(){
   } catch(err){
     lg('warn','Fatal error: '+err.message);
     lg('verdict','NOT FOUND — request failed');
-    lastSubtitleResults={query:q,mode:subMode,results:[],sessionLogs};
+    lastSubtitleResults={query:q,results:[],sessionLogs};
     if(document.getElementById('sov').classList.contains('open')&&activeTab==='logs') renderLogs();
     document.getElementById('subpw').classList.remove('visible');
     document.getElementById('subArea').innerHTML='<div class="empty"><span class="eg">⚠️</span><div class="et">Error: '+esc(err.message)+'</div></div>';
@@ -414,7 +408,7 @@ function renderLogs(){
     subMeta.style.display='block';
     const sr=lastSubtitleResults;
     const foundN=sr.results.length;
-    document.getElementById('logSubQ').textContent='"'+sr.query+'"  ['+foundN+' found · '+sr.mode+']';
+    document.getElementById('logSubQ').textContent='"'+sr.query+'"  ['+foundN+' found]';
     const con=document.getElementById('logSubBlocks');con.innerHTML='';
 
     if(sr.sessionLogs&&sr.sessionLogs.length){
