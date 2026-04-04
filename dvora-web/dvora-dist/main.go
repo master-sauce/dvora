@@ -11,6 +11,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -341,9 +342,6 @@ func scanStremio(baseURL, searchTerm, mode string) (bool, []MovieMatch, []LogEnt
 }
 
 // ─── IMDb suggestion API ─────────────────────────────────────────────────────
-// Mirrors app's searchImdb():
-//   endpoint: https://v3.sg.media-imdb.com/suggestion/<firstChar>/<query>.json
-//   filters:  only tt* IDs (titles), skip nm* (people), take ≤10
 
 func searchIMDb(searchTerm string) ([]ImdbResult, error) {
 	q := strings.ToLower(strings.TrimSpace(searchTerm))
@@ -412,10 +410,6 @@ func searchIMDb(searchTerm string) ([]ImdbResult, error) {
 }
 
 // ─── Subtitle search ──────────────────────────────────────────────────────────
-// Mirrors app's scanSubtitles():
-//  1. Wizdom search API  → collect imdbId for title-matching results
-//  2. IMDb suggestion API → collect imdbIds not already found
-//  3. Build wizdom.xyz/<type>/<imdbId> URL per unique imdbId
 
 func searchSubtitles(searchTerm, mode string) SubResponse {
 	typePath := "tv"
@@ -423,9 +417,8 @@ func searchSubtitles(searchTerm, mode string) SubResponse {
 		typePath = "movie"
 	}
 
-	wizdomIds := make(map[string]string) // imdbId → display title
+	wizdomIds := make(map[string]string)
 
-	// Source 1: Wizdom search API
 	wizdomAPIURL := "https://wizdom.xyz/api/search?search=" + url.QueryEscape(searchTerm) + "&page=0"
 	client := &http.Client{Timeout: 10 * time.Second}
 	if req, err := http.NewRequest("GET", wizdomAPIURL, nil); err == nil {
@@ -459,7 +452,6 @@ func searchSubtitles(searchTerm, mode string) SubResponse {
 		}
 	}
 
-	// Source 2: IMDb suggestion API
 	if imdbResults, err := searchIMDb(searchTerm); err == nil {
 		for _, r := range imdbResults {
 			if _, exists := wizdomIds[r.ImdbID]; !exists {
@@ -520,111 +512,175 @@ func readRaw(path string) string {
 // ─── HTTP Handlers ────────────────────────────────────────────────────────────
 
 func searchHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, `{"error":"streaming unsupported"}`, 500)
+		return
+	}
 
 	q := r.URL.Query().Get("q")
 	mode := r.URL.Query().Get("mode")
+
+	send := func(v interface{}) {
+		data, _ := json.Marshal(v)
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		flusher.Flush()
+	}
+
 	if q == "" {
-		http.Error(w, `{"error":"missing query"}`, 400)
+		send(map[string]string{"event": "error", "message": "missing query"})
 		return
 	}
 	if mode != "shows" && mode != "movies" {
-		http.Error(w, `{"error":"invalid mode"}`, 400)
+		send(map[string]string{"event": "error", "message": "invalid mode"})
 		return
 	}
 
-	var results []SiteResult
+	send(map[string]string{"event": "meta", "query": q})
 
+	// ── Auto sites (parallel) ─────────────────────────────────────────────────
 	autoFile := "shows.txt"
 	if mode == "movies" {
 		autoFile = "movies.txt"
 	}
 	autoLines, _ := readLines(autoFile)
-	for _, line := range autoLines {
-		var fi, base string
-		switch {
-		case strings.HasPrefix(line, "+"):
-			fi = strings.ReplaceAll(q, " ", "+")
-			base = line[1:]
-		case strings.HasPrefix(line, "-"):
-			fi = strings.ReplaceAll(q, " ", "-")
-			base = line[1:]
-		default:
-			fi = q
-			base = line
+
+	if len(autoLines) > 0 {
+		send(map[string]string{"event": "section_start", "section": "auto",
+			"title": "Auto Scan — " + mode})
+
+		type idxResult struct {
+			idx int
+			sr  SiteResult
 		}
-		su := base + fi
-		found, details, logs, err := scanSite(su, q)
-		sr := SiteResult{URL: su, Found: found, Details: details, Type: "auto", Logs: logs}
-		if err != nil {
-			sr.Error = err.Error()
-			sr.Logs = append(sr.Logs, LogEntry{"warn", "Error: " + err.Error()})
+		ch := make(chan idxResult, len(autoLines))
+		var wg sync.WaitGroup
+
+		for i, line := range autoLines {
+			wg.Add(1)
+			go func(i int, line string) {
+				defer wg.Done()
+				var fi, base string
+				switch {
+				case strings.HasPrefix(line, "+"):
+					fi = strings.ReplaceAll(q, " ", "+")
+					base = line[1:]
+				case strings.HasPrefix(line, "-"):
+					fi = strings.ReplaceAll(q, " ", "-")
+					base = line[1:]
+				default:
+					fi = q
+					base = line
+				}
+				su := base + fi
+				found, details, logs, err := scanSite(su, q)
+				sr := SiteResult{URL: su, Found: found, Details: details, Type: "auto", Logs: logs}
+				if err != nil {
+					sr.Error = err.Error()
+					sr.Logs = append(sr.Logs, LogEntry{"warn", "Error: " + err.Error()})
+				}
+				ch <- idxResult{i, sr}
+			}(i, line)
 		}
-		results = append(results, sr)
+		go func() { wg.Wait(); close(ch) }()
+		for ir := range ch {
+			send(map[string]interface{}{"event": "result", "result": ir.sr})
+		}
 	}
 
+	// ── API sites (parallel) ──────────────────────────────────────────────────
 	apiLines, _ := readLines("api_sites.txt")
-	for _, line := range apiLines {
-		if strings.HasPrefix(line, "stremio:") {
-			baseURL := strings.TrimPrefix(line, "stremio:")
-			mt := "series"
-			if mode == "movies" {
-				mt = "movie"
-			}
-			qe := strings.ReplaceAll(q, " ", "+")
-			dispURL := baseURL + "/catalog/" + mt + "/top/search=" + qe + ".json"
-			found, matches, logs, err := scanStremio(baseURL, q, mode)
-			mu := ""
-			if len(matches) > 0 {
-				mu = matches[0].URL
-			}
-			sr := SiteResult{URL: dispURL, Found: found, Type: "api", MovieURL: mu, Matches: matches, Logs: logs}
-			if err != nil {
-				sr.Error = err.Error()
-				sr.Logs = append(sr.Logs, LogEntry{"warn", "Error: " + err.Error()})
-			}
-			results = append(results, sr)
-		} else {
-			baseURL := strings.TrimPrefix(line, "v1:")
-			qe := strings.ReplaceAll(q, " ", "+")
-			dispURL := baseURL + "/searching?q=" + qe + "&limit=40&offset=0"
-			found, matches, logs, err := scanMovieAPI(baseURL, q)
-			mu := ""
-			if len(matches) > 0 {
-				mu = matches[0].URL
-			}
-			sr := SiteResult{URL: dispURL, Found: found, Type: "api", MovieURL: mu, Matches: matches, Logs: logs}
-			if err != nil {
-				sr.Error = err.Error()
-				sr.Logs = append(sr.Logs, LogEntry{"warn", "Error: " + err.Error()})
-			}
-			results = append(results, sr)
+
+	if len(apiLines) > 0 {
+		send(map[string]string{"event": "section_start", "section": "api", "title": "API Sites"})
+
+		type idxResult struct {
+			idx int
+			sr  SiteResult
+		}
+		ch := make(chan idxResult, len(apiLines))
+		var wg sync.WaitGroup
+
+		for i, line := range apiLines {
+			wg.Add(1)
+			go func(i int, line string) {
+				defer wg.Done()
+				var sr SiteResult
+				if strings.HasPrefix(line, "stremio:") {
+					baseURL := strings.TrimPrefix(line, "stremio:")
+					mt := "series"
+					if mode == "movies" {
+						mt = "movie"
+					}
+					qe := strings.ReplaceAll(q, " ", "+")
+					dispURL := baseURL + "/catalog/" + mt + "/top/search=" + qe + ".json"
+					found, matches, logs, err := scanStremio(baseURL, q, mode)
+					mu := ""
+					if len(matches) > 0 {
+						mu = matches[0].URL
+					}
+					sr = SiteResult{URL: dispURL, Found: found, Type: "api", MovieURL: mu, Matches: matches, Logs: logs}
+					if err != nil {
+						sr.Error = err.Error()
+						sr.Logs = append(sr.Logs, LogEntry{"warn", "Error: " + err.Error()})
+					}
+				} else {
+					baseURL := strings.TrimPrefix(line, "v1:")
+					qe := strings.ReplaceAll(q, " ", "+")
+					dispURL := baseURL + "/searching?q=" + qe + "&limit=40&offset=0"
+					found, matches, logs, err := scanMovieAPI(baseURL, q)
+					mu := ""
+					if len(matches) > 0 {
+						mu = matches[0].URL
+					}
+					sr = SiteResult{URL: dispURL, Found: found, Type: "api", MovieURL: mu, Matches: matches, Logs: logs}
+					if err != nil {
+						sr.Error = err.Error()
+						sr.Logs = append(sr.Logs, LogEntry{"warn", "Error: " + err.Error()})
+					}
+				}
+				ch <- idxResult{i, sr}
+			}(i, line)
+		}
+		go func() { wg.Wait(); close(ch) }()
+		for ir := range ch {
+			send(map[string]interface{}{"event": "result", "result": ir.sr})
 		}
 	}
 
+	// ── Manual sites (instant) ────────────────────────────────────────────────
 	manLines, _ := readLines("manual_checks.txt")
-	for _, line := range manLines {
-		var fi, base string
-		switch {
-		case strings.HasPrefix(line, "+"):
-			fi = strings.ReplaceAll(q, " ", "+")
-			base = line[1:]
-		case strings.HasPrefix(line, "-"):
-			fi = strings.ReplaceAll(q, " ", "-")
-			base = line[1:]
-		default:
-			fi = q
-			base = line
+
+	if len(manLines) > 0 {
+		send(map[string]string{"event": "section_start", "section": "manual", "title": "Manual Checks"})
+		for _, line := range manLines {
+			var fi, base string
+			switch {
+			case strings.HasPrefix(line, "+"):
+				fi = strings.ReplaceAll(q, " ", "+")
+				base = line[1:]
+			case strings.HasPrefix(line, "-"):
+				fi = strings.ReplaceAll(q, " ", "-")
+				base = line[1:]
+			default:
+				fi = q
+				base = line
+			}
+			sr := SiteResult{
+				URL:  base + fi,
+				Type: "manual",
+				Logs: []LogEntry{{"info", "Manual check — open in browser to verify"}},
+			}
+			send(map[string]interface{}{"event": "result", "result": sr})
 		}
-		results = append(results, SiteResult{
-			URL:  base + fi,
-			Type: "manual",
-			Logs: []LogEntry{{"info", "Manual check — open in browser to verify"}},
-		})
 	}
 
-	json.NewEncoder(w).Encode(SearchResponse{Query: q, Results: results})
+	send(map[string]string{"event": "done"})
 }
 
 func imdbHandler(w http.ResponseWriter, r *http.Request) {

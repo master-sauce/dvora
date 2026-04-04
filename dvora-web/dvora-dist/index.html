@@ -228,7 +228,7 @@ a.cu:hover{color:var(--hg);}
   </div>
 </div>
 
-<!-- SUBTITLES VIEW — no search button, live debounce only -->
+<!-- SUBTITLES VIEW -->
 <div class="view" id="view-subtitles">
   <div class="sh">
     <button class="sbk" onclick="showView('main')">← Back</button>
@@ -238,7 +238,6 @@ a.cu:hover{color:var(--hg);}
   <div class="scontent">
     <div class="sp" style="margin-bottom:16px">
       <label class="fl">🍯 Movie or Show Name</label>
-      <!-- No search button — Enter key + 400ms debounce -->
       <div class="sr" style="border-radius:10px">
         <input type="text" id="subInput" class="si" placeholder="Type to search..." autocomplete="off" oninput="debSub()"/>
       </div>
@@ -261,14 +260,14 @@ a.cu:hover{color:var(--hg);}
     <button class="tbtn" onclick="toggleTheme()" style="margin-left:8px">🌙</button>
   </div>
   <div class="scontent">
-    <div class="sp" style="margin-bottom:15px">
+    <div class="sp" style="margin-bottom:4px">
       <label class="fl">🍯 Movie or Show Name</label>
       <div class="sr">
         <input type="text" id="imdbInput" class="si" placeholder="Live search as you type..." autocomplete="off" oninput="debImdb()"/>
       </div>
       <div class="imdbload" id="imdbLoad"></div>
     </div>
-    <div id="imdbArea"><div class="empty"><span class="eg" style="background:#F5C518;color:#000;border-radius:8px;padding:6px 14px;font-size:.95rem;font-family:'Sora',sans-serif;font-weight:900;">IMDb</span><div class="et" style="margin-top:14px">Type a title to search IMDb</div></div></div>
+    <div id="imdbArea"><div class="empty" style="padding:20px 20px 30px"><span class="eg" style="background:#F5C518;color:#000;border-radius:8px;padding:6px 14px;font-size:.95rem;font-family:'Sora',sans-serif;font-weight:900;">IMDb</span><div class="et" style="margin-top:14px">Type a title to search IMDb</div></div></div>
   </div>
 </div>
 
@@ -311,7 +310,6 @@ a.cu:hover{color:var(--hg);}
         <textarea class="cta" id="ta-api" rows="12" placeholder="stremio:https://v3-cinemeta.strem.io&#10;v1:https://ww3.somesite.com"></textarea>
         <div class="cfoot"><button class="savebtn" onclick="saveCfg('api_sites.txt','ta-api','ss-api')">✓ Save</button><span class="ss" id="ss-api"></span></div>
       </div>
-      <!-- LOGS TAB — main search + subtitle search -->
       <div class="stabc" id="tab-logs">
         <div class="lve" id="logEmpty">🐝 No search results yet. Run a search first.</div>
         <div id="logMeta" style="display:none">
@@ -340,6 +338,7 @@ let mode='shows', subMode='shows';
 let lastResults=null, lastSubtitleResults=null;
 let activeTab='shows';
 let imdbTimer=null, subTimer=null;
+let streamState=null;
 
 // ── THEME ─────────────────────────────────────────────────────────────────────
 let isDark=true;
@@ -371,7 +370,8 @@ function setMode(m){
 }
 document.getElementById('searchInput').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch();});
 function setProg(p){document.getElementById('pf').style.width=p+'%';}
-function doSearch(){
+
+async function doSearch(){
   const q=document.getElementById('searchInput').value.trim();
   if(!q)return;
   const btn=document.getElementById('searchBtn');
@@ -379,44 +379,117 @@ function doSearch(){
   document.getElementById('pw').classList.add('visible');setProg(15);
   document.getElementById('statsBar').classList.remove('visible');
   document.getElementById('resultsArea').innerHTML='<div class="empty"><span class="eg">🐝</span><div class="et">Scanning the hive...</div></div>';
-  fetch('/search?q='+encodeURIComponent(q)+'&mode='+mode)
-    .then(r=>r.json()).then(data=>{
-      setProg(100);
-      setTimeout(()=>{document.getElementById('pw').classList.remove('visible');setProg(0);},500);
-      lastResults=data;renderResults(data);
-      btn.disabled=false;btn.textContent='🐝 Buzz';
-      if(document.getElementById('sov').classList.contains('open')&&activeTab==='logs')renderLogs();
-    }).catch(err=>{
-      document.getElementById('resultsArea').innerHTML='<div class="empty"><span class="eg">⚠️</span><div class="et">Error: '+esc(err.message)+'</div></div>';
-      btn.disabled=false;btn.textContent='🐝 Buzz';
-      document.getElementById('pw').classList.remove('visible');
-    });
+  streamState={query:q,cardIndex:0,foundCount:0,autoApiCount:0,manualCount:0,allResults:[]};
+  try{
+    const resp=await fetch('/search?q='+encodeURIComponent(q)+'&mode='+mode);
+    if(!resp.ok)throw new Error('HTTP '+resp.status);
+    const reader=resp.body.getReader();
+    const decoder=new TextDecoder();
+    let buffer='';
+    while(true){
+      const{done,value}=await reader.read();
+      if(done)break;
+      buffer+=decoder.decode(value,{stream:true});
+      const lines=buffer.split('\n');
+      buffer=lines.pop()||'';
+      for(const line of lines){
+        if(line.startsWith('data: ')){
+          try{handleStreamMsg(JSON.parse(line.slice(6)));}catch(e){}
+        }
+      }
+    }
+  }catch(err){
+    document.getElementById('resultsArea').innerHTML='<div class="empty"><span class="eg">⚠️</span><div class="et">Error: '+esc(err.message)+'</div></div>';
+  }finally{
+    btn.disabled=false;btn.textContent='🐝 Buzz';
+    setProg(100);
+    setTimeout(()=>{document.getElementById('pw').classList.remove('visible');setProg(0);},400);
+  }
 }
-function renderResults(data){
-  const area=document.getElementById('resultsArea');area.innerHTML='';
-  if(!data.results||!data.results.length){area.innerHTML='<div class="empty"><span class="eg">🍯</span><div class="et">No sites configured.</div></div>';return;}
-  const autoR=data.results.filter(r=>r.type==='auto');
-  const apiR=data.results.filter(r=>r.type==='api');
-  const manR=data.results.filter(r=>r.type==='manual');
-  const found=[...autoR,...apiR].filter(r=>r.found).length;
-  const hdr=document.createElement('div');
-  hdr.style.cssText='display:flex;align-items:baseline;gap:11px;margin-bottom:12px;';
-  hdr.innerHTML='<span style="font-family:\'Sora\',sans-serif;font-size:.78rem;font-weight:700;letter-spacing:.12em;color:var(--tm)">🍯 Results for: &quot;'+esc(data.query)+'&quot;</span><span style="font-size:.74rem;font-weight:800;color:var(--hg)">'+found+' found</span>';
-  area.appendChild(hdr);
-  let idx=0;
-  if(autoR.length){area.appendChild(mkSD('Auto Scan — '+mode,''));autoR.forEach(r=>area.appendChild(mkCard(r,idx++)));}
-  if(apiR.length){area.appendChild(mkSD('API Sites','api'));apiR.forEach(r=>area.appendChild(mkCard(r,idx++)));}
-  if(manR.length){area.appendChild(mkSD('Manual Checks','man'));manR.forEach(r=>area.appendChild(mkCard(r,idx++)));}
-  const sb=document.getElementById('statsBar');sb.classList.add('visible');
-  document.getElementById('statFound').textContent=found;
-  document.getElementById('statTotal').textContent=autoR.length+apiR.length;
-  document.getElementById('statManual').textContent=manR.length;
+
+function handleStreamMsg(msg){
+  const area=document.getElementById('resultsArea');
+  const st=streamState;if(!st)return;
+
+  if(msg.event==='meta'){
+    area.innerHTML='';
+    const hdr=document.createElement('div');
+    hdr.style.cssText='display:flex;align-items:baseline;gap:11px;margin-bottom:12px;';
+    hdr.innerHTML='<span style="font-family:\'Sora\',sans-serif;font-size:.78rem;font-weight:700;letter-spacing:.12em;color:var(--tm)">🍯 Results for: &quot;'+esc(msg.query)+'&quot;</span><span id="foundCount" style="font-size:.74rem;font-weight:800;color:var(--hg)">0 found</span>';
+    area.appendChild(hdr);
+    return;
+  }
+
+  if(msg.event==='section_start'){
+    let cls='';
+    if(msg.section==='api') cls='api';
+    else if(msg.section==='manual') cls='man';
+    area.appendChild(mkSD(msg.title,cls));
+    // For auto section create two sub-buckets: found on top, notfound below
+    if(msg.section==='auto'){
+      const foundBucket=document.createElement('div');
+      foundBucket.id='auto-found-bucket';
+      area.appendChild(foundBucket);
+      const notFoundBucket=document.createElement('div');
+      notFoundBucket.id='auto-notfound-bucket';
+      area.appendChild(notFoundBucket);
+    }
+    return;
+  }
+
+  if(msg.event==='result'){
+    const r=msg.result;
+    st.allResults.push(r);
+
+    if(r.type==='auto'){
+      // Route found cards to top bucket, not-found to bottom bucket
+      const foundBucket=document.getElementById('auto-found-bucket');
+      const notFoundBucket=document.getElementById('auto-notfound-bucket');
+      const card=mkCard(r,st.cardIndex++);
+      if(r.found && foundBucket){
+        foundBucket.appendChild(card);
+      } else if(notFoundBucket){
+        notFoundBucket.appendChild(card);
+      } else {
+        area.appendChild(card);
+      }
+    } else {
+      area.appendChild(mkCard(r,st.cardIndex++));
+    }
+
+    if(r.type==='manual'){
+      st.manualCount++;
+    } else {
+      st.autoApiCount++;
+      if(r.found){
+        st.foundCount++;
+        const fc=document.getElementById('foundCount');
+        if(fc) fc.textContent=st.foundCount+' found';
+      }
+    }
+    const sb=document.getElementById('statsBar');sb.classList.add('visible');
+    document.getElementById('statFound').textContent=st.foundCount;
+    document.getElementById('statTotal').textContent=st.autoApiCount;
+    document.getElementById('statManual').textContent=st.manualCount;
+    return;
+  }
+
+  if(msg.event==='done'){
+    lastResults={query:st.query,results:st.allResults};
+    if(document.getElementById('sov').classList.contains('open')&&activeTab==='logs') renderLogs();
+    if(st.allResults.length===0){
+      area.innerHTML='<div class="empty"><span class="eg">🍯</span><div class="et">No sites configured.</div></div>';
+    }
+    return;
+  }
 }
+
 function mkSD(text,cls){
   const d=document.createElement('div');d.className='sd'+(cls?' '+cls:'');
   d.innerHTML='<div class="sdl"></div><div class="sdt">'+esc(text)+'</div><div class="sdl"></div>';
   return d;
 }
+
 function mkCard(r,idx){
   const card=document.createElement('div');card.className='rc';card.style.animationDelay=(idx*42)+'ms';
   let cbcls,semoji,stxt,scls,bcls,btxt;
@@ -426,10 +499,10 @@ function mkCard(r,idx){
   const linkURL=r.movie_url||r.url;
   const urlS=r.url.length>90?r.url.substring(0,90)+'…':r.url;
   let extra='';
-  if(r.matches&&r.matches.length)extra=r.matches.map(m=>'<a href="'+esc(m.url)+'" target="_blank" class="cmu">→ '+esc(m.name)+'</a>').join('');
-  else if(r.movie_url)extra='<a href="'+esc(r.movie_url)+'" target="_blank" class="cmu">→ '+esc(r.movie_url)+'</a>';
-  if(r.details)extra+='<div class="cdet">'+esc(r.details)+'</div>';
-  if(r.error)extra+='<div class="cerr">⚠️ '+esc(r.error)+'</div>';
+  if(r.matches&&r.matches.length) extra=r.matches.map(m=>'<a href="'+esc(m.url)+'" target="_blank" class="cmu">→ '+esc(m.name)+'</a>').join('');
+  else if(r.movie_url) extra='<a href="'+esc(r.movie_url)+'" target="_blank" class="cmu">→ '+esc(r.movie_url)+'</a>';
+  if(r.details) extra+='<div class="cdet">'+esc(r.details)+'</div>';
+  if(r.error) extra+='<div class="cerr">⚠️ '+esc(r.error)+'</div>';
   const hasL=r.logs&&r.logs.length&&r.type!=='manual';
   card.innerHTML='<div class="cm" onclick="ccClick(event,\''+esc(linkURL)+'\')">'
     +'<div class="cb '+cbcls+'"></div>'
@@ -439,6 +512,7 @@ function mkCard(r,idx){
     +'</div>'+(hasL?'<div class="lp">'+mkLogLines(r.logs)+'</div>':'');
   return card;
 }
+
 function ccClick(e,url){if(e.target.closest('.lt')||e.target.closest('a'))return;window.open(url,'_blank');}
 function togLog(btn){const p=btn.closest('.rc').querySelector('.lp');p.classList.toggle('open');btn.classList.toggle('open');btn.textContent=p.classList.contains('open')?'Logs ▴':'Logs ▾';}
 function mkLogLines(logs){return logs.map(l=>{const isV=l.level==='verdict';const vc=isV?(l.message.startsWith('FOUND')?'vf':'vnf'):'';return '<div class="ll log-'+l.level+(isV?' log-verdict '+vc:'')+'"><span class="lpr">'+l.level+'</span><span class="lmsg">'+esc(l.message)+'</span></div>';}).join('');}
@@ -472,12 +546,10 @@ async function doSubSearch(){
   document.getElementById('subpw').classList.add('visible');
   document.getElementById('subArea').innerHTML='<div class="empty"><span class="eg">🐝</span><div class="et">Searching Wizdom + IMDb...</div></div>';
 
-  // Build per-entry logs as we go
   const sessionLogs=[];
   const lg=(level,msg)=>sessionLogs.push({level,message:msg});
 
   try {
-    // ── Phase 1: server-side ─────────────────────────────────────────────────
     lg('info','Server search: /subtitles?q='+q+'&mode='+subMode);
     const sResp=await fetch('/subtitles?q='+encodeURIComponent(q)+'&mode='+subMode);
     if(!sResp.ok) throw new Error('Server error: HTTP '+sResp.status);
@@ -497,7 +569,6 @@ async function doSubSearch(){
       return;
     }
 
-    // ── Phase 2: Wizdom rich data ────────────────────────────────────────────
     document.getElementById('subArea').innerHTML='<div class="empty"><span class="eg">🎞️</span><div class="et">Loading subtitle details...</div></div>';
     lg('info','Fetching Wizdom rich data: https://wizdom.xyz/api/search?search='+q+'&page=0');
 
@@ -517,7 +588,6 @@ async function doSubSearch(){
       lg('warn','Wizdom fetch failed: '+e.message+' — falling back to simple display');
     }
 
-    // Per-result logs
     foundResults.forEach((r,i)=>{
       const wiz=wizdomMap[r.imdbId];
       lg('info','Result #'+(i+1)+': "'+r.title+'" — imdbId: '+r.imdbId);
@@ -634,7 +704,11 @@ function mkSimpleSubCard(r,idx){
 function debImdb(){
   clearTimeout(imdbTimer);
   const q=document.getElementById('imdbInput').value.trim();
-  if(!q){document.getElementById('imdbArea').innerHTML='<div class="empty"><span class="eg" style="background:#F5C518;color:#000;border-radius:8px;padding:6px 14px;font-size:.95rem;font-family:\'Sora\',sans-serif;font-weight:900;">IMDb</span><div class="et" style="margin-top:14px">Type a title to search IMDb</div></div>';document.getElementById('imdbLoad').classList.remove('visible');return;}
+  if(!q){
+    document.getElementById('imdbArea').innerHTML='<div class="empty" style="padding:20px 20px 30px"><span class="eg" style="background:#F5C518;color:#000;border-radius:8px;padding:6px 14px;font-size:.95rem;font-family:\'Sora\',sans-serif;font-weight:900;">IMDb</span><div class="et" style="margin-top:14px">Type a title to search IMDb</div></div>';
+    document.getElementById('imdbLoad').classList.remove('visible');
+    return;
+  }
   document.getElementById('imdbLoad').classList.add('visible');
   imdbTimer=setTimeout(doImdb,350);
 }
@@ -644,11 +718,11 @@ function doImdb(){
   document.getElementById('imdbLoad').classList.add('visible');
   fetch('/imdb?q='+encodeURIComponent(q))
     .then(r=>r.json()).then(data=>{document.getElementById('imdbLoad').classList.remove('visible');renderImdb(data);})
-    .catch(err=>{document.getElementById('imdbLoad').classList.remove('visible');document.getElementById('imdbArea').innerHTML='<div class="empty"><span class="eg">⚠️</span><div class="et">Error: '+esc(err.message)+'</div></div>';});
+    .catch(err=>{document.getElementById('imdbLoad').classList.remove('visible');document.getElementById('imdbArea').innerHTML='<div class="empty" style="padding:20px 20px 30px"><span class="eg">⚠️</span><div class="et">Error: '+esc(err.message)+'</div></div>';});
 }
 function renderImdb(data){
   const area=document.getElementById('imdbArea');area.innerHTML='';
-  if(!data.results||!data.results.length){area.innerHTML='<div class="empty"><span class="eg">🔍</span><div class="et">No results for &quot;'+esc(data.query)+'&quot;</div></div>';return;}
+  if(!data.results||!data.results.length){area.innerHTML='<div class="empty" style="padding:20px 20px 30px"><span class="eg">🔍</span><div class="et">No results for &quot;'+esc(data.query)+'&quot;</div></div>';return;}
   data.results.forEach((item,i)=>{
     const card=document.createElement('div');card.className='imdbcard';card.style.animationDelay=(i*40)+'ms';
     card.onclick=()=>window.open(item.imdbUrl,'_blank');
@@ -706,7 +780,6 @@ function renderLogs(){
   }
   empty.style.display='none';
 
-  // ── Main search logs ───────────────────────────────────────────────────────
   if(lastResults){
     meta.style.display='block';
     const foundN=lastResults.results.filter(r=>r.type!='manual'&&r.found).length;
@@ -734,7 +807,6 @@ function renderLogs(){
     meta.style.display='none';
   }
 
-  // ── Subtitle search logs ───────────────────────────────────────────────────
   if(lastSubtitleResults){
     subMeta.style.display='block';
     const sr=lastSubtitleResults;
@@ -742,7 +814,6 @@ function renderLogs(){
     document.getElementById('logSubQ').textContent='"'+sr.query+'"  ['+foundN+' found · '+sr.mode+']';
     const con=document.getElementById('logSubBlocks');con.innerHTML='';
 
-    // Session-level log block (overall flow)
     if(sr.sessionLogs&&sr.sessionLogs.length){
       const blk=document.createElement('div');blk.className='lsb';
       const overall=foundN>0;
@@ -755,7 +826,6 @@ function renderLogs(){
       con.appendChild(blk);
     }
 
-    // Per-result blocks
     sr.results.forEach(r=>{
       const wiz=sr.wizdomMap&&sr.wizdomMap[r.imdbId];
       const blk=document.createElement('div');blk.className='lsb';
@@ -777,7 +847,6 @@ function renderLogs(){
       con.appendChild(blk);
     });
 
-    // If no results, show the session log only (already covers the NOT FOUND verdict)
     if(!sr.results.length&&(!sr.sessionLogs||!sr.sessionLogs.length)){
       const blk=document.createElement('div');blk.className='lsb';
       blk.innerHTML='<div class="lsh">'
