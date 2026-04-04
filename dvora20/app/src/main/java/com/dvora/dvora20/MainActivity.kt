@@ -783,13 +783,13 @@ fun SubtitleResultCard(item: SubtitleResult) {
                     Text(item.genres, fontSize = 11.sp, color = subColor, maxLines = 1)
                 }
 
-                Spacer(Modifier.height(4.dp))
-                Text(
-                    "📝 ${item.subsCount} subtitle version${if (item.subsCount != 1) "s" else ""}",
-                    fontSize   = 11.sp,
-                    color      = beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark),
-                    fontWeight = FontWeight.SemiBold
-                )
+//                Spacer(Modifier.height(4.dp))
+//                Text(
+//                    "📝 ${item.subsCount} subtitle version${if (item.subsCount != 1) "s" else ""}",
+//                    fontSize   = 11.sp,
+//                    color      = beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark),
+//                    fontWeight = FontWeight.SemiBold
+//                )
 
                 Spacer(Modifier.height(3.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
