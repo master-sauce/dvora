@@ -182,6 +182,7 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
     var searchTerm  by remember { mutableStateOf("") }
     var searchType  by remember { mutableStateOf(SourceType.SHOW) }
     var results     by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
+    var apiResults  by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
     var manualLinks by remember { mutableStateOf<List<String>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
 
@@ -336,6 +337,7 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                             if (searchTerm.isBlank()) return@Button
                             isSearching = true
                             results     = emptyList()
+                            apiResults  = emptyList()
                             scope.launch {
                                 val activeSources = if (searchType == SourceType.SHOW) shows else movies
                                 activeSources.forEach { source ->
@@ -348,9 +350,9 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                                         site.startsWith("v1:")      -> scanner.scanV1(site.removePrefix("v1:"), searchTerm)
                                         else                        -> scanner.scanV1(site, searchTerm)
                                     }
-                                    results = results + newResults
+                                    apiResults = apiResults + newResults
                                 }
-                                SearchLogs.lastLogs = results
+                                SearchLogs.lastLogs = results + apiResults
                                 manualLinks         = manualChecks.map { scanner.getManualCheck(it, searchTerm) }
                                 isSearching         = false
                             }
@@ -375,8 +377,16 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
 
                     LazyColumn(modifier = Modifier.weight(1f)) {
                         if (results.isNotEmpty()) {
+                            val sortedResults = results.sortedByDescending { it.found }
                             item { BeesSectionHeader("🍯 Results") }
-                            items(results) { ResultItem(it, showDetails = true) }
+                            items(sortedResults) { ResultItem(it, showDetails = true) }
+                        }
+                        if (apiResults.isNotEmpty()) {
+                            item {
+                                Spacer(Modifier.height(8.dp))
+                                BeesSectionHeader("🔌 API Results")
+                            }
+                            items(apiResults) { ResultItem(it, showDetails = true) }
                         }
                         if (manualLinks.isNotEmpty()) {
                             item {
