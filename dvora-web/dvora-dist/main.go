@@ -213,7 +213,7 @@ func scanSite(siteURL, searchTerm string) (bool, string, []LogEntry, error) {
 
 	skip := []string{"addtoany.com", "facebook.com", "twitter.com", "reddit.com",
 		"pinterest.com", "whatsapp.com", "t.me", "mailto:", "/login", "/register",
-		"/signup", "/feed", "#"}
+		"/signup", "/feed", "#", "/filter", "/search"}
 
 	var matched []string
 	skipped := 0
