@@ -159,7 +159,7 @@ class DvoraScanner {
                 val ignoredPatterns = listOf(
                     "addtoany.com", "facebook.com", "twitter.com", "reddit.com",
                     "pinterest.com", "whatsapp.com", "t.me", "mailto:",
-                    "/login", "/register", "/signup", "/feed", "#"
+                    "/login", "/register", "/signup", "/feed", "#", "/filter", "/search"
                 )
 
                 val matchedLinks = mutableListOf<String>()
