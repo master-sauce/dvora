@@ -185,6 +185,7 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
     var apiResults  by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
     var manualLinks by remember { mutableStateOf<List<String>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
+    var domainFilter by remember { mutableStateOf("") }
 
     var shows        by remember { mutableStateOf(loadSources(context, "shows")) }
     var movies       by remember { mutableStateOf(loadSources(context, "movies")) }
@@ -335,9 +336,10 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                     Button(
                         onClick = {
                             if (searchTerm.isBlank()) return@Button
-                            isSearching = true
-                            results     = emptyList()
-                            apiResults  = emptyList()
+                            isSearching  = true
+                            results      = emptyList()
+                            apiResults   = emptyList()
+                            domainFilter = ""
                             scope.launch {
                                 val activeSources = if (searchType == SourceType.SHOW) shows else movies
                                 activeSources.forEach { source ->
@@ -375,25 +377,50 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
 
                     Spacer(Modifier.height(16.dp))
 
+                    val hasAnyResults = results.isNotEmpty() || apiResults.isNotEmpty() || manualLinks.isNotEmpty()
+                    if (hasAnyResults) {
+                        OutlinedTextField(
+                            value         = domainFilter,
+                            onValueChange = { domainFilter = it },
+                            label         = { Text("🔎 Search by Site") },
+                            modifier      = Modifier.fillMaxWidth(),
+                            singleLine    = true,
+                            colors        = beeTextFieldColors(),
+                            trailingIcon  = {
+                                if (domainFilter.isNotEmpty()) {
+                                    IconButton(onClick = { domainFilter = "" }) {
+                                        Icon(Icons.Default.Close, "Clear filter", tint = BeeColors.DeepAmber)
+                                    }
+                                }
+                            }
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    }
+
                     LazyColumn(modifier = Modifier.weight(1f)) {
-                        if (results.isNotEmpty()) {
-                            val sortedResults = results.sortedByDescending { it.found }
+                        val filter = domainFilter.trim().lowercase()
+                        val filteredResults    = if (filter.isEmpty()) results    else results.filter    { it.url.lowercase().contains(filter) }
+                        val filteredApiResults = if (filter.isEmpty()) apiResults else apiResults.filter { it.url.lowercase().contains(filter) }
+                        val filteredManual     = if (filter.isEmpty()) manualLinks else manualLinks.filter { it.lowercase().contains(filter) }
+
+                        if (filteredResults.isNotEmpty()) {
+                            val sortedResults = filteredResults.sortedByDescending { it.found }
                             item { BeesSectionHeader("🍯 Results") }
                             items(sortedResults) { ResultItem(it, showDetails = true) }
                         }
-                        if (apiResults.isNotEmpty()) {
+                        if (filteredApiResults.isNotEmpty()) {
                             item {
                                 Spacer(Modifier.height(8.dp))
                                 BeesSectionHeader("🔌 API Results")
                             }
-                            items(apiResults) { ResultItem(it, showDetails = true) }
+                            items(filteredApiResults) { ResultItem(it, showDetails = true) }
                         }
-                        if (manualLinks.isNotEmpty()) {
+                        if (filteredManual.isNotEmpty()) {
                             item {
                                 Spacer(Modifier.height(16.dp))
                                 BeesSectionHeader("🔍 Manual Checks")
                             }
-                            items(manualLinks) { link ->
+                            items(filteredManual) { link ->
                                 Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
