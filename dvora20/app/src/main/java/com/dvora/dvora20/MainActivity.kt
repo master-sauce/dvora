@@ -411,7 +411,7 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                         if (filteredApiResults.isNotEmpty()) {
                             item {
                                 Spacer(Modifier.height(8.dp))
-                                BeesSectionHeader("🔌 API Results")
+                                BeesSectionHeader("🍯🍯 API Results")
                             }
                             items(filteredApiResults) { ResultItem(it, showDetails = true) }
                         }
@@ -1088,7 +1088,7 @@ fun SettingsScreen(
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = BeeColors.HoneyGold)
             }
             Text(
-                "⚙️  Settings",
+                "🏮 My HIVE",
                 style      = MaterialTheme.typography.titleLarge,
                 color      = BeeColors.HoneyGold,
                 fontWeight = FontWeight.Bold,
