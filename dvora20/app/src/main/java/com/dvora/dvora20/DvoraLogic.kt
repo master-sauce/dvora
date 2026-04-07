@@ -159,7 +159,7 @@ class DvoraScanner {
                 val ignoredPatterns = listOf(
                     "addtoany.com", "facebook.com", "twitter.com", "reddit.com",
                     "pinterest.com", "whatsapp.com", "t.me", "mailto:",
-                    "/login", "/register", "/signup", "/feed", "#", "/filter", "/search"
+                    "/login", "/register", "/signup", "/feed", "#", "/filter", "/search", "/browser", "/?s="
                 )
 
                 val matchedLinks = mutableListOf<String>()
@@ -340,54 +340,91 @@ class DvoraScanner {
         return@withContext results
     }
 
+    // Checks whether a result title contains the search term,
+    // trying space, dash, and plus as separators on both sides.
+    private fun titleMatches(title: String, searchTerm: String): Boolean {
+        val seps = listOf(" ", "-", "+")
+        val t = title.lowercase()
+        for (qs in seps) {
+            val q = searchTerm.lowercase().replace(" ", qs)
+            for (ts in seps) {
+                val norm = t.replace(ts, qs)
+                if (norm.contains(q)) return true
+            }
+        }
+        return false
+    }
+
     suspend fun scanStremio(baseUrl: String, searchTerm: String, searchType: SourceType): List<SearchResult> = withContext(Dispatchers.IO) {
         val mediaType = if (searchType == SourceType.SHOW) "series" else "movie"
-        val query = searchTerm.replace(" ", "+")
-        val apiURL = "$baseUrl/catalog/$mediaType/top/search=$query.json"
+        val variants = listOf(" " to "space", "-" to "dash", "+" to "plus")
 
-        try {
-            val request = Request.Builder().url(apiURL).header("User-Agent", userAgent).build()
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@withContext listOf(SearchResult(apiURL, false, errorMessage = "HTTP ${response.code}"))
-                val body = response.body?.string() ?: return@withContext listOf(SearchResult(apiURL, false, errorMessage = "Empty body"))
-                val stremioResponse = Gson().fromJson(body, StremioResponse::class.java)
+        val seenNames = mutableSetOf<String>()
+        val allMatches = mutableListOf<SearchResult>()
 
-                val matches = stremioResponse.metas?.filter { it.name.contains(searchTerm, ignoreCase = true) } ?: emptyList()
-                if (matches.isEmpty()) return@withContext listOf(SearchResult(apiURL, false, foundDetails = "No Stremio matches for '$searchTerm'"))
+        for ((sep, label) in variants) {
+            val query = searchTerm.replace(" ", sep)
+            val apiURL = "$baseUrl/catalog/$mediaType/top/search=$query.json"
+            try {
+                val request = Request.Builder().url(apiURL).header("User-Agent", userAgent).build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@use
+                    val body = response.body?.string() ?: return@use
+                    val stremioResponse = Gson().fromJson(body, StremioResponse::class.java)
 
-                return@withContext matches.take(10).map { item ->
-                    val id = item.imdb_id ?: item.id
-                    val stremioUrl = "https://web.stremio.com/#/detail/${item.type}/$id/$id"
-                    SearchResult(stremioUrl, true, foundDetails = "Match: ${item.name} (${item.releaseInfo ?: ""})")
+                    stremioResponse.metas?.forEach { item ->
+                        if (allMatches.size >= 10) return@forEach
+                        val key = item.name.lowercase()
+                        if (key in seenNames) return@forEach
+                        if (titleMatches(item.name, searchTerm)) {
+                            seenNames.add(key)
+                            val id = item.imdb_id ?: item.id
+                            val stremioUrl = "https://web.stremio.com/#/detail/${item.type}/$id/$id"
+                            allMatches.add(SearchResult(stremioUrl, true, foundDetails = "[$label] Match: ${item.name} (${item.releaseInfo ?: ""})"))
+                        }
+                    }
                 }
-            }
-        } catch (e: Exception) {
-            listOf(SearchResult(apiURL, false, errorMessage = e.message))
+            } catch (_: Exception) {}
         }
+
+        if (allMatches.isNotEmpty()) return@withContext allMatches
+        val fallbackUrl = "$baseUrl/catalog/$mediaType/top/search=${searchTerm.replace(" ", "+")}.json"
+        return@withContext listOf(SearchResult(fallbackUrl, false, foundDetails = "No Stremio matches for '$searchTerm'"))
     }
 
     suspend fun scanV1(baseUrl: String, searchTerm: String): List<SearchResult> = withContext(Dispatchers.IO) {
-        val query = searchTerm.replace(" ", "+")
-        val apiURL = "$baseUrl/searching?q=$query&limit=40&offset=0"
+        val variants = listOf(" " to "space", "-" to "dash", "+" to "plus")
 
-        try {
-            val request = Request.Builder().url(apiURL).header("User-Agent", userAgent).build()
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@withContext listOf(SearchResult(apiURL, false, errorMessage = "HTTP ${response.code}"))
-                val body = response.body?.string() ?: return@withContext listOf(SearchResult(apiURL, false, errorMessage = "Empty body"))
-                val v1Response = Gson().fromJson(body, V1Response::class.java)
+        val seenNames = mutableSetOf<String>()
+        val allMatches = mutableListOf<SearchResult>()
 
-                val matches = v1Response.data?.filter { it.t.contains(searchTerm, ignoreCase = true) } ?: emptyList()
-                if (matches.isEmpty()) return@withContext listOf(SearchResult(apiURL, false, foundDetails = "No v1 matches for '$searchTerm'"))
+        for ((sep, label) in variants) {
+            val query = searchTerm.replace(" ", sep)
+            val apiURL = "$baseUrl/searching?q=$query&limit=40&offset=0"
+            try {
+                val request = Request.Builder().url(apiURL).header("User-Agent", userAgent).build()
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@use
+                    val body = response.body?.string() ?: return@use
+                    val v1Response = Gson().fromJson(body, V1Response::class.java)
 
-                return@withContext matches.map { item ->
-                    val finalUrl = "$baseUrl/search/?q=$query"
-                    SearchResult(finalUrl, true, foundDetails = "Match: ${item.t} (${item.y ?: ""})")
+                    v1Response.data?.forEach { item ->
+                        if (allMatches.size >= 10) return@forEach
+                        val key = item.t.lowercase()
+                        if (key in seenNames) return@forEach
+                        if (titleMatches(item.t, searchTerm)) {
+                            seenNames.add(key)
+                            val finalUrl = "$baseUrl/search/?q=$query"
+                            allMatches.add(SearchResult(finalUrl, true, foundDetails = "[$label] Match: ${item.t} (${item.y ?: ""})"))
+                        }
+                    }
                 }
-            }
-        } catch (e: Exception) {
-            listOf(SearchResult(apiURL, false, errorMessage = e.message))
+            } catch (_: Exception) {}
         }
+
+        if (allMatches.isNotEmpty()) return@withContext allMatches
+        val fallbackUrl = "$baseUrl/searching?q=${searchTerm.replace(" ", "+")}&limit=40&offset=0"
+        return@withContext listOf(SearchResult(fallbackUrl, false, foundDetails = "No v1 matches for '$searchTerm'"))
     }
 
     suspend fun searchImdb(searchTerm: String): List<ImdbResult> = withContext(Dispatchers.IO) {
