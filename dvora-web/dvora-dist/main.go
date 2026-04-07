@@ -260,61 +260,99 @@ func scanSite(siteURL, searchTerm string) (bool, string, []LogEntry, error) {
 	return false, "No matches found", logs, nil
 }
 
+// titleMatches checks whether a result title contains the search term,
+// trying space, dash, and plus as separators in both the query and the title.
+func titleMatches(title, searchTerm string) bool {
+	t := strings.ToLower(title)
+	seps := []string{" ", "-", "+"}
+	for _, qs := range seps {
+		q := strings.ToLower(strings.ReplaceAll(searchTerm, " ", qs))
+		// Also normalise the title with each separator before comparing
+		for _, ts := range seps {
+			norm := strings.ReplaceAll(t, ts, qs)
+			if strings.Contains(norm, q) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // ─── Movie API (v1) ───────────────────────────────────────────────────────────
 
 func scanMovieAPI(baseURL, searchTerm string) (bool, []MovieMatch, []LogEntry, error) {
 	var logs []LogEntry
 	add := func(lvl, msg string) { logs = append(logs, LogEntry{lvl, msg}) }
 
-	q := strings.ReplaceAll(searchTerm, " ", "+")
-	apiURL := baseURL + "/searching?q=" + q + "&limit=40&offset=0"
-	add("info", "API GET "+apiURL)
-
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, _ := http.NewRequest("GET", apiURL, nil)
-	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Accept", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		return false, nil, logs, err
-	}
-	defer resp.Body.Close()
-	add("info", fmt.Sprintf("HTTP %d", resp.StatusCode))
-	if resp.StatusCode != 200 {
-		return false, nil, logs, fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-	body, _ := io.ReadAll(resp.Body)
 
-	var ar struct {
-		Data []struct {
-			T string `json:"t"`
-			Y int    `json:"y"`
-		} `json:"data"`
+	// Try space, dash, and plus variants of the search term
+	variants := []struct{ sep, label string }{
+		{" ", "space"},
+		{"-", "dash"},
+		{"+", "plus"},
 	}
-	if err := json.Unmarshal(body, &ar); err != nil {
-		return false, nil, logs, err
-	}
-	add("info", fmt.Sprintf("%d results", len(ar.Data)))
 
-	sl := strings.ToLower(searchTerm)
-	searchURL := baseURL + "/search/?q=" + q
-	var matches []MovieMatch
-	for _, item := range ar.Data {
-		if len(matches) >= 10 {
-			break
+	seenNames := make(map[string]bool)
+	var allMatches []MovieMatch
+
+	for _, v := range variants {
+		q := strings.ReplaceAll(searchTerm, " ", v.sep)
+		apiURL := baseURL + "/searching?q=" + q + "&limit=40&offset=0"
+		add("info", fmt.Sprintf("API GET %s [%s]", apiURL, v.label))
+
+		req, _ := http.NewRequest("GET", apiURL, nil)
+		req.Header.Set("User-Agent", userAgent)
+		req.Header.Set("Accept", "application/json")
+		resp, err := client.Do(req)
+		if err != nil {
+			add("warn", fmt.Sprintf("[%s] request error: %s", v.label, err.Error()))
+			continue
 		}
-		if strings.Contains(strings.ToLower(item.T), sl) {
-			matches = append(matches, MovieMatch{Name: item.T, URL: searchURL})
-			add("match", fmt.Sprintf(`✓ "%s" (%d)`, item.T, item.Y))
-		} else {
-			add("skip", fmt.Sprintf(`  no match: "%s"`, item.T))
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		add("info", fmt.Sprintf("[%s] HTTP %d", v.label, resp.StatusCode))
+		if resp.StatusCode != 200 {
+			add("warn", fmt.Sprintf("[%s] skipping — HTTP %d", v.label, resp.StatusCode))
+			continue
+		}
+
+		var ar struct {
+			Data []struct {
+				T string `json:"t"`
+				Y int    `json:"y"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(body, &ar); err != nil {
+			add("warn", fmt.Sprintf("[%s] JSON parse error: %s", v.label, err.Error()))
+			continue
+		}
+		add("info", fmt.Sprintf("[%s] %d results", v.label, len(ar.Data)))
+
+		searchURL := baseURL + "/search/?q=" + q
+		for _, item := range ar.Data {
+			if len(allMatches) >= 10 {
+				break
+			}
+			key := strings.ToLower(item.T)
+			if seenNames[key] {
+				continue
+			}
+			if titleMatches(item.T, searchTerm) {
+				seenNames[key] = true
+				allMatches = append(allMatches, MovieMatch{Name: item.T, URL: searchURL})
+				add("match", fmt.Sprintf(`✓ [%s] "%s" (%d)`, v.label, item.T, item.Y))
+			} else {
+				add("skip", fmt.Sprintf(`  [%s] no match: "%s"`, v.label, item.T))
+			}
 		}
 	}
-	if len(matches) > 0 {
-		add("verdict", fmt.Sprintf("FOUND — %d result(s)", len(matches)))
-		return true, matches, logs, nil
+
+	if len(allMatches) > 0 {
+		add("verdict", fmt.Sprintf("FOUND — %d result(s)", len(allMatches)))
+		return true, allMatches, logs, nil
 	}
-	add("verdict", fmt.Sprintf("NOT FOUND — 0 of %d matched", len(ar.Data)))
+	add("verdict", "NOT FOUND — 0 matched across all variants")
 	return false, nil, logs, nil
 }
 
@@ -328,62 +366,83 @@ func scanStremio(baseURL, searchTerm, mode string) (bool, []MovieMatch, []LogEnt
 	if mode == "movies" {
 		mt = "movie"
 	}
-	q := strings.ReplaceAll(searchTerm, " ", "+")
-	apiURL := baseURL + "/catalog/" + mt + "/top/search=" + q + ".json"
-	add("info", "Stremio GET "+apiURL)
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, _ := http.NewRequest("GET", apiURL, nil)
-	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Accept", "application/json")
-	resp, err := client.Do(req)
-	if err != nil {
-		return false, nil, logs, err
-	}
-	defer resp.Body.Close()
-	add("info", fmt.Sprintf("HTTP %d", resp.StatusCode))
-	if resp.StatusCode != 200 {
-		return false, nil, logs, fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-	body, _ := io.ReadAll(resp.Body)
 
-	var ar struct {
-		Metas []struct {
-			ID          string `json:"id"`
-			ImdbID      string `json:"imdb_id"`
-			Type        string `json:"type"`
-			Name        string `json:"name"`
-			ReleaseInfo string `json:"releaseInfo"`
-		} `json:"metas"`
+	// Try space, dash, and plus variants of the search term
+	variants := []struct{ sep, label string }{
+		{" ", "space"},
+		{"-", "dash"},
+		{"+", "plus"},
 	}
-	if err := json.Unmarshal(body, &ar); err != nil {
-		return false, nil, logs, err
-	}
-	add("info", fmt.Sprintf("%d results", len(ar.Metas)))
 
-	sl := strings.ToLower(searchTerm)
-	var matches []MovieMatch
-	for _, item := range ar.Metas {
-		if len(matches) >= 10 {
-			break
+	seenNames := make(map[string]bool)
+	var allMatches []MovieMatch
+
+	for _, v := range variants {
+		q := strings.ReplaceAll(searchTerm, " ", v.sep)
+		apiURL := baseURL + "/catalog/" + mt + "/top/search=" + q + ".json"
+		add("info", fmt.Sprintf("Stremio GET %s [%s]", apiURL, v.label))
+
+		req, _ := http.NewRequest("GET", apiURL, nil)
+		req.Header.Set("User-Agent", userAgent)
+		req.Header.Set("Accept", "application/json")
+		resp, err := client.Do(req)
+		if err != nil {
+			add("warn", fmt.Sprintf("[%s] request error: %s", v.label, err.Error()))
+			continue
 		}
-		if strings.Contains(strings.ToLower(item.Name), sl) {
-			id := item.ImdbID
-			if id == "" {
-				id = item.ID
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		add("info", fmt.Sprintf("[%s] HTTP %d", v.label, resp.StatusCode))
+		if resp.StatusCode != 200 {
+			add("warn", fmt.Sprintf("[%s] skipping — HTTP %d", v.label, resp.StatusCode))
+			continue
+		}
+
+		var ar struct {
+			Metas []struct {
+				ID          string `json:"id"`
+				ImdbID      string `json:"imdb_id"`
+				Type        string `json:"type"`
+				Name        string `json:"name"`
+				ReleaseInfo string `json:"releaseInfo"`
+			} `json:"metas"`
+		}
+		if err := json.Unmarshal(body, &ar); err != nil {
+			add("warn", fmt.Sprintf("[%s] JSON parse error: %s", v.label, err.Error()))
+			continue
+		}
+		add("info", fmt.Sprintf("[%s] %d results", v.label, len(ar.Metas)))
+
+		for _, item := range ar.Metas {
+			if len(allMatches) >= 10 {
+				break
 			}
-			su := "https://web.stremio.com/#/detail/" + item.Type + "/" + id + "/" + id
-			matches = append(matches, MovieMatch{Name: item.Name, URL: su})
-			add("match", fmt.Sprintf(`✓ "%s" (%s)`, item.Name, item.ReleaseInfo))
-		} else {
-			add("skip", fmt.Sprintf(`  no match: "%s"`, item.Name))
+			key := strings.ToLower(item.Name)
+			if seenNames[key] {
+				continue
+			}
+			if titleMatches(item.Name, searchTerm) {
+				seenNames[key] = true
+				id := item.ImdbID
+				if id == "" {
+					id = item.ID
+				}
+				su := "https://web.stremio.com/#/detail/" + item.Type + "/" + id + "/" + id
+				allMatches = append(allMatches, MovieMatch{Name: item.Name, URL: su})
+				add("match", fmt.Sprintf(`✓ [%s] "%s" (%s)`, v.label, item.Name, item.ReleaseInfo))
+			} else {
+				add("skip", fmt.Sprintf(`  [%s] no match: "%s"`, v.label, item.Name))
+			}
 		}
 	}
-	if len(matches) > 0 {
-		add("verdict", fmt.Sprintf("FOUND — %d result(s)", len(matches)))
-		return true, matches, logs, nil
+
+	if len(allMatches) > 0 {
+		add("verdict", fmt.Sprintf("FOUND — %d result(s)", len(allMatches)))
+		return true, allMatches, logs, nil
 	}
-	add("verdict", fmt.Sprintf("NOT FOUND — 0 of %d matched", len(ar.Metas)))
+	add("verdict", "NOT FOUND — 0 matched across all variants")
 	return false, nil, logs, nil
 }
 
