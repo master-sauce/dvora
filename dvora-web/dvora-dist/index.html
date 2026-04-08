@@ -284,12 +284,13 @@ a.cu:hover{color:var(--hg);}
       <button class="stab" onclick="switchTab('movies')">Movies</button>
       <button class="stab" onclick="switchTab('manual')">Manual</button>
       <button class="stab" onclick="switchTab('api')">APIs</button>
+      <button class="stab" onclick="switchTab('exclusions')">Exclusions</button>
       <button class="stab" onclick="switchTab('logs')">Logs</button>
     </div>
     <div class="sbody">
       <div class="stabc active" id="tab-shows">
         <div class="cdesc">One URL prefix per line. The search term is appended directly.<br>
-          <code>+</code> → spaces become <code>+</code> &nbsp;|&nbsp; <code>-</code> → spaces become <code>-</code> &nbsp;|&nbsp; no prefix → spaces kept.<br>Lines starting with <code>#</code> are comments.</div>
+          <code>+</code> → spaces become <code>+</code> &nbsp;|&nbsp; <code>-</code> → spaces become <code>-</code> &nbsp;|&nbsp; no prefix → spaces kept.<br>Lines starting with <code>//</code> are comments.</div>
         <textarea class="cta" id="ta-shows" rows="12" placeholder="+https://example.com/search?q=&#10;-https://other.com/find/"></textarea>
         <div class="cfoot"><button class="savebtn" onclick="saveCfg('shows.txt','ta-shows','ss-shows')">✓ Save</button><span class="ss" id="ss-shows"></span></div>
       </div>
@@ -310,6 +311,11 @@ a.cu:hover{color:var(--hg);}
           Bare URL with no prefix is treated as <code>v1:</code>.</div>
         <textarea class="cta" id="ta-api" rows="12" placeholder="stremio:https://v3-cinemeta.strem.io&#10;v1:https://ww3.somesite.com"></textarea>
         <div class="cfoot"><button class="savebtn" onclick="saveCfg('api_sites.txt','ta-api','ss-api')">✓ Save</button><span class="ss" id="ss-api"></span></div>
+      </div>
+      <div class="stabc" id="tab-exclusions">
+        <div class="cdesc">One pattern per line. Any link URL containing one of these strings will be <strong>skipped</strong> during scanning.<br>Lines starting with <code>//</code> are comments.</div>
+        <textarea class="cta" id="ta-exclusions" rows="12" placeholder="facebook.com&#10;/login&#10;#comment"></textarea>
+        <div class="cfoot"><button class="savebtn" onclick="saveCfg('exclusions.txt','ta-exclusions','ss-exclusions')">✓ Save</button><span class="ss" id="ss-exclusions"></span></div>
       </div>
       <div class="stabc" id="tab-logs">
         <div class="lve" id="logEmpty">🐝 No search results yet. Run a search first.</div>

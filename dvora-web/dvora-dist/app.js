@@ -403,13 +403,13 @@ function ovClick(e){if(e.target===document.getElementById('sov'))closeSettings()
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeSettings();});
 function switchTab(name){
   activeTab=name;
-  document.querySelectorAll('.stab').forEach((b,i)=>b.classList.toggle('active',['shows','movies','manual','api','logs'][i]===name));
+  document.querySelectorAll('.stab').forEach((b,i)=>b.classList.toggle('active',['shows','movies','manual','api','exclusions','logs'][i]===name));
   document.querySelectorAll('.stabc').forEach(c=>c.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
   if(name==='logs')renderLogs();
 }
-const fm={shows:'shows.txt',movies:'movies.txt',manual:'manual_checks.txt',api:'api_sites.txt'};
-function loadCfgs(){['shows','movies','manual','api'].forEach(k=>{fetch('/config?file='+fm[k]).then(r=>r.json()).then(d=>{document.getElementById('ta-'+k).value=d.content||'';}).catch(()=>{});});}
+const fm={shows:'shows.txt',movies:'movies.txt',manual:'manual_checks.txt',api:'api_sites.txt',exclusions:'exclusions.txt'};
+function loadCfgs(){['shows','movies','manual','api','exclusions'].forEach(k=>{fetch('/config?file='+fm[k]).then(r=>r.json()).then(d=>{document.getElementById('ta-'+k).value=d.content||'';}).catch(()=>{});});}
 function saveCfg(file,taId,ssId){
   const content=document.getElementById(taId).value;
   const el=document.getElementById(ssId);el.textContent='Saving...';el.className='ss';

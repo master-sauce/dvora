@@ -83,8 +83,8 @@ type wizdomItem struct {
 // Subs is RawMessage because movies return an array and TV returns a seasons object.
 type WizdomRelease struct {
 	Imdb        string          `json:"imdb"`
-	Title       string          `json:"title"`        // Hebrew title
-	TitleEn     string          `json:"title_en"`     // English title
+	Title       string          `json:"title"`    // Hebrew title
+	TitleEn     string          `json:"title_en"` // English title
 	Year        int             `json:"year"`
 	Rating      string          `json:"rating"`
 	Genres      string          `json:"genres"`
@@ -211,9 +211,12 @@ func scanSite(siteURL, searchTerm string) (bool, string, []LogEntry, error) {
 	pat := regexp.MustCompile(pb.String())
 	add("info", "Regex: /"+pb.String()+"/")
 
-	skip := []string{"addtoany.com", "facebook.com", "twitter.com", "reddit.com",
-		"pinterest.com", "whatsapp.com", "t.me", "mailto:", "/login", "/register",
-		"/signup", "/feed", "#", "/filter", "/search", "/browser", "/?s="}
+	skip, _ := readLines("exclusions.txt")
+	if len(skip) == 0 {
+		skip = []string{"addtoany.com", "facebook.com", "twitter.com", "reddit.com",
+			"pinterest.com", "whatsapp.com", "t.me", "mailto:", "/login", "/register",
+			"/signup", "/feed", "#", "/filter", "/search", "/browser", "/?s="}
+	}
 
 	var matched []string
 	skipped := 0
@@ -517,11 +520,12 @@ func searchIMDb(searchTerm string) ([]ImdbResult, error) {
 // ─── Subtitle search ──────────────────────────────────────────────────────────
 // Step 1 — collect candidate IMDb IDs from Wizdom search + IMDb suggestion API.
 // Step 2 — verify each candidate against wizdom.xyz/api/releases/{id}:
-//   • Uses a no-redirect client — Wizdom returns 3xx with JSON body for TV shows.
+//   - Uses a no-redirect client — Wizdom returns 3xx with JSON body for TV shows.
 //     Following the redirect would lose the response body.
-//   • 4xx / 5xx → skip (title has no data on Wizdom).
-//   • Empty / null body → skip.
-//   • Non-empty body → confirmed. Parse WizdomRelease for rich metadata.
+//   - 4xx / 5xx → skip (title has no data on Wizdom).
+//   - Empty / null body → skip.
+//   - Non-empty body → confirmed. Parse WizdomRelease for rich metadata.
+//
 // The URL path (tv/movie) always comes from the user's mode toggle, never from
 // the release's own type field (which can be null or inconsistent).
 func searchSubtitles(searchTerm, mode string) SubResponse {
@@ -696,7 +700,7 @@ func readLines(path string) ([]string, error) {
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
-		if line != "" && !strings.HasPrefix(line, "#") {
+		if line != "" && !strings.HasPrefix(line, "//") {
 			lines = append(lines, line)
 		}
 	}
@@ -927,7 +931,7 @@ func configHandler(w http.ResponseWriter, r *http.Request) {
 	file := r.URL.Query().Get("file")
 	allowed := map[string]bool{
 		"shows.txt": true, "movies.txt": true,
-		"manual_checks.txt": true, "api_sites.txt": true,
+		"manual_checks.txt": true, "api_sites.txt": true, "exclusions.txt": true,
 	}
 	if !allowed[file] {
 		http.Error(w, `{"error":"invalid file"}`, 400)
@@ -971,6 +975,17 @@ func main() {
 			os.WriteFile(f, []byte(""), 0644)
 			log.Printf("Created empty %s", f)
 		}
+	}
+	if _, err := os.Stat("exclusions.txt"); os.IsNotExist(err) {
+		defaults := strings.Join([]string{
+			"addtoany.com", "facebook.com", "twitter.com", "reddit.com",
+			"pinterest.com", "whatsapp.com", "t.me", "mailto:",
+			"/login", "/register", "/signup", "/feed", "#", "/filter", "/search", "/browser", "/?s=",
+			"// This is a comment line",
+			"// Another comment",
+		}, "\n")
+		os.WriteFile("exclusions.txt", []byte(defaults), 0644)
+		log.Printf("Created exclusions.txt with defaults")
 	}
 	http.HandleFunc("/", indexHandler)
 	http.HandleFunc("/app.js", appJSHandler)
