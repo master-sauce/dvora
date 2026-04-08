@@ -191,6 +191,7 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
     var movies       by remember { mutableStateOf(loadSources(context, "movies")) }
     var manualChecks by remember { mutableStateOf(loadSources(context, "manual_checks")) }
     var apiSites     by remember { mutableStateOf(loadSources(context, "api_sites")) }
+    var exclusions   by remember { mutableStateOf(loadSources(context, "exclusions")) }
 
     var showSettings  by remember { mutableStateOf(false) }
     var showSubtitles by remember { mutableStateOf(false) }
@@ -261,12 +262,14 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                 movies       = movies,
                 manualChecks = manualChecks,
                 apiSites     = apiSites,
+                exclusions   = exclusions,
                 onUpdate     = { type, newList ->
                     when (type) {
                         SourceType.SHOW   -> { shows = newList;        saveSources(context, "shows", newList) }
                         SourceType.MOVIE  -> { movies = newList;       saveSources(context, "movies", newList) }
                         SourceType.MANUAL -> { manualChecks = newList; saveSources(context, "manual_checks", newList) }
                         SourceType.API    -> { apiSites = newList;     saveSources(context, "api_sites", newList) }
+                        SourceType.EXCLUSION -> { exclusions = newList; saveSources(context, "exclusions", newList) }
                     }
                 },
                 onBack       = { showSettings = false },
@@ -343,7 +346,7 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                             scope.launch {
                                 val activeSources = if (searchType == SourceType.SHOW) shows else movies
                                 activeSources.forEach { source ->
-                                    val result = scanner.scanSite(source, searchTerm)
+                                    val result = scanner.scanSite(source, searchTerm, exclusions)
                                     results = results + result
                                 }
                                 apiSites.forEach { site ->
@@ -1067,6 +1070,7 @@ fun SettingsScreen(
     movies:       List<String>,
     manualChecks: List<String>,
     apiSites:     List<String>,
+    exclusions:   List<String>,
     onUpdate:     (SourceType, List<String>) -> Unit,
     onBack:       () -> Unit,
     onToggleDark: () -> Unit,
@@ -1074,7 +1078,7 @@ fun SettingsScreen(
 ) {
     BackHandler { onBack() }
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs     = listOf("Shows", "Movies", "APIs", "Manual", "Logs")
+    val tabs     = listOf("Shows", "Movies", "APIs", "Manual", "Exclusions", "Logs")
     val isDark   = LocalDarkMode.current.value
     val headerBg = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
     val bgColor  = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
@@ -1136,7 +1140,8 @@ fun SettingsScreen(
             1 -> SourceEditor(movies)       { onUpdate(SourceType.MOVIE, it) }
             2 -> SourceEditor(apiSites)     { onUpdate(SourceType.API, it) }
             3 -> SourceEditor(manualChecks) { onUpdate(SourceType.MANUAL, it) }
-            4 -> VerboseLogsScreen()
+            4 -> SourceEditor(exclusions)   { onUpdate(SourceType.EXCLUSION, it) }
+            5 -> VerboseLogsScreen()
         }
     }
 }
@@ -1354,6 +1359,11 @@ fun loadSources(context: Context, key: String): List<String> {
                 "v1:https://ww8.123moviesfree.net",
                 "v1:https://ww4.fmovies.co",
                 "stremio:https://v3-cinemeta.strem.io"
+            )
+            "exclusions"    -> listOf(
+                "addtoany.com", "facebook.com", "twitter.com", "reddit.com",
+                "pinterest.com", "whatsapp.com", "t.me", "mailto:",
+                "/login", "/register", "/signup", "/feed", "#", "/filter", "/search", "/browser", "/?s="
             )
             else            -> emptyList()
         }

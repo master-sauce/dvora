@@ -43,7 +43,7 @@ data class ImdbImage(
 )
 
 enum class SourceType {
-    SHOW, MOVIE, MANUAL, API
+    SHOW, MOVIE, MANUAL, API, EXCLUSION
 }
 
 data class WizdomResult(
@@ -112,7 +112,7 @@ class DvoraScanner {
 
     private val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 
-    suspend fun scanSite(baseUrl: String, searchTerm: String): SearchResult = withContext(Dispatchers.IO) {
+    suspend fun scanSite(baseUrl: String, searchTerm: String, exclusions: List<String> = emptyList()): SearchResult = withContext(Dispatchers.IO) {
         var formattedInput: String
         var cleanBaseUrl: String
 
@@ -156,11 +156,13 @@ class DvoraScanner {
                 }
                 val searchPattern = Pattern.compile(patternBuilder.toString(), Pattern.CASE_INSENSITIVE)
 
-                val ignoredPatterns = listOf(
-                    "addtoany.com", "facebook.com", "twitter.com", "reddit.com",
-                    "pinterest.com", "whatsapp.com", "t.me", "mailto:",
-                    "/login", "/register", "/signup", "/feed", "#", "/filter", "/search", "/browser", "/?s="
-                )
+                val ignoredPatterns = exclusions.ifEmpty {
+                    listOf(
+                        "addtoany.com", "facebook.com", "twitter.com", "reddit.com",
+                        "pinterest.com", "whatsapp.com", "t.me", "mailto:",
+                        "/login", "/register", "/signup", "/feed", "#", "/filter", "/search", "/browser", "/?s="
+                    )
+                }
 
                 val matchedLinks = mutableListOf<String>()
                 val skipCounts = mutableMapOf<String, Int>()
@@ -380,7 +382,7 @@ class DvoraScanner {
                             seenNames.add(key)
                             val id = item.imdb_id ?: item.id
                             val stremioUrl = "https://web.stremio.com/#/detail/${item.type}/$id/$id"
-                            allMatches.add(SearchResult(stremioUrl, true, foundDetails = "Match: ${item.name} (${item.releaseInfo ?: ""})"))
+                            allMatches.add(SearchResult(stremioUrl, true, foundDetails = "[$label] Match: ${item.name} (${item.releaseInfo ?: ""})"))
                         }
                     }
                 }
@@ -415,7 +417,7 @@ class DvoraScanner {
                         if (titleMatches(item.t, searchTerm)) {
                             seenNames.add(key)
                             val finalUrl = "$baseUrl/search/?q=$query"
-                            allMatches.add(SearchResult(finalUrl, true, foundDetails = "Match: ${item.t} (${item.y ?: ""})"))
+                            allMatches.add(SearchResult(finalUrl, true, foundDetails = "[$label] Match: ${item.t} (${item.y ?: ""})"))
                         }
                     }
                 }
