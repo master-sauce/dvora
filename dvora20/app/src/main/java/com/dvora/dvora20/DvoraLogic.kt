@@ -382,7 +382,7 @@ class DvoraScanner {
                             seenNames.add(key)
                             val id = item.imdb_id ?: item.id
                             val stremioUrl = "https://web.stremio.com/#/detail/${item.type}/$id/$id"
-                            allMatches.add(SearchResult(stremioUrl, true, foundDetails = "[$label] Match: ${item.name} (${item.releaseInfo ?: ""})"))
+                            allMatches.add(SearchResult(stremioUrl, true, foundDetails = "Match: ${item.name} (${item.releaseInfo ?: ""})"))
                         }
                     }
                 }
@@ -417,7 +417,7 @@ class DvoraScanner {
                         if (titleMatches(item.t, searchTerm)) {
                             seenNames.add(key)
                             val finalUrl = "$baseUrl/search/?q=$query"
-                            allMatches.add(SearchResult(finalUrl, true, foundDetails = "[$label] Match: ${item.t} (${item.y ?: ""})"))
+                            allMatches.add(SearchResult(finalUrl, true, foundDetails = "Match: ${item.t} (${item.y ?: ""})"))
                         }
                     }
                 }
