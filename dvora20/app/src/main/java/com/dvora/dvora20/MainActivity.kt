@@ -469,13 +469,14 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                         modifier = Modifier.fillMaxWidth().height(52.dp), enabled = !isSearching,
                         shape = RoundedCornerShape(12.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = headerBg, contentColor = BeeColors.HoneyGold,
-                            disabledContainerColor = if (isDark) Color(0xFF2A2000) else Color(0xFF4A3B00),
-                            disabledContentColor = BeeColors.HoneyGold.copy(alpha = 0.4f)
+                            containerColor = if (isDark) BeeColors.HoneyGold else headerBg,
+                            contentColor = if (isDark) Color.Black else BeeColors.HoneyGold,
+                            disabledContainerColor = if (isDark) BeeColors.HoneyGold.copy(alpha = 0.3f) else Color(0xFF4A3B00),
+                            disabledContentColor = if (isDark) Color.Black.copy(alpha = 0.4f) else BeeColors.HoneyGold.copy(alpha = 0.4f)
                         )
                     ) {
                         if (isSearching) CircularProgressIndicator(Modifier.size(24.dp), BeeColors.HoneyGold, strokeWidth = 2.dp)
-                        else Text("🐝  BUZZ & SEARCH", fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+                        else Text("🐝  BUZZ & SEARCH", fontWeight = FontWeight.Bold, letterSpacing = 2.sp, color = if (isDark) Color.Black else BeeColors.HoneyGold)
                     }
                     Spacer(Modifier.height(16.dp))
                     val hasAnyResults = results.isNotEmpty() || apiResults.isNotEmpty() || manualLinks.isNotEmpty()
