@@ -7,29 +7,36 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
 
 class ReminderReceiver : BroadcastReceiver() {
     companion object {
-        const val CHANNEL_ID       = "dvora_reminders"
-        const val EXTRA_TITLE      = "extra_title"
-        const val EXTRA_IMDB_ID    = "extra_imdb_id"
-        const val EXTRA_IMDB_URL   = "extra_imdb_url"
-        const val EXTRA_MEDIA_TYPE = "extra_media_type"
+        const val CHANNEL_ID        = "dvora_reminders"
+        const val EXTRA_TITLE       = "extra_title"
+        const val EXTRA_IMDB_ID     = "extra_imdb_id"
+        const val EXTRA_IMDB_URL    = "extra_imdb_url"
+        const val EXTRA_MEDIA_TYPE  = "extra_media_type"
+        const val EXTRA_RECURRENCE  = "extra_recurrence"
     }
 
     override fun onReceive(context: Context, intent: Intent) {
-        val title     = intent.getStringExtra(EXTRA_TITLE) ?: "Reminder"
-        val imdbId    = intent.getStringExtra(EXTRA_IMDB_ID) ?: ""
-        val imdbUrl   = intent.getStringExtra(EXTRA_IMDB_URL) ?: "https://www.imdb.com"
-        val mediaType = intent.getStringExtra(EXTRA_MEDIA_TYPE)
+        val title      = intent.getStringExtra(EXTRA_TITLE) ?: "Reminder"
+        val imdbId     = intent.getStringExtra(EXTRA_IMDB_ID) ?: ""
+        val mediaType  = intent.getStringExtra(EXTRA_MEDIA_TYPE)
+        val recurrence = intent.getStringExtra(EXTRA_RECURRENCE) ?: "ONCE"
 
         createChannel(context)
 
         val emoji = if (mediaType?.contains("tv", ignoreCase = true) == true ||
             mediaType?.contains("series", ignoreCase = true) == true) "📺" else "🎬"
+
+        val recLabel = when (recurrence) {
+            "DAILY"   -> "  🔁 Daily"
+            "WEEKLY"  -> "  🔁 Weekly"
+            "MONTHLY" -> "  🔁 Monthly"
+            else      -> ""
+        }
 
         val openIntent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -42,8 +49,8 @@ class ReminderReceiver : BroadcastReceiver() {
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle("🐝 Dvora Reminder")
-            .setContentText("$emoji $title")
-            .setStyle(NotificationCompat.BigTextStyle().bigText("$emoji $title\nTap to open"))
+            .setContentText("$emoji $title$recLabel")
+            .setStyle(NotificationCompat.BigTextStyle().bigText("$emoji $title$recLabel\nTap to open Dvora"))
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .setSilent(true)
@@ -53,7 +60,11 @@ class ReminderReceiver : BroadcastReceiver() {
         manager.notify(imdbId.hashCode(), notification)
 
         BookmarksManager.load(context)
-        BookmarksManager.clearReminderSilent(context, imdbId)
+        if (recurrence == "ONCE") {
+            BookmarksManager.clearReminderSilent(context, imdbId)
+        } else {
+            BookmarksManager.advanceRecurringReminder(context, imdbId)
+        }
     }
 
     private fun createChannel(context: Context) {
@@ -78,7 +89,7 @@ class BootReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Intent.ACTION_BOOT_COMPLETED) {
             BookmarksManager.load(context)
-            ReminderHelper.rescheduleAll(context, BookmarksManager.bookmarks)
+            BookmarksManager.rescheduleAllReminders(context)
         }
     }
 }
@@ -92,6 +103,7 @@ object ReminderHelper {
             putExtra(ReminderReceiver.EXTRA_IMDB_ID, bm.imdbId)
             putExtra(ReminderReceiver.EXTRA_IMDB_URL, bm.imdbUrl)
             putExtra(ReminderReceiver.EXTRA_MEDIA_TYPE, bm.mediaType)
+            putExtra(ReminderReceiver.EXTRA_RECURRENCE, bm.reminderRecurrence ?: "ONCE")
         }
         val pendingIntent = PendingIntent.getBroadcast(
             context, bm.imdbId.hashCode(), intent,
@@ -125,24 +137,23 @@ object ReminderHelper {
         alarmManager.cancel(pendingIntent)
     }
 
-    fun rescheduleAll(context: Context, bookmarks: List<Bookmark>) {
-        val now = System.currentTimeMillis()
-        bookmarks.forEach { bm ->
-            val dateStr = bm.reminderDate ?: return@forEach
-            val timeStr = bm.reminderTime ?: "09:00"
-            val triggerAt = datetimeToMillis(dateStr, timeStr)
-            if (triggerAt > now) {
-                schedule(context, bm, triggerAt)
-            }
-        }
-    }
-
     fun datetimeToMillis(dateStr: String, timeStr: String): Long {
-        val date  = java.time.LocalDate.parse(dateStr)
-        val parts = timeStr.split(":")
+        val date   = java.time.LocalDate.parse(dateStr)
+        val parts  = timeStr.split(":")
         val hour   = parts[0].toInt()
         val minute = parts[1].toInt()
-        val dateTime = date.atTime(hour, minute)
-        return dateTime.atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+        return date.atTime(hour, minute)
+            .atZone(java.time.ZoneId.systemDefault())
+            .toInstant().toEpochMilli()
+    }
+
+    fun computeNextDate(currentDate: String, recurrence: String): java.time.LocalDate {
+        val d = java.time.LocalDate.parse(currentDate)
+        return when (recurrence) {
+            "DAILY"   -> d.plusDays(1)
+            "WEEKLY"  -> d.plusWeeks(1)
+            "MONTHLY" -> d.plusMonths(1)
+            else      -> d
+        }
     }
 }
