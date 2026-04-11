@@ -321,7 +321,13 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("🐝", fontSize = 22.sp, modifier = Modifier.padding(end = 8.dp))
-                        Text("DVORA", fontWeight = FontWeight.ExtraBold, letterSpacing = 4.sp, color = BeeColors.HoneyGold)
+                        Text(
+                            text = "DVORA",
+                            fontSize = 12.sp, // Add this line
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = 4.sp,
+                            color = BeeColors.HoneyGold
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -1173,7 +1179,7 @@ fun SettingsScreen(
     Column(modifier = modifier.fillMaxSize().background(bgColor)) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().background(headerBg).padding(4.dp)) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = BeeColors.HoneyGold) }
-            Text("🏮 My HIVE", style = MaterialTheme.typography.titleLarge, color = BeeColors.HoneyGold, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            Text("🏮 MY HIVE", style = MaterialTheme.typography.titleLarge, color = BeeColors.HoneyGold, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             IconButton(onClick = onToggleDark) { Icon(if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode, "Theme", tint = BeeColors.HoneyGold) }
         }
         ScrollableTabRow(
