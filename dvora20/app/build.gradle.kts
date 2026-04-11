@@ -66,7 +66,6 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.jsoup)
     implementation(libs.gson)
-    implementation(libs.volley)
     implementation(libs.coil.compose)
 
     testImplementation(libs.junit)

@@ -31,7 +31,9 @@ class ReminderReceiver : BroadcastReceiver() {
         val emoji = if (mediaType?.contains("tv", ignoreCase = true) == true ||
             mediaType?.contains("series", ignoreCase = true) == true) "📺" else "🎬"
 
-        val openIntent = Intent(Intent.ACTION_VIEW, Uri.parse(imdbUrl))
+        val openIntent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
         val pendingIntent = PendingIntent.getActivity(
             context, imdbId.hashCode(), openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -41,7 +43,7 @@ class ReminderReceiver : BroadcastReceiver() {
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle("🐝 Dvora Reminder")
             .setContentText("$emoji $title")
-            .setStyle(NotificationCompat.BigTextStyle().bigText("$emoji $title\nTap to open on IMDb"))
+            .setStyle(NotificationCompat.BigTextStyle().bigText("$emoji $title\nTap to open"))
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .setSilent(true)
