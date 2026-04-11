@@ -705,21 +705,40 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
 
     // ── Step 2: Time Picker Dialog ────────────────────────────────────────────
     if (timePickerTargetId != null) {
+        var useKeyboard by remember { mutableStateOf(false) }
+
         AlertDialog(
             onDismissRequest = { timePickerTargetId = null },
             title = {
-                Text(
-                    "⏰ Pick Reminder Time",
-                    fontWeight = FontWeight.Bold,
-                    color = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold)
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        "⏰ Pick Reminder Time",
+                        fontWeight = FontWeight.Bold,
+                        color = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold),
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = { useKeyboard = !useKeyboard }) {
+                        Icon(
+                            if (useKeyboard) Icons.Default.Schedule else Icons.Default.Keyboard,
+                            if (useKeyboard) "Switch to dial" else "Switch to keyboard",
+                            tint = BeeColors.DeepAmber
+                        )
+                    }
+                }
             },
             text = {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    TimePicker(state = timePickerState)
+                    if (useKeyboard) {
+                        TimeInput(state = timePickerState)
+                    } else {
+                        TimePicker(state = timePickerState)
+                    }
                 }
             },
             confirmButton = {
@@ -727,7 +746,6 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
                     val timeStr = "%02d:%02d".format(timePickerState.hour, timePickerState.minute)
                     val targetId = timePickerTargetId!!
 
-                    // Validate: if date is today, time must be in the future
                     val now = java.time.LocalDateTime.now()
                     val selectedDT = java.time.LocalDate.parse(selectedDateStr)
                         .atTime(timePickerState.hour, timePickerState.minute)
