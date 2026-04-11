@@ -275,6 +275,24 @@ fun copyToClipboard(context: Context, text: String) {
 fun openUrl(context: Context, url: String) {
     try {
         val cleanUrl = if (url.startsWith("http")) url else "https://$url"
+
+        // Try Stremio app for Stremio web URLs
+        if (cleanUrl.contains("web.stremio.com") && cleanUrl.contains("/detail/")) {
+            val regex = Regex("detail/(movie|series)/([^/]+)")
+            val match = regex.find(cleanUrl)
+            if (match != null) {
+                val type = match.groupValues[1]
+                val id   = match.groupValues[2]
+                val deepLink = "stremio:///detail/$type/$id"
+                try {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(deepLink)))
+                    return
+                } catch (_: Exception) {
+                    // Stremio not installed, fall through to browser
+                }
+            }
+        }
+
         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(cleanUrl)))
     } catch (_: Exception) {
         Toast.makeText(context, "Could not open URL", Toast.LENGTH_SHORT).show()
