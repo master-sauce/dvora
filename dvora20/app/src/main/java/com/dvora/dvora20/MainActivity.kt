@@ -286,15 +286,17 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                     IconButton(onClick = onToggleDarkMode) {
                         Icon(if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode, "Theme", tint = BeeColors.HoneyGold)
                     }
-                    val reminderCount = BookmarksManager.bookmarks.count { it.reminderDate != null }
+                    val hasReminders = BookmarksManager.bookmarks.any { it.reminderDate != null }
                     IconButton(onClick = { showBookmarks = true; showSubtitles = false; showSettings = false; showImdb = false }) {
                         Box {
                             Icon(Icons.Default.Bookmarks, "Bookmarks", tint = BeeColors.HoneyGold)
-                            if (reminderCount > 0) {
+                            if (hasReminders) {
                                 Box(
-                                    modifier = Modifier.align(Alignment.TopEnd).size(16.dp).background(BeeColors.DeepAmber, RoundedCornerShape(8.dp)),
-                                    contentAlignment = Alignment.Center
-                                ) { Text(if (reminderCount > 9) "9+" else reminderCount.toString(), fontSize = 8.sp, color = Color.White, fontWeight = FontWeight.ExtraBold) }
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .size(10.dp)
+                                        .background(BeeColors.DeepAmber, RoundedCornerShape(5.dp))
+                                )
                             }
                         }
                     }
@@ -835,7 +837,16 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: () -> Unit, onCl
             Spacer(Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
-                Text(bm.title, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = textColor, maxLines = 2)
+                // Title + copy button
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(bm.title, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = textColor, maxLines = 2, modifier = Modifier.weight(1f))
+                    IconButton(onClick = {
+                        copyToClipboard(context, bm.title)
+                        Toast.makeText(context, "Title copied", Toast.LENGTH_SHORT).show()
+                    }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.ContentCopy, "Copy title", tint = BeeColors.DeepAmber, modifier = Modifier.size(15.dp))
+                    }
+                }
                 Spacer(Modifier.height(4.dp))
 
                 // Chips
@@ -877,12 +888,19 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: () -> Unit, onCl
                 }
 
                 Spacer(Modifier.height(4.dp))
+                // IMDb ID + copy button
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.background(Color(0xFFF5C518), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)) {
                         Text("IMDb", fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black)
                     }
                     Spacer(Modifier.width(4.dp))
-                    Text(bm.imdbId, fontSize = 10.sp, color = subColor)
+                    Text(bm.imdbId, fontSize = 10.sp, color = subColor, modifier = Modifier.weight(1f))
+                    IconButton(onClick = {
+                        copyToClipboard(context, bm.imdbId)
+                        Toast.makeText(context, "IMDb ID copied", Toast.LENGTH_SHORT).show()
+                    }, modifier = Modifier.size(28.dp)) {
+                        Icon(Icons.Default.ContentCopy, "Copy IMDb ID", tint = Color(0xFFF5C518), modifier = Modifier.size(15.dp))
+                    }
                 }
             }
 
@@ -908,7 +926,6 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: () -> Unit, onCl
         }
     }
 }
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // SETTINGS SCREEN
 // ═══════════════════════════════════════════════════════════════════════════════
