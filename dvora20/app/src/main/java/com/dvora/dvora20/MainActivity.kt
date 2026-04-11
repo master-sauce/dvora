@@ -1057,35 +1057,57 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: () -> Unit, onCl
                 // Reminder badge
                 if (hasReminder) {
                     Spacer(Modifier.height(5.dp))
+                    val formattedDate = try {
+                        val d = java.time.LocalDate.parse(bm.reminderDate)
+                        d.format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.ENGLISH))
+                    } catch (_: Exception) { bm.reminderDate ?: "" }
+                    val timeLabel = bm.reminderTime ?: "09:00"
+                    val isRecurring = bm.reminderRecurrence != null && bm.reminderRecurrence != "ONCE"
+
+                    // Line 1: date + time + cancel button
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Surface(
                             shape = RoundedCornerShape(6.dp),
                             color = BeeColors.DeepAmber.copy(alpha = 0.15f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, BeeColors.DeepAmber.copy(alpha = 0.5f))
+                            border = androidx.compose.foundation.BorderStroke(1.dp, BeeColors.DeepAmber.copy(alpha = 0.5f)),
+                            modifier = Modifier.weight(1f, fill = false)
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
                                 Text("⏰", fontSize = 11.sp)
                                 Spacer(Modifier.width(4.dp))
-                                val formattedDate = try {
-                                    val d = java.time.LocalDate.parse(bm.reminderDate)
-                                    d.format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.ENGLISH))
-                                } catch (_: Exception) { bm.reminderDate ?: "" }
-                                val timeLabel = bm.reminderTime ?: "09:00"
-                                val recLabel = when (bm.reminderRecurrence) {
-                                    "DAILY"   -> " · 🔁 Daily"
-                                    "WEEKLY"  -> " · 🔁 Weekly"
-                                    "MONTHLY" -> " · 🔁 Monthly"
-                                    else      -> ""
-                                }
-                                Text("$formattedDate  $timeLabel$recLabel", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BeeColors.DeepAmber)
+                                Text("$formattedDate  $timeLabel", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BeeColors.DeepAmber)
                             }
                         }
-                        Spacer(Modifier.width(4.dp))
+                        Spacer(Modifier.width(6.dp))
                         IconButton(onClick = {
                             onClearReminder()
                             Toast.makeText(context, "Reminder cancelled", Toast.LENGTH_SHORT).show()
-                        }, modifier = Modifier.size(24.dp)) {
-                            Icon(Icons.Default.Close, "Cancel reminder", tint = BeeColors.DeepAmber.copy(alpha = 0.6f), modifier = Modifier.size(14.dp))
+                        }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Default.Close, "Cancel reminder", tint = BeeColors.DeepAmber.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
+                        }
+                    }
+
+                    // Line 2: recurrence label (only for recurring)
+                    if (isRecurring) {
+                        Spacer(Modifier.height(4.dp))
+                        Surface(
+                            shape = RoundedCornerShape(5.dp),
+                            color = BeeColors.DeepAmber.copy(alpha = 0.1f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, BeeColors.DeepAmber.copy(alpha = 0.35f))
+                        ) {
+                            val recText = when (bm.reminderRecurrence) {
+                                "DAILY"   -> "🔁 Repeats Daily"
+                                "WEEKLY"  -> "🔁 Repeats Weekly"
+                                "MONTHLY" -> "🔁 Repeats Monthly"
+                                else      -> ""
+                            }
+                            Text(
+                                recText,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = BeeColors.DeepAmber,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                            )
                         }
                     }
                 }
