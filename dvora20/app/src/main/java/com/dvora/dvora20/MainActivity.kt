@@ -47,6 +47,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
+import android.app.AlarmManager
+import android.provider.Settings
+
+
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BOOKMARKS — DATA MODEL & MANAGER
@@ -962,6 +966,17 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
     fun requestReminder(imdbId: String) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            if (!am.canScheduleExactAlarms()) {
+                context.startActivity(
+                    Intent(
+                        Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
+                        Uri.parse("package:${context.packageName}")
+                    )
+                )
+            }
         }
         selectedRecurrence = "ONCE"
         datePickerTargetId = imdbId
