@@ -49,6 +49,10 @@ import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import android.app.AlarmManager
 import android.provider.Settings
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.material3.OutlinedTextFieldDefaults
 
 
 
@@ -326,12 +330,22 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
     var domainFilter by remember { mutableStateOf("") }
     var imdbSuggestions by remember { mutableStateOf<List<ImdbResult>>(emptyList()) }
     var showImdbDropdown by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val searchFieldFocusRequester = remember { FocusRequester() }
+    var justSelectedSuggestion by remember { mutableStateOf(false) }
+
 
     // Add this LaunchedEffect to trigger IMDb search as the user types
     LaunchedEffect(searchTerm) {
         if (searchTerm.isBlank()) {
             imdbSuggestions = emptyList()
             showImdbDropdown = false
+            return@LaunchedEffect
+        }
+
+        // Don't show dropdown if we just selected a suggestion
+        if (justSelectedSuggestion) {
+            justSelectedSuggestion = false
             return@LaunchedEffect
         }
 
@@ -459,9 +473,11 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                                     value = searchTerm,
                                     onValueChange = { searchTerm = it },
                                     label = { Text("🍯 Search Movie or Show") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true,
-                                    colors = beeTextFieldColors()
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .focusRequester(searchFieldFocusRequester),
+                                    singleLine = true
+                                    , colors = beeTextFieldColors()
                                 )
 
                                 // IMDb suggestions dropdown
@@ -481,6 +497,9 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                                                     onSelect = {
                                                         searchTerm = suggestion.title
                                                         showImdbDropdown = false
+                                                        justSelectedSuggestion = true // Set this flag to prevent immediate re-appearance
+                                                        focusManager.clearFocus() // This removes the focus from the search field
+
                                                     }
                                                 )
                                             }
