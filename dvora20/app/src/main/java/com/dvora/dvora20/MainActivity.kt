@@ -52,6 +52,7 @@ import android.provider.Settings
 
 
 
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // BOOKMARKS — DATA MODEL & MANAGER
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -278,7 +279,7 @@ fun copyToClipboard(context: Context, text: String) {
 
 fun openUrl(context: Context, url: String) {
     try {
-        val cleanUrl = if (url.startsWith("http")) url else "https://$url"
+        val cleanUrl = if (url.startsWith("http")) url else "https://\$url"
 
         // Try Stremio app for Stremio web URLs
         if (cleanUrl.contains("web.stremio.com") && cleanUrl.contains("/detail/")) {
@@ -287,7 +288,7 @@ fun openUrl(context: Context, url: String) {
             if (match != null) {
                 val type = match.groupValues[1]
                 val id   = match.groupValues[2]
-                val deepLink = "stremio:///detail/$type/$id"
+                val deepLink = "stremio:///detail/\$type/\$id"
                 try {
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(deepLink)))
                     return
@@ -319,9 +320,26 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
     var searchType   by remember { mutableStateOf(SourceType.SHOW) }
     var results      by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
     var apiResults   by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
+    var imdbResults  by remember { mutableStateOf<List<ImdbResult>>(emptyList()) }
     var manualLinks  by remember { mutableStateOf<List<String>>(emptyList()) }
     var isSearching  by remember { mutableStateOf(false) }
     var domainFilter by remember { mutableStateOf("") }
+    var imdbSuggestions by remember { mutableStateOf<List<ImdbResult>>(emptyList()) }
+    var showImdbDropdown by remember { mutableStateOf(false) }
+
+    // Add this LaunchedEffect to trigger IMDb search as the user types
+    LaunchedEffect(searchTerm) {
+        if (searchTerm.isBlank()) {
+            imdbSuggestions = emptyList()
+            showImdbDropdown = false
+            return@LaunchedEffect
+        }
+
+        delay(500) // Debounce to avoid too many requests
+        val suggestions = scanner.searchImdb(searchTerm)
+        imdbSuggestions = suggestions
+        showImdbDropdown = suggestions.isNotEmpty()
+    }
 
     var shows        by remember { mutableStateOf(loadSources(context, "shows")) }
     var movies       by remember { mutableStateOf(loadSources(context, "movies")) }
@@ -436,11 +454,40 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            OutlinedTextField(
-                                value = searchTerm, onValueChange = { searchTerm = it },
-                                label = { Text("🍯 Search Movie or Show") },
-                                modifier = Modifier.fillMaxWidth(), singleLine = true, colors = beeTextFieldColors()
-                            )
+                            Column {
+                                OutlinedTextField(
+                                    value = searchTerm,
+                                    onValueChange = { searchTerm = it },
+                                    label = { Text("🍯 Search Movie or Show") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    colors = beeTextFieldColors()
+                                )
+
+                                // IMDb suggestions dropdown
+                                if (showImdbDropdown && imdbSuggestions.isNotEmpty()) {
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = CardDefaults.cardColors(containerColor = cardBg),
+                                        elevation = CardDefaults.cardElevation(4.dp)
+                                    ) {
+                                        LazyColumn(
+                                            modifier = Modifier.fillMaxWidth().heightIn(max = 200.dp)
+                                        ) {
+                                            items(imdbSuggestions.take(5)) { suggestion ->
+                                                ImdbSuggestionItem(
+                                                    suggestion = suggestion,
+                                                    onSelect = {
+                                                        searchTerm = suggestion.title
+                                                        showImdbDropdown = false
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             Spacer(Modifier.height(12.dp))
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                                 BeeRadioOption("📺 Shows", searchType == SourceType.SHOW, { searchType = SourceType.SHOW }, Modifier.weight(1f))
@@ -453,7 +500,7 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                     Button(
                         onClick = {
                             if (searchTerm.isBlank()) return@Button
-                            isSearching = true; results = emptyList(); apiResults = emptyList(); domainFilter = ""
+                            isSearching = true; results = emptyList(); apiResults = emptyList(); imdbResults = emptyList(); domainFilter = ""
                             scope.launch {
                                 val activeSources = if (searchType == SourceType.SHOW) shows else movies
                                 activeSources.forEach { source -> results = results + scanner.scanSite(source, searchTerm, exclusions) }
@@ -465,6 +512,7 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                                     }
                                     apiResults = apiResults + newResults
                                 }
+                                imdbResults = scanner.searchImdb(searchTerm)
                                 SearchLogs.lastLogs = results + apiResults
                                 manualLinks = manualChecks.map { scanner.getManualCheck(it, searchTerm) }
                                 isSearching = false
@@ -483,7 +531,7 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                         else Text("🐝  BUZZ & SEARCH", fontWeight = FontWeight.Bold, letterSpacing = 2.sp, color = if (isDark) Color.Black else BeeColors.HoneyGold)
                     }
                     Spacer(Modifier.height(16.dp))
-                    val hasAnyResults = results.isNotEmpty() || apiResults.isNotEmpty() || manualLinks.isNotEmpty()
+                    val hasAnyResults = results.isNotEmpty() || apiResults.isNotEmpty() || manualLinks.isNotEmpty() || imdbResults.isNotEmpty()
                     if (hasAnyResults) {
                         OutlinedTextField(
                             value = domainFilter, onValueChange = { domainFilter = it },
@@ -502,9 +550,20 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                         val fr = if (filter.isEmpty()) results else results.filter { it.url.lowercase().contains(filter) }
                         val fa = if (filter.isEmpty()) apiResults else apiResults.filter { it.url.lowercase().contains(filter) }
                         val fm = if (filter.isEmpty()) manualLinks else manualLinks.filter { it.lowercase().contains(filter) }
+                        val fi = if (filter.isEmpty()) imdbResults else imdbResults.filter {
+                            it.title.lowercase().contains(filter) ||
+                                    it.imdbId.lowercase().contains(filter)
+                        }
                         if (fr.isNotEmpty()) {
                             item { BeesSectionHeader("🍯 Results") }
                             items(fr.sortedByDescending { it.found }) { ResultItem(it, true) }
+                        }
+                        if (fi.isNotEmpty()) {
+                            item {
+                                Spacer(Modifier.height(8.dp))
+                                BeesSectionHeader("🎬 IMDb Suggestions")
+                            }
+                            items(fi) { ImdbResultItem(it) }
                         }
                         if (fa.isNotEmpty()) {
                             item { Spacer(Modifier.height(8.dp)); BeesSectionHeader("🍯🍯 API Results") }
@@ -595,13 +654,220 @@ fun ResultItem(result: SearchResult, showDetails: Boolean = false) {
                     Text(result.foundDetails, fontSize = 12.sp, color = beeAdapt(Color(0xFF4E342E), BeeColors.DarkOnSurface), fontWeight = FontWeight.Medium)
                 }
                 if (result.errorMessage != null)
-                    Text("⚠️ ${result.errorMessage}", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    Text("⚠️ \${result.errorMessage}", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
             }
             if (result.found) IconButton(onClick = { copyToClipboard(context, result.url) }) {
                 Icon(Icons.Default.ContentCopy, "Copy", tint = BeeColors.DeepAmber)
             }
         }
     }
+}
+
+@Composable
+fun ImdbResultItem(item: ImdbResult) {
+    val context = LocalContext.current
+    val isBookmarked = BookmarksManager.isBookmarked(item.imdbId)
+    val cardBg = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
+
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { openUrl(context, item.imdbUrl) },
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = cardBg),
+        elevation = CardDefaults.cardElevation(2.dp)
+    ) {
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier.width(5.dp).height(72.dp)
+                    .background(Color(0xFFF5C518), RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp))
+            )
+
+            // Poster if available
+            if (item.posterUrl != null) {
+                AsyncImage(
+                    model = ImageRequest.Builder(context).data(item.posterUrl).crossfade(true).build(),
+                    contentDescription = item.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(72.dp).clip(RoundedCornerShape(topEnd = 12.dp, bottomEnd = 12.dp))
+                )
+            } else {
+                Box(
+                    modifier = Modifier.size(72.dp).background(
+                        beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe),
+                        RoundedCornerShape(topEnd = 12.dp, bottomEnd = 12.dp)
+                    ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(if (item.mediaType?.contains("movie", true) == true) "🎬" else "📺", fontSize = 26.sp)
+                }
+            }
+
+            Column(modifier = Modifier.weight(1f).padding(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("🎬", fontSize = 18.sp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        item.title,
+                        fontWeight = FontWeight.Bold,
+                        color = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface),
+                        maxLines = 2,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Spacer(Modifier.height(4.dp))
+
+                Row {
+                    if (item.year != null) {
+                        Text(
+                            item.year,
+                            fontSize = 12.sp,
+                            color = BeeColors.HoneyGold,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.width(8.dp))
+                    }
+
+                    if (item.mediaType != null) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0xFFF5C518)
+                        ) {
+                            Text(
+                                item.mediaType,
+                                fontSize = 10.sp,
+                                color = Color.Black,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(2.dp))
+
+                Text(
+                    item.imdbId,
+                    fontSize = 11.sp,
+                    color = beeAdapt(Color(0xFF795548), Color(0xFFBCAAA4))
+                )
+            }
+
+            Column {
+                IconButton(onClick = {
+                    copyToClipboard(context, item.imdbUrl)
+                }) {
+                    Icon(Icons.Default.ContentCopy, "Copy URL", tint = BeeColors.DeepAmber)
+                }
+
+                IconButton(onClick = {
+                    BookmarksManager.toggle(context, item)
+                    val message = if (BookmarksManager.isBookmarked(item.imdbId)) "Bookmarked!" else "Removed"
+                    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                }) {
+                    Icon(
+                        if (isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                        "Bookmark",
+                        tint = if (isBookmarked) BeeColors.HoneyGold else BeeColors.DeepAmber
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ImdbSuggestionItem(
+    suggestion: ImdbResult,
+    onSelect: () -> Unit
+) {
+    val context = LocalContext.current
+    val isBookmarked = BookmarksManager.isBookmarked(suggestion.imdbId)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onSelect() }
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Poster or placeholder
+        if (suggestion.posterUrl != null) {
+            AsyncImage(
+                model = ImageRequest.Builder(context).data(suggestion.posterUrl).crossfade(true).build(),
+                contentDescription = suggestion.title,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(6.dp))
+            )
+        } else {
+            Box(
+                modifier = Modifier.size(48.dp)
+                    .background(beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe), RoundedCornerShape(6.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(if (suggestion.mediaType?.contains("movie", true) == true) "🎬" else "📺", fontSize = 20.sp)
+            }
+        }
+
+        Spacer(Modifier.width(12.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                suggestion.title,
+                fontWeight = FontWeight.Bold,
+                color = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface),
+                maxLines = 1
+            )
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (suggestion.year != null) {
+                    Text(
+                        suggestion.year,
+                        fontSize = 12.sp,
+                        color = BeeColors.HoneyGold,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(Modifier.width(8.dp))
+                }
+
+                if (suggestion.mediaType != null) {
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = Color(0xFFF5C518)
+                    ) {
+                        Text(
+                            suggestion.mediaType,
+                            fontSize = 10.sp,
+                            color = Color.Black,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+
+            Text(
+                suggestion.imdbId,
+                fontSize = 11.sp,
+                color = beeAdapt(Color(0xFF795548), Color(0xFFBCAAA4))
+            )
+        }
+
+        IconButton(
+            onClick = {
+                BookmarksManager.toggle(context, suggestion)
+                val message = if (BookmarksManager.isBookmarked(suggestion.imdbId)) "Bookmarked!" else "Removed"
+                Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            }
+        ) {
+            Icon(
+                if (isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                "Bookmark",
+                tint = if (isBookmarked) BeeColors.HoneyGold else BeeColors.DeepAmber
+            )
+        }
+    }
+
+    HorizontalDivider(color = BeeColors.HoneyGold.copy(alpha = 0.2f))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -652,7 +918,7 @@ fun SubtitlesScreen(scanner: DvoraScanner, onBack: () -> Unit, onToggleDark: () 
         } else Spacer(Modifier.height(4.dp))
         if (results.isEmpty() && !isSearching && searchTerm.isNotBlank()) {
             Box(Modifier.fillMaxWidth().padding(top = 32.dp), contentAlignment = Alignment.Center) {
-                Text("No Hebrew subtitles found for \"$searchTerm\"", color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                Text("No Hebrew subtitles found for \"\$searchTerm\"", color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)), fontSize = 13.sp, fontWeight = FontWeight.Medium)
             }
         }
         LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 4.dp)) {
@@ -742,7 +1008,7 @@ fun ImdbScreen(scanner: DvoraScanner, onBack: () -> Unit, onToggleDark: () -> Un
         if (searchTerm.isBlank()) { results = emptyList(); errorMsg = null; return@LaunchedEffect }
         delay(350); isSearching = true; errorMsg = null
         val found = scanner.searchImdb(searchTerm); results = found
-        errorMsg = if (found.isEmpty()) "No results found for \"$searchTerm\"" else null
+        errorMsg = if (found.isEmpty()) "No results found for \"\$searchTerm\"" else null
         isSearching = false
     }
 
@@ -953,7 +1219,7 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
                         "MONTHLY" -> " · Repeats monthly"
                         else      -> ""
                     }
-                    Toast.makeText(context, "⏰ Reminder: $formatted at $timeStr$recLabel", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "⏰ Reminder: \$formatted at \$timeStr\$recLabel", Toast.LENGTH_LONG).show()
                     timePickerTargetId = null
                 }) { Text("Set Reminder", color = BeeColors.DeepAmber, fontWeight = FontWeight.Bold) }
             },
@@ -973,7 +1239,7 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
                 context.startActivity(
                     Intent(
                         Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
-                        Uri.parse("package:${context.packageName}")
+                        Uri.parse("package:\${context.packageName}")
                     )
                 )
             }
@@ -1033,7 +1299,7 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
                     Text("🔖", fontSize = 16.sp); Spacer(Modifier.width(6.dp))
-                    Text("ALL BOOKMARKS  (${bookmarks.size})", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp, color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)))
+                    Text("ALL BOOKMARKS  (\${bookmarks.size})", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp, color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)))
                 }
             }
             items(withoutReminder + withReminder) { bm ->
@@ -1191,7 +1457,6 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: () -> Unit, onCl
         }
     }
 }
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // SETTINGS SCREEN
 // ═══════════════════════════════════════════════════════════════════════════════
