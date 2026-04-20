@@ -577,13 +577,7 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                             item { BeesSectionHeader("🍯 Results") }
                             items(fr.sortedByDescending { it.found }) { ResultItem(it, true) }
                         }
-                        if (fi.isNotEmpty()) {
-                            item {
-                                Spacer(Modifier.height(8.dp))
-                                BeesSectionHeader("🎬 IMDb Suggestions")
-                            }
-                            items(fi) { ImdbResultItem(it) }
-                        }
+
                         if (fa.isNotEmpty()) {
                             item { Spacer(Modifier.height(8.dp)); BeesSectionHeader("🍯🍯 API Results") }
                             items(fa) { ResultItem(it, true) }
