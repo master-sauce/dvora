@@ -2,8 +2,9 @@
 let mode='shows', subMode='shows';
 let lastResults=null, lastSubtitleResults=null;
 let activeTab='shows';
-let imdbTimer=null, subTimer=null;
+let imdbTimer=null, subTimer=null, searchSugTimer=null;
 let streamState=null;
+let justSelectedSuggestion=false;
 
 // ── THEME ─────────────────────────────────────────────────────────────────────
 let isDark=true;
@@ -33,12 +34,73 @@ function setMode(m){
   document.getElementById('btnShows').classList.toggle('active',m==='shows');
   document.getElementById('btnMovies').classList.toggle('active',m==='movies');
 }
-document.getElementById('searchInput').addEventListener('keydown',e=>{if(e.key==='Enter')doSearch();});
+
+function debSearch(){
+  clearTimeout(searchSugTimer);
+  const q=document.getElementById('searchInput').value.trim();
+  if(justSelectedSuggestion){justSelectedSuggestion=false;return;}
+  if(!q){hideSearchDropdown();return;}
+  searchSugTimer=setTimeout(()=>fetchSearchSuggestions(q),400);
+}
+
+function fetchSearchSuggestions(q){
+  fetch('/imdb?q='+encodeURIComponent(q))
+    .then(r=>r.json())
+    .then(data=>renderSearchDropdown(data))
+    .catch(()=>hideSearchDropdown());
+}
+
+function renderSearchDropdown(data){
+  const dd=document.getElementById('searchDropdown');
+  dd.innerHTML='';
+  if(!data.results||!data.results.length){hideSearchDropdown();return;}
+  data.results.slice(0,6).forEach(item=>{
+    const d=document.createElement('div');
+    d.className='sddi';
+    let posterHTML=item.posterUrl
+      ?'<img class="sddi-poster" src="'+esc(item.posterUrl)+'" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
+       +'<div class="sddi-ph" style="display:none">'+(item.mediaType&&item.mediaType.toLowerCase().includes('tv')?'📺':'🎬')+'</div>'
+      :'<div class="sddi-ph">'+(item.mediaType&&item.mediaType.toLowerCase().includes('tv')?'📺':'🎬')+'</div>';
+    d.innerHTML=posterHTML
+      +'<div class="sddi-info">'
+      +'<div class="sddi-title">'+esc(item.title)+'</div>'
+      +'<div class="sddi-meta">'+(item.year?esc(item.year)+' · ':'')+esc(item.mediaType||'')+'</div>'
+      +'<div class="sddi-id">'+esc(item.imdbId)+'</div>'
+      +'</div>';
+    d.addEventListener('mousedown',e=>{
+      e.preventDefault();
+      justSelectedSuggestion=true;
+      document.getElementById('searchInput').value=item.title;
+      hideSearchDropdown();
+    });
+    dd.appendChild(d);
+  });
+  dd.classList.add('visible');
+}
+
+function hideSearchDropdown(){
+  const dd=document.getElementById('searchDropdown');
+  dd.classList.remove('visible');
+  dd.innerHTML='';
+}
+
+document.addEventListener('click',e=>{
+  const dd=document.getElementById('searchDropdown');
+  const inp=document.getElementById('searchInput');
+  if(!dd.contains(e.target)&&e.target!==inp) hideSearchDropdown();
+});
+
+document.getElementById('searchInput').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){hideSearchDropdown();doSearch();}
+  if(e.key==='Escape') hideSearchDropdown();
+});
+
 function setProg(p){document.getElementById('pf').style.width=p+'%';}
 
 async function doSearch(){
   const q=document.getElementById('searchInput').value.trim();
   if(!q)return;
+  hideSearchDropdown();
   const btn=document.getElementById('searchBtn');
   btn.disabled=true;btn.textContent='🐝 Scanning...';
   document.getElementById('pw').classList.add('visible');setProg(15);
@@ -104,7 +166,6 @@ function handleStreamMsg(msg){
   if(msg.event==='result'){
     const r=msg.result;
     st.allResults.push(r);
-
     if(r.type==='auto'){
       const foundBucket=document.getElementById('auto-found-bucket');
       const notFoundBucket=document.getElementById('auto-notfound-bucket');
@@ -115,7 +176,6 @@ function handleStreamMsg(msg){
     } else {
       area.appendChild(mkCard(r,st.cardIndex++));
     }
-
     if(r.type==='manual'){
       st.manualCount++;
     } else {
@@ -199,29 +259,22 @@ function debSub(){
   subTimer=setTimeout(doSubSearch,400);
 }
 
-// Single server call — verification + rich metadata fetched server-side.
-// No more CORS calls to Wizdom from the browser.
 async function doSubSearch(){
   const q=document.getElementById('subInput').value.trim();
   if(!q) return;
   document.getElementById('subpw').classList.add('visible');
   document.getElementById('subArea').innerHTML='<div class="empty"><span class="eg">🐝</span><div class="et">Searching Wizdom + IMDb...</div></div>';
-
   const sessionLogs=[];
   const lg=(level,msg)=>sessionLogs.push({level,message:msg});
-
   try{
     const apiUrl='/subtitles?q='+encodeURIComponent(q)+'&mode='+subMode;
     lg('info','GET '+apiUrl);
-
     const sResp=await fetch(apiUrl);
     if(!sResp.ok) throw new Error('Server error: HTTP '+sResp.status);
     const sData=await sResp.json();
-
     const allResults=sData.results||[];
     const foundResults=allResults.filter(r=>r.found&&r.imdbId);
     lg('info','Server returned '+allResults.length+' candidate(s), '+foundResults.length+' verified with subtitles');
-
     if(foundResults.length===0){
       lg('verdict','NOT FOUND — no verified Hebrew subtitles on Wizdom');
       lastSubtitleResults={query:q,mode:subMode,results:[],sessionLogs};
@@ -232,17 +285,14 @@ async function doSubSearch(){
         +'<div class="sub-empty-msg">No matching titles with Hebrew subtitles found on Wizdom.</div>';
       return;
     }
-
     foundResults.forEach((r,i)=>{
       lg('info','#'+(i+1)+': "'+r.title+'"'+(r.imdbId?' ('+r.imdbId+')':'')+(r.rating?' ⭐'+r.rating:'')+(r.subsCount?' · '+r.subsCount+(r.type==='movie'?' versions':' seasons'):''));
       lg('verdict','FOUND — '+r.url);
     });
-
     lastSubtitleResults={query:q,mode:subMode,results:foundResults,sessionLogs};
     if(document.getElementById('sov').classList.contains('open')&&activeTab==='logs') renderLogs();
     document.getElementById('subpw').classList.remove('visible');
     renderSub(sData);
-
   }catch(err){
     lg('warn','Fatal: '+err.message);
     lg('verdict','NOT FOUND — request failed');
@@ -253,7 +303,6 @@ async function doSubSearch(){
   }
 }
 
-// All data now comes directly from sData — no wizdomMap needed.
 function renderSub(sData){
   const area=document.getElementById('subArea');area.innerHTML='';
   const found=(sData.results||[]).filter(r=>r.found);
@@ -272,17 +321,14 @@ function renderSub(sData){
     +'<span style="font-size:.74rem;font-weight:800;color:var(--sub)">'+found.length+' found</span>';
   area.appendChild(hdr);
   found.forEach((r,i)=>{
-    // Use rich card if server returned any metadata, otherwise simple card
     const isRich=!!(r.posterUrl||r.rating||r.genres||r.titleHe||r.year);
     area.appendChild(isRich?mkRichSubCard(r,i):mkSimpleSubCard(r,i));
   });
 }
 
-// Rich card — uses SubResult fields directly, no separate wizdom object needed.
 function mkRichSubCard(r,idx){
   const wizURL=r.url;
   const typeIcon=r.type==='movie'?'🎬':'📺';
-
   let posterHTML;
   if(r.posterUrl){
     posterHTML='<img class="sub-poster" src="'+esc(r.posterUrl)+'" alt="" '
@@ -291,19 +337,9 @@ function mkRichSubCard(r,idx){
   } else {
     posterHTML='<div class="sub-poster-ph">'+typeIcon+'</div>';
   }
-
   const rating=r.rating?'⭐ '+parseFloat(r.rating).toFixed(1):'';
   const year=r.year?'· '+r.year:'';
   const typeLabel=r.type?'· '+r.type:'';
-
-  let subsCountHTML='';
-//   if(r.subsCount>0){
-//     const label=r.type==='movie'
-//       ?r.subsCount+' subtitle version'+(r.subsCount!==1?'s':'')
-//       :r.subsCount+' season'+(r.subsCount!==1?'s':'');
-//     subsCountHTML='<div class="sub-rcount">📝 '+label+'</div>';
-//   }
-
   const card=document.createElement('div');
   card.className='sub-rich sfound';
   card.style.animationDelay=(idx*40)+'ms';
@@ -316,7 +352,6 @@ function mkRichSubCard(r,idx){
       +(r.titleHe?'<div class="sub-rhe">'+esc(r.titleHe)+'</div>':'')
       +'<div class="sub-rmeta">'+typeIcon+' '+esc(rating)+' '+esc(year)+' '+esc(typeLabel)+'</div>'
       +(r.genres?'<div class="sub-rgenres">'+esc(r.genres)+'</div>':'')
-      +subsCountHTML
       +'<div class="sub-rurl">→ '+esc(wizURL)+'</div>'
     +'</div>'
     +'<div class="sub-ractions">'
@@ -425,12 +460,8 @@ function renderLogs(){
   const empty=document.getElementById('logEmpty');
   const meta=document.getElementById('logMeta');
   const subMeta=document.getElementById('logSubMeta');
-
-  if(!lastResults&&!lastSubtitleResults){
-    empty.style.display='block';meta.style.display='none';subMeta.style.display='none';return;
-  }
+  if(!lastResults&&!lastSubtitleResults){empty.style.display='block';meta.style.display='none';subMeta.style.display='none';return;}
   empty.style.display='none';
-
   if(lastResults){
     meta.style.display='block';
     const foundN=lastResults.results.filter(r=>r.type!='manual'&&r.found).length;
@@ -454,18 +485,13 @@ function renderLogs(){
         +'</div>'+(hl?'<div class="lsbody">'+mkLogLines(logs)+'</div>':'');
       con.appendChild(blk);
     });
-  } else {
-    meta.style.display='none';
-  }
-
+  } else {meta.style.display='none';}
   if(lastSubtitleResults){
     subMeta.style.display='block';
     const sr=lastSubtitleResults;
     const foundN=sr.results.filter(r=>r.found).length;
     document.getElementById('logSubQ').textContent='"'+sr.query+'"  ['+foundN+' found · '+sr.mode+']';
     const con=document.getElementById('logSubBlocks');con.innerHTML='';
-
-    // Session-level log block (one entry covering the whole search)
     if(sr.sessionLogs&&sr.sessionLogs.length){
       const blk=document.createElement('div');blk.className='lsb';
       const overall=foundN>0;
@@ -477,8 +503,6 @@ function renderLogs(){
         +'</div><div class="lsbody">'+mkLogLines(sr.sessionLogs)+'</div>';
       con.appendChild(blk);
     }
-
-    // Per-result blocks — rich data now comes from the result itself
     sr.results.forEach(r=>{
       const blk=document.createElement('div');blk.className='lsb';
       const label=esc(r.title||'Unknown')+' <span style="color:var(--tm);font-size:.7em">'+esc(r.imdbId||'')+'</span>';
@@ -487,7 +511,7 @@ function renderLogs(){
         {level:'info',message:'imdbId: '+(r.imdbId||'—')},
         {level:'info',message:'Wizdom URL: '+r.url},
         hasRich
-          ?{level:'match',message:'✓ Verified — title="'+r.title+'" year='+(r.year||'?')+' rating='+(r.rating||'N/A')+(r.subsCount?' subs='+r.subsCount+(r.type==='movie'?' versions':' seasons'):'')}
+          ?{level:'match',message:'�� Verified — title="'+r.title+'" year='+(r.year||'?')+' rating='+(r.rating||'N/A')+(r.subsCount?' subs='+r.subsCount+(r.type==='movie'?' versions':' seasons'):'')}
           :{level:'info',message:'Verified — title="'+(r.title||'Unknown')+'" (no rich metadata)'},
         {level:'verdict',message:'FOUND — '+r.url}
       ];
@@ -499,7 +523,6 @@ function renderLogs(){
         +'</div><div class="lsbody">'+mkLogLines(perLogs)+'</div>';
       con.appendChild(blk);
     });
-
     if(!sr.results.length&&(!sr.sessionLogs||!sr.sessionLogs.length)){
       const blk=document.createElement('div');blk.className='lsb';
       blk.innerHTML='<div class="lsh">'
@@ -510,9 +533,7 @@ function renderLogs(){
         +'</div>';
       con.appendChild(blk);
     }
-  } else {
-    subMeta.style.display='none';
-  }
+  } else {subMeta.style.display='none';}
 }
 
 function togLB(h){

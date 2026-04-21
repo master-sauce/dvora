@@ -25,7 +25,7 @@ body::before{content:'';position:fixed;inset:0;background-image:radial-gradient(
 .mc{flex:1;max-width:860px;width:100%;margin:0 auto;padding:22px 16px 70px;}
 .sp{background:var(--sf);border:1.5px solid var(--br);border-radius:16px;padding:18px 18px 15px;margin-bottom:18px;box-shadow:0 4px 18px rgba(0,0,0,.25);}
 .fl{display:block;font-size:.68rem;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:var(--da);margin-bottom:7px;}
-.sr{display:flex;margin-bottom:13px;border-radius:10px;overflow:hidden;border:1.5px solid var(--b2);}
+.sr{display:flex;border-radius:10px;overflow:hidden;border:1.5px solid var(--b2);}
 .si{flex:1;background:var(--bg);border:none;outline:none;color:var(--tx);font-family:'Nunito',sans-serif;font-size:.97rem;font-weight:600;padding:11px 14px;caret-color:var(--hg);}
 .si::placeholder{color:var(--tm);font-weight:400;}
 .sb{background:var(--bg);border:none;border-left:1.5px solid var(--b2);color:var(--hg);font-family:'Sora',sans-serif;font-weight:700;font-size:.8rem;letter-spacing:.1em;padding:11px 18px;cursor:pointer;transition:all .2s;white-space:nowrap;}
@@ -96,7 +96,6 @@ a.cu:hover{color:var(--hg);}
 .sbk:hover{background:rgba(255,193,7,.1);}
 .shtitle{flex:1;font-family:'Sora',sans-serif;font-weight:800;font-size:1rem;letter-spacing:.1em;color:var(--hg);}
 .scontent{flex:1;overflow-y:auto;padding:18px 16px 60px;max-width:860px;width:100%;margin:0 auto;}
-/* ── Rich subtitle cards ── */
 .sub-banner-f{padding:10px 14px;border-radius:10px;margin-bottom:12px;font-size:.78rem;font-weight:700;background:rgba(139,195,74,.09);border:1px solid rgba(139,195,74,.3);color:var(--fgl);}
 .sub-banner-nf{padding:10px 14px;border-radius:10px;margin-bottom:12px;font-size:.78rem;font-weight:700;background:rgba(255,143,0,.07);border:1px solid rgba(255,143,0,.25);color:var(--man);}
 .sub-empty-msg{text-align:center;padding:26px;color:var(--tm);font-size:.78rem;letter-spacing:.08em;}
@@ -112,13 +111,11 @@ a.cu:hover{color:var(--hg);}
 .sub-rhe{font-size:.73rem;color:var(--tm);font-weight:600;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .sub-rmeta{font-size:.67rem;color:var(--tm);margin-top:3px;font-weight:600;}
 .sub-rgenres{font-size:.62rem;color:var(--tm);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-/* .sub-rcount{font-size:.67rem;color:var(--fgl);margin-top:3px;font-weight:700;letter-spacing:.02em;} */
 .sub-rurl{font-size:.66rem;color:var(--sub);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .sub-ractions{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex-shrink:0;align-self:flex-start;margin-top:1px;}
 .sub-rbadge{font-family:'Sora',sans-serif;font-size:.58rem;font-weight:700;padding:3px 9px;border-radius:6px;}
 .sub-rbadge.yes{background:rgba(139,195,74,.13);color:var(--fgl);border:1px solid rgba(139,195,74,.3);}
 .sub-rbadge.no{background:transparent;color:var(--tm);border:1px solid var(--b2);}
-/* IMDB CARDS */
 .imdbcard{background:var(--sf);border:1.5px solid var(--br);border-radius:13px;margin-bottom:7px;overflow:hidden;opacity:0;transform:translateY(5px);animation:ci .22s forwards;cursor:pointer;transition:border-color .18s;}
 .imdbcard:hover{border-color:var(--b2);}
 .imdbinner{display:flex;align-items:stretch;}
@@ -139,6 +136,19 @@ a.cu:hover{color:var(--hg);}
 .imdbload{height:3px;background:linear-gradient(90deg,var(--da),var(--hg));border-radius:2px;margin-top:9px;display:none;}
 .imdbload.visible{display:block;animation:shimmer 1.2s infinite;}
 @keyframes shimmer{0%{opacity:.35}50%{opacity:1}100%{opacity:.35}}
+/* ── Search dropdown ── */
+.search-input-container{position:relative;margin-bottom:13px;}
+.search-dropdown{position:absolute;top:100%;left:0;right:0;background:var(--sf);border:1.5px solid var(--b2);border-top:none;border-radius:0 0 12px 12px;max-height:260px;overflow-y:auto;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.35);display:none;}
+.search-dropdown.visible{display:block;}
+.sddi{display:flex;align-items:center;gap:10px;padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--br);transition:background .13s;}
+.sddi:last-child{border-bottom:none;}
+.sddi:hover{background:var(--s2);}
+.sddi-poster{width:36px;height:52px;object-fit:cover;border-radius:4px;background:var(--s2);flex-shrink:0;}
+.sddi-ph{width:36px;height:52px;display:flex;align-items:center;justify-content:center;font-size:1.1rem;background:var(--s2);border-radius:4px;flex-shrink:0;}
+.sddi-info{flex:1;min-width:0;}
+.sddi-title{font-weight:700;font-size:.85rem;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sddi-meta{font-size:.68rem;color:var(--tm);margin-top:2px;}
+.sddi-id{font-size:.62rem;color:var(--tm);font-family:monospace;margin-top:1px;}
 /* SETTINGS */
 .sov{display:none;position:fixed;inset:0;z-index:200;background:rgba(20,12,0,.78);backdrop-filter:blur(5px);}
 .sov.open{display:flex;align-items:stretch;}
@@ -168,7 +178,6 @@ a.cu:hover{color:var(--hg);}
 .savebtn:hover{background:var(--hg);color:var(--bg);}
 .ss{font-size:.7rem;font-weight:700;letter-spacing:.08em;}
 .ss.ok{color:var(--fgl);}.ss.err{color:var(--po);}
-/* LOG VIEWER */
 .lve{text-align:center;padding:50px;color:var(--tm);font-size:.78rem;letter-spacing:.12em;}
 .lsb{margin-bottom:2px;}
 .lsh{display:flex;align-items:center;gap:11px;padding:10px 15px;background:var(--sf);border-bottom:1px solid var(--br);cursor:pointer;transition:background .15s;}
@@ -209,9 +218,12 @@ a.cu:hover{color:var(--hg);}
   <div class="mc">
     <div class="sp">
       <label class="fl">🍯 Search Movie or Show</label>
-      <div class="sr">
-        <input type="text" id="searchInput" class="si" placeholder="Enter title..." autocomplete="off"/>
-        <button id="searchBtn" class="sb" onclick="doSearch()">🐝 Buzz</button>
+      <div class="search-input-container">
+        <div class="sr">
+          <input type="text" id="searchInput" class="si" placeholder="Enter title..." autocomplete="off" oninput="debSearch()"/>
+          <button id="searchBtn" class="sb" onclick="doSearch()">🐝 Buzz</button>
+        </div>
+        <div id="searchDropdown" class="search-dropdown"></div>
       </div>
       <label class="fl">Mode</label>
       <div class="mt">
@@ -239,7 +251,7 @@ a.cu:hover{color:var(--hg);}
   <div class="scontent">
     <div class="sp" style="margin-bottom:16px">
       <label class="fl">🍯 Movie or Show Name</label>
-      <div class="sr" style="border-radius:10px">
+      <div class="sr" style="border-radius:10px;margin-bottom:13px">
         <input type="text" id="subInput" class="si" placeholder="Type to search..." autocomplete="off" oninput="debSub()"/>
       </div>
       <label class="fl">Mode</label>
