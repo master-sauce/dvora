@@ -1,4 +1,4 @@
-# DVORA — Browser UI
+# DVORA — show/movie indexer
 
 ## for android app
 
