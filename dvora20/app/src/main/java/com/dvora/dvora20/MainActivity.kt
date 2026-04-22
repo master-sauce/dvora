@@ -1658,23 +1658,23 @@ fun loadSources(context: Context, key: String): List<String> {
     if (!prefs.contains(key)) {
         return when (key) {
             "shows" -> listOf(
-                "+https://ww25.soap2day.day/?s=", "-https://myflixerz.to/search/", "-https://himovies.sx/search/",
-                "+https://www.lookmovie2.to/shows/search/?q=", "+https://westream.to/search?keyword=",
+                "+https://ww25.soap2day.day/?s=", "+https://dorawatch.one/?s=",
+                "+https://www.lookmovie2.to/shows/search/?q=", "+https://hydrahd.ru/index.php?menu=search&query=",
                 "+https://1movies.bz/browser?keyword=", "+https://yflix.to/browser?keyword=",
                 "+https://hianime.city/?s=", "+https://gogoanime.by/?s=",
-                "+https://aniwatchtv.to/search?keyword=", "+https://hianime.dk/filter?keyword="
+                 "+https://hianime.dk/filter?keyword="
             )
             "movies" -> listOf(
-                "+https://ww25.soap2day.day/?s=", "-https://myflixerz.to/search/", "-https://himovies.sx/search/",
-                "+https://www.lookmovie2.to/movies/search/?q=", "+https://westream.to/search?keyword=",
-                "+https://1movies.bz/browser?keyword=", "+https://yflix.to/browser?keyword="
+                "+https://ww25.soap2day.day/?s=", "+https://hydrahd.ru/index.php?menu=search&query=",
+                "+https://dorawatch.one/?s=", "+https://1movies.bz/browser?keyword=", "+https://yflix.to/browser?keyword=",
+                "+https://www.lookmovie2.to/movies/search/?q=", "+https://1movies.bz/browser?keyword=", "+https://yflix.to/browser?keyword="
             )
             "manual_checks" -> listOf(
-                "+https://tmovie.tv/search?query=", "+https://www.1flex.nl/search?q=",
-                "+https://ww4.fmovies.co/search/?q=", "+https://ww8.123moviesfree.net/search/?q="
+                 "https://67movies.net/", "https://popcornmovies.org/"
+
             )
             "api_sites" -> listOf(
-                "v1:https://ww8.123moviesfree.net", "v1:https://ww4.fmovies.co", "stremio:https://v3-cinemeta.strem.io"
+                "v1:https://ww8.123moviesfree.net", "v1:https://ww4.fmovies.co","v1:https://ww1.yesmovies.ag", "stremio:https://v3-cinemeta.strem.io"
             )
             "exclusions" -> listOf(
                 "addtoany.com", "facebook.com", "twitter.com", "reddit.com",

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dvora's Stinger</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+
+  <header class="header">
+    <div class="logo">▶</div>
+    <div class="header-text">
+      <h1>Dvora's Stinger</h1>
+      <div class="subtitle">M3U8 → MP4 converter</div>
+    </div>
+    <div class="header-actions">
+      <button class="icon-btn" id="refreshBtn" title="Refresh streams">↻</button>
+    </div>
+  </header>
+
+  <div class="stats-bar">
+    <div class="stats-dot" id="statsDot"></div>
+    <span class="stats-text" id="statsText">scanning…</span>
+  </div>
+
+  <div class="streams-list" id="streamsList">
+    <div class="empty-state">
+      <div class="empty-icon">📡</div>
+      <p>No HLS streams detected yet.</p>
+      <span class="hint">Play a video to begin</span>
+    </div>
+  </div>
+
+  <div id="downloadPanel" class="download-panel hidden">
+    <div class="dl-header">
+      <span class="dl-title" id="dlTitle">Downloading</span>
+      <button class="dl-cancel" id="cancelBtn">✕ cancel</button>
+    </div>
+    <div class="progress-bar">
+      <div class="progress-fill" id="progressFill"></div>
+    </div>
+    <div class="dl-info-row">
+      <div class="dl-percent" id="progressPercent">0%</div>
+      <div class="dl-status" id="progressStatus">Initializing…</div>
+    </div>
+  </div>
+
+  <footer class="footer">
+    <button class="btn btn-ghost" id="clearBtn">Clear all</button>
+  </footer>
+
+  <!-- FFmpeg loaded locally to comply with extension CSP -->
+  <script src="lib/ffmpeg/ffmpeg.js"></script>
+  <script src="lib/ffmpeg/ffmpeg-util.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
