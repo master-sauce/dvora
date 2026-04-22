@@ -6,11 +6,8 @@ const { fetchFile } = window.FFmpegUtil;
 let ffmpeg = null;
 let ffmpegReady = false;
 let ffmpegLoading = false;
-
 let currentDownload = null;
 let abortController = null;
-
-// ── Init ──────────────────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', init);
 
@@ -18,11 +15,9 @@ async function init() {
   ffmpeg = new FFmpeg();
   loadFFmpeg();
   loadStreams();
-
   document.getElementById('refreshBtn').addEventListener('click', loadStreams);
   document.getElementById('clearBtn').addEventListener('click', clearStreams);
   document.getElementById('cancelBtn').addEventListener('click', cancelDownload);
-
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.action === 'streamDetected') loadStreams();
   });
@@ -36,14 +31,14 @@ async function loadFFmpeg() {
     const wasmURL = chrome.runtime.getURL('lib/ffmpeg/ffmpeg-core.wasm');
     await ffmpeg.load({ coreURL, wasmURL });
     ffmpegReady = true;
-    console.log('FFmpeg ready (local)');
+    console.log('FFmpeg ready');
   } catch (err) {
-    console.error('FFmpeg failed to load:', err);
+    console.error('FFmpeg load failed:', err);
     ffmpegLoading = false;
   }
 }
 
-// ── Load & display ────────────────────────────────────────────────────────────
+// ── Load & display ─────────────────────────────────────────────────────────────
 
 async function loadStreams() {
   try {
@@ -59,74 +54,104 @@ function displayStreams(streams) {
   const dot = document.getElementById('statsDot');
   const statsText = document.getElementById('statsText');
 
-  const count = streams.length;
-  statsText.textContent = count === 0 ? 'no streams detected' : `${count} stream${count !== 1 ? 's' : ''} detected`;
-  dot.classList.toggle('active', count > 0);
+  statsText.textContent = streams.length === 0
+    ? 'no streams detected'
+    : `${streams.length} stream${streams.length !== 1 ? 's' : ''} detected`;
+  dot.classList.toggle('active', streams.length > 0);
 
-  if (count === 0) {
+  if (!streams.length) {
     list.innerHTML = `
       <div class="empty-state">
         <div class="empty-icon">📡</div>
-        <p>No HLS streams detected yet.</p>
+        <p>No streams detected yet.</p>
         <span class="hint">Play a video to begin</span>
       </div>`;
     return;
   }
 
   list.innerHTML = '';
-  for (const stream of streams) {
-    list.appendChild(buildStreamCard(stream));
+  for (const stream of streams) list.appendChild(buildStreamCard(stream));
+}
+
+function streamTypeLabel(stream) {
+  switch (stream.type) {
+    case 'HLS': return 'HLS';
+    case 'DASH': return 'DASH';
+    case 'MP4': case 'WEBM': case 'MKV': case 'AVI': case 'MOV': case 'FLV': case 'WMV': return stream.type;
+    default: return stream.type || 'VIDEO';
   }
 }
 
 function buildStreamCard(stream) {
-  const isEncrypted = !!stream.encryption;
+  const isDRM = stream.encryption?.method === 'DRM';
+  const isEncrypted = !!stream.encryption && !isDRM;
   const hasVariants = stream.isMaster && stream.variants?.length > 0;
-  const segCount = stream.segmentCount ?? stream.segments?.length ?? 0;
+  const segCount = stream.segmentCount ?? 0;
   const totalDuration = stream.totalDuration ?? 0;
+  const typeLabel = streamTypeLabel(stream);
+  const isDirectVideo = stream.isDirectVideo;
 
   const card = document.createElement('div');
   card.className = 'stream-card';
   card.dataset.id = stream.id;
+
+  let encBadge = '';
+  if (isDRM) {
+    encBadge = `<span class="badge badge-drm">🔐 DRM</span>`;
+  } else if (isEncrypted) {
+    encBadge = `<span class="badge badge-encrypted">🔒 AES-128</span>`;
+  } else {
+    encBadge = `<span class="badge badge-clear">🔓 CLEAR</span>`;
+  }
+
+  const downloadBtn = isDRM
+    ? `<button class="btn btn-primary js-download disabled-drm" data-id="${stream.id}" disabled title="DRM-protected — cannot download">🔐 DRM Protected</button>`
+    : `<button class="btn btn-primary js-download" data-id="${stream.id}">↓ Download MP4</button>`;
 
   card.innerHTML = `
     <div class="stream-card-body">
       <div class="stream-top">
         <div class="stream-title" title="${escapeHtml(stream.title || '')}">${escapeHtml(stream.title || 'Unknown Video')}</div>
         <div style="display:flex;gap:4px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
+          <span class="badge badge-type">${typeLabel}</span>
           ${hasVariants ? `<span class="badge badge-master">MASTER</span>` : ''}
-          <span class="badge ${isEncrypted ? 'badge-encrypted' : 'badge-clear'}">${isEncrypted ? 'AES-128' : 'CLEAR'}</span>
+          ${encBadge}
         </div>
       </div>
 
       <div class="stream-meta">
-        <span class="meta-item">${segCount > 0 ? segCount + ' segs' : 'live/master'}</span>
+        ${isDirectVideo
+          ? `<span class="meta-item">Direct file</span>`
+          : `<span class="meta-item">${segCount > 0 ? segCount + ' segs' : hasVariants ? stream.variants.length + ' qualities' : 'live'}</span>`}
         ${totalDuration ? `<span class="meta-item">${formatDuration(totalDuration)}</span>` : ''}
         <span class="meta-item">${formatAge(stream.timestamp)}</span>
       </div>
 
       <div class="segment-track"><div class="segment-track-fill"></div></div>
 
-      ${hasVariants ? buildQualitySelector(stream) : ''}
+      ${hasVariants && !isDRM ? buildQualitySelector(stream) : ''}
+      ${isDRM ? `<div class="drm-notice">This stream is protected by DRM (Widevine/PlayReady). It cannot be downloaded.</div>` : ''}
 
       <div class="stream-actions">
         <button class="btn btn-ghost btn-sm js-copy" data-id="${stream.id}">Copy URL</button>
-        <button class="btn btn-ghost btn-sm js-ffmpeg-cmd" data-id="${stream.id}">ffmpeg cmd</button>
-        <button class="btn btn-primary js-download" data-id="${stream.id}">↓ Download MP4</button>
+        ${!isDRM ? `<button class="btn btn-ghost btn-sm js-ffmpeg-cmd" data-id="${stream.id}">ffmpeg cmd</button>` : ''}
+        ${downloadBtn}
       </div>
     </div>`;
 
   card.querySelector('.js-copy').addEventListener('click', (e) => handleCopy(e, stream));
-  card.querySelector('.js-ffmpeg-cmd').addEventListener('click', (e) => handleFfmpegCmd(e, stream));
-  card.querySelector('.js-download').addEventListener('click', () => handleDownload(stream.id));
+  if (!isDRM) {
+    card.querySelector('.js-ffmpeg-cmd')?.addEventListener('click', (e) => handleFfmpegCmd(e, stream));
+    card.querySelector('.js-download')?.addEventListener('click', () => handleDownload(stream.id));
+  }
 
   return card;
 }
 
 function buildQualitySelector(stream) {
   const options = (stream.variants || []).map((v, i) => {
-    const label = [v.resolution, v.bandwidth ? formatBitrate(v.bandwidth) : '', v.name].filter(Boolean).join(' · ');
-    return `<option value="${i}">${escapeHtml(label || `Variant ${i + 1}`)}</option>`;
+    const parts = [v.resolution, v.bandwidth ? formatBitrate(v.bandwidth) : '', v.name].filter(Boolean);
+    return `<option value="${i}">${escapeHtml(parts.join(' · ') || `Variant ${i + 1}`)}</option>`;
   }).join('');
   return `
     <div class="quality-row">
@@ -135,7 +160,7 @@ function buildQualitySelector(stream) {
     </div>`;
 }
 
-// ── Actions ───────────────────────────────────────────────────────────────────
+// ── Action handlers ────────────────────────────────────────────────────────────
 
 async function handleCopy(e, stream) {
   const btn = e.currentTarget;
@@ -151,7 +176,9 @@ async function handleFfmpegCmd(e, stream) {
   const btn = e.currentTarget;
   const original = btn.textContent;
   const url = (stream.isMaster && stream.variants?.length) ? stream.variants[0].url : stream.url;
-  const cmd = `ffmpeg -i "${url}" -c copy -bsf:a aac_adtstoasc output.mp4`;
+  const cmd = stream.type === 'HLS' || stream.type === 'DASH'
+    ? `ffmpeg -i "${url}" -c copy -bsf:a aac_adtstoasc output.mp4`
+    : `ffmpeg -i "${url}" -c copy output.mp4`;
   try {
     await navigator.clipboard.writeText(cmd);
     btn.textContent = '✓ Copied';
@@ -160,10 +187,7 @@ async function handleFfmpegCmd(e, stream) {
 }
 
 async function handleDownload(streamId) {
-  if (currentDownload) {
-    alert('A download is already in progress. Please cancel it first.');
-    return;
-  }
+  if (currentDownload) { alert('A download is already in progress.'); return; }
   if (!ffmpegReady) {
     if (!ffmpegLoading) loadFFmpeg();
     alert('FFmpeg is still loading. Please wait a moment and try again.');
@@ -173,46 +197,21 @@ async function handleDownload(streamId) {
   const variantSelect = document.getElementById(`variant-${streamId}`);
   const variantIndex = variantSelect ? parseInt(variantSelect.value, 10) : 0;
 
-  // Get full stream data from background (includes playlistText)
   const { stream } = await chrome.runtime.sendMessage({ action: 'getStream', streamId });
   if (!stream) { alert('Stream data not found. Try refreshing.'); return; }
 
   showDownloadPanel();
-  setProgress(0, 'Fetching playlist…', '');
-
+  setProgress(0, 'Preparing…', '');
   abortController = new AbortController();
 
   try {
-    // ── ALWAYS re-fetch playlist at download time ──
-    // Stored segments may be 0 or stale (token-expiry). Re-fetch fresh.
-    let targetUrl = stream.url;
-
-    if (stream.isMaster && stream.variants?.length) {
-      // Master: pick the selected quality variant URL
-      targetUrl = (stream.variants[variantIndex] || stream.variants[0]).url;
+    if (stream.isDirectVideo) {
+      await downloadDirectVideo(stream);
+    } else if (stream.type === 'DASH') {
+      await downloadDASH(stream, variantIndex);
+    } else {
+      await downloadHLS(stream, variantIndex);
     }
-
-    setProgress(2, 'Fetching playlist…', targetUrl.split('/').pop());
-
-    const playlistResult = await fetchPlaylist(targetUrl, abortController.signal);
-
-    if (!playlistResult) {
-      throw new Error('Failed to fetch playlist. The stream URL may have expired — try playing the video again and then downloading.');
-    }
-
-    const { segments, encryption, initSegment } = playlistResult;
-
-    if (!segments.length) {
-      // Give a helpful message with a peek at what we got
-      throw new Error(
-        `No segments found in playlist.\n\nPlaylist preview:\n${playlistResult.rawText?.substring(0, 400) || '(empty)'}`
-      );
-    }
-
-    currentDownload = { streamId, stream, total: segments.length, done: 0, failed: 0 };
-
-    await downloadAndConvert({ ...stream, segments, encryption, initSegment });
-
   } catch (err) {
     if (err.name !== 'AbortError') {
       console.error('Download error:', err);
@@ -224,18 +223,101 @@ async function handleDownload(streamId) {
   }
 }
 
-// ── Playlist fetching ─────────────────────────────────────────────────────────
+// ── Direct video download ─────────────────────────────────────────────────────
 
-async function fetchPlaylist(url, signal) {
+async function downloadDirectVideo(stream) {
+  setProgress(5, 'Downloading…', stream.url.split('/').pop().substring(0, 60));
+
+  const data = await downloadWithRetry(stream.url, abortController.signal, 3, (pct) => {
+    setProgress(5 + Math.round(pct * 85), 'Downloading…');
+  });
+
+  setProgress(92, 'Saving…', '');
+  const ext = stream.url.match(/\.(mp4|webm|mkv|mov|avi|flv)/i)?.[1] || 'mp4';
+  const outputName = `${sanitizeFilename(stream.title || 'video')}.${ext}`;
+  const blob = new Blob([data], { type: `video/${ext}` });
+  await chrome.downloads.download({ url: URL.createObjectURL(blob), filename: outputName, saveAs: true });
+  setProgress(100, 'Done!', '');
+  setTimeout(hideDownloadPanel, 1200);
+}
+
+// ── DASH download ─────────────────────────────────────────────────────────────
+
+async function downloadDASH(stream, variantIndex) {
+  // For DASH, use the best available variant URL and let FFmpeg handle it
+  // FFmpeg natively understands MPD manifests
+  const variant = stream.variants?.[variantIndex] || stream.variants?.[0];
+  const inputUrl = variant?.url || stream.url;
+
+  setProgress(10, 'Starting DASH download…', 'FFmpeg will process segments');
+
+  const outputName = `${sanitizeFilename(stream.title || 'video')}.mp4`;
+
+  // FFmpeg can handle DASH manifests natively via network
+  // We write a small script to ffmpeg stdin
+  ffmpeg.on('progress', ({ progress }) => {
+    setProgress(Math.min(10 + Math.round((progress || 0) * 85), 95), 'Processing DASH…');
+  });
+
   try {
-    const resp = await fetch(url, { signal });
+    await ffmpeg.exec([
+      '-i', inputUrl,
+      '-c', 'copy',
+      '-movflags', '+faststart',
+      outputName
+    ]);
+
+    const data = await ffmpeg.readFile(outputName);
+    ffmpeg.deleteFile(outputName).catch(() => {});
+
+    const blob = new Blob([data.buffer], { type: 'video/mp4' });
+    await chrome.downloads.download({ url: URL.createObjectURL(blob), filename: outputName, saveAs: true });
+  } catch (err) {
+    // DASH with FFmpeg often fails due to network access from WASM
+    // Fall back to copying the URL
+    throw new Error(`DASH download via FFmpeg failed (${err.message}).\n\nTry using the "ffmpeg cmd" button to download via command line instead.`);
+  }
+
+  setProgress(100, 'Done!', '');
+  setTimeout(hideDownloadPanel, 1200);
+}
+
+// ── HLS download ──────────────────────────────────────────────────────────────
+
+async function downloadHLS(stream, variantIndex) {
+  let targetUrl = stream.url;
+
+  if (stream.isMaster && stream.variants?.length) {
+    targetUrl = (stream.variants[variantIndex] || stream.variants[0]).url;
+  }
+
+  setProgress(2, 'Fetching playlist…', '');
+
+  const playlistResult = await fetchPlaylist(targetUrl, abortController.signal, stream.fetchHeaders);
+  if (!playlistResult) {
+    throw new Error('Failed to fetch playlist. The URL may have expired — try playing the video again then downloading immediately.');
+  }
+
+  const { segments, encryption, initSegment } = playlistResult;
+
+  if (!segments.length) {
+    throw new Error(
+      `No segments found in playlist.\n\nPlaylist preview:\n${playlistResult.rawText?.substring(0, 500) || '(empty)'}`
+    );
+  }
+
+  currentDownload = { streamId: stream.id, stream, total: segments.length, done: 0, failed: 0 };
+
+  await downloadAndMergeSegments({ ...stream, segments, encryption, initSegment });
+}
+
+async function fetchPlaylist(url, signal, extraHeaders = {}) {
+  try {
+    const resp = await fetch(url, { signal, headers: extraHeaders });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const rawText = await resp.text();
-
-    console.log('Fetched playlist, first 500 chars:', rawText.substring(0, 500));
-
+    console.log('Playlist preview:', rawText.substring(0, 400));
     if (!rawText.includes('#EXTM3U')) return { segments: [], rawText };
-
     return parseMediaPlaylist(rawText, url);
   } catch (err) {
     if (err.name === 'AbortError') throw err;
@@ -244,31 +326,30 @@ async function fetchPlaylist(url, signal) {
   }
 }
 
-// ── Download & convert ────────────────────────────────────────────────────────
+// ── Segment download & merge ──────────────────────────────────────────────────
 
 const CONCURRENT = 6;
 
-async function downloadAndConvert(stream) {
+async function downloadAndMergeSegments(stream) {
   const { segments, initSegment } = stream;
   const isEncrypted = stream.encryption?.method === 'AES-128';
+  const signal = abortController.signal;
 
-  setProgress(3, isEncrypted ? 'Fetching decryption keys…' : 'Starting download…', `${segments.length} segments`);
+  setProgress(3, isEncrypted ? 'Fetching keys…' : 'Starting…', `${segments.length} segments`);
 
   const keys = isEncrypted ? await fetchKeys(stream) : new Map();
-  const signal = abortController.signal;
   const segmentFiles = new Array(segments.length).fill(null);
 
-  // Write fMP4 init segment if present
+  // fMP4 init segment
   if (initSegment) {
-    setProgress(4, 'Fetching init segment…', '');
     try {
+      setProgress(4, 'Fetching init segment…', '');
       const initData = await downloadWithRetry(initSegment, signal);
       await ffmpeg.writeFile('init.mp4', new Uint8Array(initData));
-    } catch (e) {
-      console.warn('Init segment fetch failed:', e);
-    }
+    } catch (e) { console.warn('Init segment failed:', e); }
   }
 
+  // Download segments in parallel batches
   for (let i = 0; i < segments.length; i += CONCURRENT) {
     if (signal.aborted) throw Object.assign(new Error('Cancelled'), { name: 'AbortError' });
 
@@ -276,24 +357,35 @@ async function downloadAndConvert(stream) {
 
     await Promise.all(batch.map(async ({ seg, index }) => {
       try {
-        let data = await downloadWithRetry(seg.url, signal);
-        if (isEncrypted && seg.key?.uri) data = await decryptSegment(data, seg.key, keys);
+        let data;
 
-        const ext = seg.url.match(/\.(m4s|mp4|ts)(\?|$)/i)?.[1] || 'ts';
+        if (seg.byteRange) {
+          // Byte-range segment
+          const { length, offset } = seg.byteRange;
+          data = await fetchByteRange(seg.url, offset, offset + length - 1, signal);
+        } else {
+          data = await downloadWithRetry(seg.url, signal);
+        }
+
+        if (isEncrypted && seg.key?.uri) {
+          data = await decryptSegment(data, seg.key, keys);
+        }
+
+        const ext = seg.url.match(/\.(m4s|mp4|ts|aac|mp3)(\?|$)/i)?.[1] || 'ts';
         const filename = `seg_${String(index).padStart(5, '0')}.${ext}`;
         await ffmpeg.writeFile(filename, new Uint8Array(data));
         segmentFiles[index] = filename;
         currentDownload.done++;
       } catch (err) {
         if (err.name === 'AbortError') throw err;
-        console.warn(`Segment ${index} failed:`, err.message);
+        console.warn(`Seg ${index} failed:`, err.message);
         currentDownload.failed++;
       }
 
       const sofar = currentDownload.done + currentDownload.failed;
       setProgress(
         5 + Math.round((sofar / segments.length) * 55),
-        'Downloading…',
+        'Downloading segments…',
         `${currentDownload.done} / ${segments.length} · ${currentDownload.failed} failed`
       );
     }));
@@ -302,20 +394,19 @@ async function downloadAndConvert(stream) {
   const downloaded = segmentFiles.filter(Boolean);
   if (!downloaded.length) throw new Error('No segments downloaded successfully.');
   if (currentDownload.failed / segments.length > 0.15) {
-    throw new Error(`Too many segment failures: ${currentDownload.failed}/${segments.length}`);
+    throw new Error(`Too many failures: ${currentDownload.failed}/${segments.length}`);
   }
 
+  // Build concat list
   setProgress(62, 'Merging…', `${downloaded.length} segments`);
-
-  // If fMP4, prepend init segment to each entry
   const concatEntries = [];
-  if (initSegment && await fileExists('init.mp4')) {
-    concatEntries.push(`file 'init.mp4'`);
+  if (initSegment) {
+    try { await ffmpeg.readFile('init.mp4'); concatEntries.push(`file 'init.mp4'`); } catch {}
   }
   concatEntries.push(...downloaded.map(f => `file '${f}'`));
   await ffmpeg.writeFile('concat.txt', concatEntries.join('\n'));
 
-  setProgress(65, 'Converting to MP4…', 'This may take a while…');
+  setProgress(65, 'Converting to MP4…', 'Please wait…');
 
   ffmpeg.on('progress', ({ progress }) => {
     setProgress(Math.min(65 + Math.round((progress || 0) * 30), 95), 'Converting…');
@@ -335,7 +426,6 @@ async function downloadAndConvert(stream) {
   setProgress(96, 'Saving…', '');
   const data = await ffmpeg.readFile(outputName);
 
-  // Cleanup
   for (const f of downloaded) ffmpeg.deleteFile(f).catch(() => {});
   ffmpeg.deleteFile('concat.txt').catch(() => {});
   ffmpeg.deleteFile('init.mp4').catch(() => {});
@@ -343,16 +433,11 @@ async function downloadAndConvert(stream) {
 
   const blob = new Blob([data.buffer], { type: 'video/mp4' });
   await chrome.downloads.download({ url: URL.createObjectURL(blob), filename: outputName, saveAs: true });
-
   setProgress(100, 'Done!', '');
   setTimeout(hideDownloadPanel, 1200);
 }
 
-async function fileExists(name) {
-  try { await ffmpeg.readFile(name); return true; } catch { return false; }
-}
-
-// ── Crypto ────────────────────────────────────────────────────────────────────
+// ── Crypto ─────────────────────────────────────────────────────────────────────
 
 async function fetchKeys(stream) {
   const keys = new Map();
@@ -362,17 +447,15 @@ async function fetchKeys(stream) {
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       keys.set(url, new Uint8Array(await resp.arrayBuffer()));
-      console.log('Key fetched:', url);
-    } catch (err) {
-      console.error('Key fetch failed:', url, err);
-    }
+      console.log('Key fetched OK:', url);
+    } catch (err) { console.error('Key fetch failed:', url, err); }
   }));
   return keys;
 }
 
 async function decryptSegment(encryptedData, keyInfo, keys) {
   const keyData = keys.get(keyInfo.uri);
-  if (!keyData) throw new Error(`Decryption key not found: ${keyInfo.uri}`);
+  if (!keyData) throw new Error(`Key not found: ${keyInfo.uri}`);
 
   const cryptoKey = await crypto.subtle.importKey('raw', keyData, { name: 'AES-CBC' }, false, ['decrypt']);
 
@@ -387,13 +470,33 @@ async function decryptSegment(encryptedData, keyInfo, keys) {
   return crypto.subtle.decrypt({ name: 'AES-CBC', iv }, cryptoKey, encryptedData);
 }
 
-// ── Network ───────────────────────────────────────────────────────────────────
+// ── Network ────────────────────────────────────────────────────────────────────
 
-async function downloadWithRetry(url, signal, retries = 3) {
+async function downloadWithRetry(url, signal, retries = 3, onProgress) {
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
       const resp = await fetch(url, { signal });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+      if (onProgress && resp.body) {
+        // Stream with progress
+        const reader = resp.body.getReader();
+        const contentLength = parseInt(resp.headers.get('Content-Length') || '0');
+        const chunks = [];
+        let received = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+          received += value.length;
+          if (contentLength) onProgress(received / contentLength);
+        }
+        const total = new Uint8Array(received);
+        let pos = 0;
+        for (const chunk of chunks) { total.set(chunk, pos); pos += chunk.length; }
+        return total.buffer;
+      }
+
       return await resp.arrayBuffer();
     } catch (err) {
       if (err.name === 'AbortError') throw err;
@@ -403,7 +506,16 @@ async function downloadWithRetry(url, signal, retries = 3) {
   }
 }
 
-// ── Playlist parsing ──────────────────────────────────────────────────────────
+async function fetchByteRange(url, start, end, signal) {
+  const resp = await fetch(url, {
+    signal,
+    headers: { 'Range': `bytes=${start}-${end}` }
+  });
+  if (!resp.ok && resp.status !== 206) throw new Error(`HTTP ${resp.status}`);
+  return await resp.arrayBuffer();
+}
+
+// ── M3U8 playlist parser ───────────────────────────────────────────────────────
 
 function parseMediaPlaylist(text, baseUrl) {
   const lines = text.split(/\r?\n/);
@@ -411,6 +523,7 @@ function parseMediaPlaylist(text, baseUrl) {
   let currentKey = null;
   let seq = 0;
   let initSegment = null;
+  let byteRangeOffset = 0;
 
   const seqMatch = text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/);
   if (seqMatch) seq = parseInt(seqMatch[1], 10);
@@ -419,38 +532,62 @@ function parseMediaPlaylist(text, baseUrl) {
     const line = lines[i].trim();
     if (!line || line === '#EXTM3U') continue;
 
-    // Encryption key
     if (line.startsWith('#EXT-X-KEY')) {
       const methodMatch = line.match(/METHOD=([^,\r\n]+)/);
       const uriMatch = line.match(/URI="([^"]+)"/);
       const ivMatch = line.match(/IV=0x([0-9a-fA-F]+)/);
+      const method = methodMatch ? methodMatch[1].trim() : 'NONE';
       currentKey = {
-        method: methodMatch ? methodMatch[1].trim() : 'NONE',
+        method,
         uri: uriMatch ? resolveUrl(uriMatch[1], baseUrl) : null,
         iv: ivMatch ? ivMatch[1] : null,
         sequence: seq
       };
     }
 
-    // fMP4 init segment
     if (line.startsWith('#EXT-X-MAP')) {
       const uriMatch = line.match(/URI="([^"]+)"/);
       if (uriMatch) initSegment = resolveUrl(uriMatch[1], baseUrl);
     }
 
-    // Segment
+    // Byte range declared before segment
+    if (line.startsWith('#EXT-X-BYTERANGE:')) {
+      const match = line.match(/#EXT-X-BYTERANGE:(\d+)(?:@(\d+))?/);
+      if (match) {
+        const length = parseInt(match[1]);
+        const offset = match[2] !== undefined ? parseInt(match[2]) : byteRangeOffset;
+        byteRangeOffset = offset + length;
+        // attach to next EXTINF's segment
+        lines[i] = `__BYTERANGE__${length}@${offset}`;
+      }
+    }
+
     if (line.startsWith('#EXTINF')) {
       const durMatch = line.match(/#EXTINF:([^,\r\n]+)/);
       const duration = durMatch ? parseFloat(durMatch[1]) : 0;
 
-      // Find next non-comment line
       let nextLine = null;
+      let byteRange = null;
+
       for (let j = i + 1; j < lines.length; j++) {
-        const candidate = lines[j].trim();
-        if (candidate && !candidate.startsWith('#')) {
-          nextLine = candidate;
-          break;
+        const c = lines[j].trim();
+        if (!c) continue;
+        if (c.startsWith('__BYTERANGE__')) {
+          const parts = c.replace('__BYTERANGE__', '').split('@');
+          byteRange = { length: parseInt(parts[0]), offset: parseInt(parts[1]) };
+          continue;
         }
+        if (c.startsWith('#EXT-X-BYTERANGE:')) {
+          const match = c.match(/#EXT-X-BYTERANGE:(\d+)(?:@(\d+))?/);
+          if (match) {
+            const length = parseInt(match[1]);
+            const offset = match[2] !== undefined ? parseInt(match[2]) : byteRangeOffset;
+            byteRangeOffset = offset + length;
+            byteRange = { length, offset };
+          }
+          continue;
+        }
+        if (!c.startsWith('#')) { nextLine = c; break; }
       }
 
       if (nextLine) {
@@ -458,19 +595,26 @@ function parseMediaPlaylist(text, baseUrl) {
           url: resolveUrl(nextLine, baseUrl),
           duration,
           key: currentKey?.method !== 'NONE' ? currentKey : null,
-          sequence: seq++
+          sequence: seq++,
+          byteRange: byteRange || null
         });
       }
     }
   }
 
-  const encryption = currentKey?.method !== 'NONE' ? currentKey : null;
-  return { segments, encryption, initSegment, rawText: text };
+  return {
+    segments,
+    encryption: currentKey?.method !== 'NONE' ? currentKey : null,
+    initSegment,
+    rawText: text
+  };
 }
 
 function resolveUrl(url, baseUrl) {
   if (!url) return url;
+  url = url.trim();
   if (url.startsWith('http://') || url.startsWith('https://')) return url;
+  if (url.startsWith('//')) return 'https:' + url;
   try {
     const base = new URL(baseUrl);
     if (url.startsWith('/')) return `${base.protocol}//${base.host}${url}`;
@@ -478,7 +622,7 @@ function resolveUrl(url, baseUrl) {
   } catch { return url; }
 }
 
-// ── UI helpers ────────────────────────────────────────────────────────────────
+// ── UI ─────────────────────────────────────────────────────────────────────────
 
 function showDownloadPanel() { document.getElementById('downloadPanel').classList.remove('hidden'); }
 function hideDownloadPanel() {
@@ -494,17 +638,19 @@ function setProgress(pct, title, status) {
 }
 
 function cancelDownload() { abortController?.abort(); }
-
 async function clearStreams() {
   await chrome.runtime.sendMessage({ action: 'clearStreams' });
   loadStreams();
 }
 
-// ── Formatters ────────────────────────────────────────────────────────────────
+// ── Formatters ─────────────────────────────────────────────────────────────────
 
 function formatDuration(secs) {
   if (!secs || isNaN(secs)) return '';
-  return `${Math.floor(secs / 60)}:${String(Math.floor(secs % 60)).padStart(2, '0')}`;
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  const s = Math.floor(secs % 60);
+  return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`;
 }
 
 function formatAge(ts) {
