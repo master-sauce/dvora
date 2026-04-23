@@ -334,7 +334,7 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
     val focusManager = LocalFocusManager.current
     val searchFieldFocusRequester = remember { FocusRequester() }
     var justSelectedSuggestion by remember { mutableStateOf(false) }
-
+    var dismissedForTerm by remember { mutableStateOf("") }
 
     // Add this LaunchedEffect to trigger IMDb search as the user types
     LaunchedEffect(searchTerm) {
@@ -482,27 +482,37 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                                 )
 
                                 // IMDb suggestions dropdown
-                                if (showImdbDropdown && imdbSuggestions.isNotEmpty()) {
+                                if (showImdbDropdown && imdbSuggestions.isNotEmpty() && searchTerm != dismissedForTerm) {
                                     Card(
                                         modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                                         shape = RoundedCornerShape(12.dp),
                                         colors = CardDefaults.cardColors(containerColor = cardBg),
                                         elevation = CardDefaults.cardElevation(4.dp)
                                     ) {
-                                        LazyColumn(
-                                            modifier = Modifier.fillMaxWidth().heightIn(max = 200.dp)
-                                        ) {
-                                            items(imdbSuggestions.take(5)) { suggestion ->
-                                                ImdbSuggestionItem(
-                                                    suggestion = suggestion,
-                                                    onSelect = {
-                                                        searchTerm = suggestion.title
-                                                        showImdbDropdown = false
-                                                        justSelectedSuggestion = true // Set this flag to prevent immediate re-appearance
-                                                        focusManager.clearFocus() // This removes the focus from the search field
-
-                                                    }
-                                                )
+                                        Column {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text("Suggestions", fontSize = 11.sp, color = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface), modifier = Modifier.weight(1f))
+                                                IconButton(onClick = { dismissedForTerm = searchTerm }, modifier = Modifier.size(28.dp)) {
+                                                    Icon(Icons.Default.Close, "Dismiss", tint = BeeColors.DeepAmber, modifier = Modifier.size(16.dp))
+                                                }
+                                            }
+                                            LazyColumn(
+                                                modifier = Modifier.fillMaxWidth().heightIn(max = 200.dp)
+                                            ) {
+                                                items(imdbSuggestions.take(5)) { suggestion ->
+                                                    ImdbSuggestionItem(
+                                                        suggestion = suggestion,
+                                                        onSelect = {
+                                                            searchTerm = suggestion.title
+                                                            showImdbDropdown = false
+                                                            justSelectedSuggestion = true
+                                                            focusManager.clearFocus()
+                                                        }
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -534,7 +544,7 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                                 }
                                 imdbResults = scanner.searchImdb(searchTerm)
                                 SearchLogs.lastLogs = results + apiResults
-                                manualLinks = manualChecks.map { scanner.getManualCheck(it, searchTerm) }
+                                manualLinks = manualChecks.map { scanner.getManualCheck(it) }
                                 isSearching = false
                             }
                         },

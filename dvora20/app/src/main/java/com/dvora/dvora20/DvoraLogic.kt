@@ -450,13 +450,7 @@ class DvoraScanner {
         } catch (_: Exception) { emptyList() }
     }
 
-    fun getManualCheck(baseUrl: String, searchTerm: String): String {
-        val formattedInput = when {
-            baseUrl.startsWith("+") -> searchTerm.replace(" ", "+")
-            baseUrl.startsWith("-") -> searchTerm.replace(" ", "-")
-            else -> searchTerm
-        }
-        val cleanBaseUrl = if (baseUrl.startsWith("+") || baseUrl.startsWith("-")) baseUrl.substring(1) else baseUrl
-        return cleanBaseUrl + formattedInput
+    fun getManualCheck(baseUrl: String): String {
+        return if (baseUrl.startsWith("+") || baseUrl.startsWith("-")) baseUrl.substring(1) else baseUrl
     }
 }
