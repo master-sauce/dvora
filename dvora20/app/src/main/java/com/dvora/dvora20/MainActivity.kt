@@ -53,8 +53,9 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.material3.OutlinedTextFieldDefaults
-
-
+import androidx.compose.ui.text.withStyle
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -524,10 +525,10 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                                 val activeSources = if (searchType == SourceType.SHOW) shows else movies
                                 activeSources.forEach { source -> results = results + scanner.scanSite(source, searchTerm, exclusions) }
                                 apiSites.forEach { site ->
-                                    val newResults = when {
-                                        site.startsWith("stremio:") -> scanner.scanStremio(site.removePrefix("stremio:"), searchTerm, searchType)
-                                        site.startsWith("v1:")      -> scanner.scanV1(site.removePrefix("v1:"), searchTerm)
-                                        else                        -> scanner.scanV1(site, searchTerm)
+                                    val entry = parseApiEntry(site)
+                                    val newResults = when (entry.type) {
+                                        "stremio" -> scanner.scanStremio(entry.apiUrl, searchTerm, searchType)
+                                        else      -> scanner.scanV1(entry.apiUrl, searchTerm, entry.landingUrl)
                                     }
                                     apiResults = apiResults + newResults
                                 }
@@ -1514,12 +1515,398 @@ fun SettingsScreen(
         when (selectedTab) {
             0 -> SourceEditor(shows) { onUpdate(SourceType.SHOW, it) }
             1 -> SourceEditor(movies) { onUpdate(SourceType.MOVIE, it) }
-            2 -> SourceEditor(apiSites) { onUpdate(SourceType.API, it) }
+            2 -> ApiSourcesEditor(apiSites) { onUpdate(SourceType.API, it) }
             3 -> SourceEditor(manualChecks) { onUpdate(SourceType.MANUAL, it) }
             4 -> SourceEditor(exclusions) { onUpdate(SourceType.EXCLUSION, it) }
             5 -> VerboseLogsScreen()
         }
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// API ENTRY MODEL & WIZARD
+// ═══════════════════════════════════════════════════════════════════════════════
+
+data class ApiEntry(
+    val type:       String,        // "v1" or "stremio"
+    val apiUrl:     String,        // base URL used for the search API call
+    val landingUrl: String? = null // optional different base URL for the result link
+) {
+    fun toRawString(): String {
+        val base = "$type:$apiUrl"
+        return if (!landingUrl.isNullOrBlank() && landingUrl != apiUrl) "$base|$landingUrl" else base
+    }
+    fun displayType() = if (type == "stremio") "Stremio" else "V1 JSON API"
+}
+
+fun parseApiEntry(raw: String): ApiEntry {
+    val type = when {
+        raw.startsWith("stremio:") -> "stremio"
+        raw.startsWith("v1:")      -> "v1"
+        else                       -> "v1"
+    }
+    val rest  = raw.removePrefix("$type:")
+    val parts = rest.split("|", limit = 2)
+    return ApiEntry(type = type, apiUrl = parts[0].trim(), landingUrl = parts.getOrNull(1)?.trim()?.ifBlank { null })
+}
+
+@Composable
+fun ApiSourcesEditor(apiSites: List<String>, onUpdate: (List<String>) -> Unit) {
+    var showWizard    by remember { mutableStateOf(false) }
+    var editingIndex  by remember { mutableIntStateOf(-1) }
+    var editingEntry  by remember { mutableStateOf<ApiEntry?>(null) }
+
+    val bgColor   = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
+    val textColor = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface)
+    val cardBg    = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
+
+    Column(modifier = Modifier.padding(16.dp).background(bgColor)) {
+        Button(
+            onClick = { editingIndex = -1; editingEntry = null; showWizard = true },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = BeeColors.DeepAmber),
+            shape = RoundedCornerShape(10.dp)
+        ) {
+            Icon(Icons.Default.Add, null, tint = Color.White)
+            Spacer(Modifier.width(8.dp))
+            Text("🧙 Add API Source", color = Color.White, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(12.dp))
+
+        if (apiSites.isEmpty()) {
+            Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("🐝", fontSize = 36.sp)
+                    Spacer(Modifier.height(6.dp))
+                    Text("No API sources yet", color = textColor.copy(alpha = 0.6f), fontSize = 14.sp)
+                }
+            }
+        }
+
+        LazyColumn {
+            itemsIndexed(apiSites) { index, raw ->
+                val entry = remember(raw) { parseApiEntry(raw) }
+                val hasSplitUrl = !entry.landingUrl.isNullOrBlank() && entry.landingUrl != entry.apiUrl
+                Card(
+                    modifier  = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                    shape     = RoundedCornerShape(10.dp),
+                    colors    = CardDefaults.cardColors(containerColor = cardBg),
+                    elevation = CardDefaults.cardElevation(2.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(10.dp)) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = if (entry.type == "stremio") Color(0xFF6C3FC4) else BeeColors.DeepAmber
+                                ) {
+                                    Text(
+                                        entry.displayType(), fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                    )
+                                }
+                                if (hasSplitUrl) {
+                                    Surface(shape = RoundedCornerShape(4.dp), color = BeeColors.HoneyGold.copy(alpha = 0.2f)) {
+                                        Text(
+                                            "SPLIT", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = BeeColors.DeepAmber,
+                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.height(5.dp))
+                            // Show the URL with DVORA highlighted in amber
+                            val apiParts  = entry.apiUrl.split("DVORA")
+                            androidx.compose.foundation.text.BasicText(
+                                text = androidx.compose.ui.text.buildAnnotatedString {
+                                    append("🔍 ")
+                                    apiParts.forEachIndexed { i, part ->
+                                        withStyle(androidx.compose.ui.text.SpanStyle(color = textColor, fontSize = 11.sp)) { append(part) }
+                                        if (i < apiParts.size - 1) withStyle(androidx.compose.ui.text.SpanStyle(color = BeeColors.HoneyGold, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)) { append("DVORA") }
+                                    }
+                                },
+                                maxLines = 1,
+                                style = androidx.compose.ui.text.TextStyle.Default
+                            )
+                            if (hasSplitUrl) {
+                                val landParts = entry.landingUrl!!.split("DVORA")
+                                androidx.compose.foundation.text.BasicText(
+                                    text = androidx.compose.ui.text.buildAnnotatedString {
+                                        append("🔗 ")
+                                        landParts.forEachIndexed { i, part ->
+                                            withStyle(androidx.compose.ui.text.SpanStyle(color = textColor.copy(alpha = 0.7f), fontSize = 11.sp)) { append(part) }
+                                            if (i < landParts.size - 1) withStyle(androidx.compose.ui.text.SpanStyle(color = BeeColors.HoneyGold, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)) { append("DVORA") }
+                                        }
+                                    },
+                                    maxLines = 1,
+                                    style = androidx.compose.ui.text.TextStyle.Default
+                                )
+                            }
+                        }
+                        IconButton(onClick = { editingIndex = index; editingEntry = entry; showWizard = true }) {
+                            Icon(Icons.Default.Edit, null, tint = BeeColors.HoneyGold)
+                        }
+                        IconButton(onClick = {
+                            onUpdate(apiSites.toMutableList().also { it.removeAt(index) })
+                        }) {
+                            Icon(Icons.Default.Delete, null, tint = BeeColors.DeepAmber.copy(alpha = 0.7f))
+                        }
+                    }
+                }
+                HorizontalDivider(color = BeeColors.HoneyGold.copy(alpha = 0.15f))
+            }
+        }
+    }
+
+    if (showWizard) {
+        ApiSourceWizardDialog(
+            initial   = editingEntry,
+            onDismiss = { showWizard = false; editingIndex = -1; editingEntry = null },
+            onSave    = { newEntry ->
+                val updated = apiSites.toMutableList()
+                if (editingIndex >= 0) updated[editingIndex] = newEntry.toRawString()
+                else updated.add(newEntry.toRawString())
+                onUpdate(updated)
+                showWizard = false; editingIndex = -1; editingEntry = null
+            }
+        )
+    }
+}
+
+@Composable
+fun ApiSourceWizardDialog(
+    initial:   ApiEntry?,
+    onDismiss: () -> Unit,
+    onSave:    (ApiEntry) -> Unit
+) {
+    var step        by remember { mutableIntStateOf(0) }
+    var apiType     by remember { mutableStateOf(initial?.type ?: "v1") }
+    var apiUrl      by remember { mutableStateOf(initial?.apiUrl ?: "") }
+    var landingUrl  by remember { mutableStateOf(initial?.landingUrl ?: "") }
+
+    val bgColor   = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
+    val textColor = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface)
+    val cardBg    = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
+    val isEditing = initial != null
+    val totalSteps = 3
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor   = bgColor,
+        title = null,
+        text  = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                // ── Header ──
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("🧙 ", fontSize = 20.sp)
+                    Text(
+                        if (isEditing) "Edit API Source" else "New API Source",
+                        fontWeight = FontWeight.ExtraBold, fontSize = 16.sp,
+                        color = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold)
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text("${step + 1} / $totalSteps", fontSize = 11.sp, color = BeeColors.DeepAmber, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.height(6.dp))
+                // Progress bar
+                androidx.compose.material3.LinearProgressIndicator(
+                    progress            = { (step + 1f) / totalSteps },
+                    modifier            = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                    color               = BeeColors.HoneyGold,
+                    trackColor          = BeeColors.HoneyGold.copy(alpha = 0.2f)
+                )
+                Spacer(Modifier.height(18.dp))
+
+                when (step) {
+                    // ── Step 1: API type ──────────────────────────────────────
+                    0 -> {
+                        Text("What type of API does this site use?", fontWeight = FontWeight.SemiBold, color = textColor, fontSize = 14.sp)
+                        Spacer(Modifier.height(12.dp))
+                        listOf(
+                            "v1"      to ("V1 JSON API"    to "Sites with /searching?q= endpoint\ne.g. 123moviesfree, fmovies, yesmovies"),
+                            "stremio" to ("Stremio Addon"  to "Stremio catalog addons\ne.g. Cinemeta")
+                        ).forEach { (type, info) ->
+                            val (label, desc) = info
+                            val selected = apiType == type
+                            Card(
+                                modifier  = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { apiType = type },
+                                shape     = RoundedCornerShape(10.dp),
+                                colors    = CardDefaults.cardColors(
+                                    containerColor = if (selected) BeeColors.DeepAmber.copy(alpha = 0.15f) else cardBg
+                                ),
+                                border    = androidx.compose.foundation.BorderStroke(
+                                    if (selected) 2.dp else 1.dp,
+                                    if (selected) BeeColors.DeepAmber else BeeColors.HoneyGold.copy(alpha = 0.3f)
+                                )
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(12.dp)) {
+                                    RadioButton(
+                                        selected = selected, onClick = { apiType = type },
+                                        colors = RadioButtonDefaults.colors(selectedColor = BeeColors.DeepAmber)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    Column {
+                                        Text(label, fontWeight = FontWeight.Bold, color = textColor, fontSize = 13.sp)
+                                        Text(desc, fontSize = 11.sp, color = textColor.copy(alpha = 0.65f))
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ── Step 2: Search API URL ────────────────────────────────
+                    1 -> {
+                        Text(
+                            if (apiType == "stremio") "Stremio Addon Base URL" else "Search API URL",
+                            fontWeight = FontWeight.Bold, color = textColor, fontSize = 14.sp
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            if (apiType == "stremio")
+                                "The base URL of the Stremio addon — no placeholder needed.\ne.g. https://v3-cinemeta.strem.io"
+                            else
+                                "Type the full search URL and put DVORA exactly where the movie/show title should go.",
+                            fontSize = 11.sp, color = textColor.copy(alpha = 0.6f)
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedTextField(
+                            value         = apiUrl,
+                            onValueChange = { apiUrl = it },
+                            label         = { Text(if (apiType == "stremio") "Addon Base URL" else "API URL  (use DVORA as placeholder)") },
+                            placeholder   = {
+                                Text(
+                                    if (apiType == "stremio") "https://v3-cinemeta.strem.io"
+                                    else "https://ww1.yesmovies.ag/searching?q=DVORA&limit=40",
+                                    color = textColor.copy(alpha = 0.35f)
+                                )
+                            },
+                            modifier      = Modifier.fillMaxWidth(),
+                            singleLine    = true,
+                            colors        = beeTextFieldColors()
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        // Live preview
+                        val previewQuery = "the+matrix"
+                        val previewApiUrl = if (apiUrl.isBlank())
+                            if (apiType == "stremio") "https://addon.strem.io" else "https://your-site.com/searching?q=DVORA&limit=40"
+                        else apiUrl
+                        Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = cardBg)) {
+                            Column(Modifier.padding(10.dp)) {
+                                Text("📡 Dvora will call:", fontSize = 11.sp, color = BeeColors.DeepAmber, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.height(3.dp))
+                                Text(
+                                    if (apiType == "stremio")
+                                        "$previewApiUrl/catalog/movie/top/search=$previewQuery.json"
+                                    else
+                                        previewApiUrl.replace("DVORA", previewQuery),
+                                    fontSize = 10.sp, color = textColor.copy(alpha = 0.65f), fontFamily = FontFamily.Monospace
+                                )
+                                if (apiType == "v1" && apiUrl.isNotBlank() && !apiUrl.contains("DVORA")) {
+                                    Spacer(Modifier.height(6.dp))
+                                    Text("⚠️ Add DVORA somewhere in the URL", fontSize = 10.sp, color = BeeColors.PollenOrange, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                    }
+
+                    // ── Step 3: Landing URL ───────────────────────────────────
+                    2 -> {
+                        Text("Landing URL", fontWeight = FontWeight.Bold, color = textColor, fontSize = 14.sp)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "The link Dvora opens when a match is found.\nPut DVORA where the title goes — this URL is completely independent from the search API above.\nLeave empty to reuse the search API URL.",
+                            fontSize = 11.sp, color = textColor.copy(alpha = 0.6f)
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedTextField(
+                            value         = landingUrl,
+                            onValueChange = { landingUrl = it },
+                            label         = { Text("Landing URL  (use DVORA as placeholder, optional)") },
+                            placeholder   = { Text("https://yesmovies.ag/search/?q=DVORA", color = textColor.copy(alpha = 0.35f)) },
+                            modifier      = Modifier.fillMaxWidth(),
+                            singleLine    = true,
+                            colors        = beeTextFieldColors()
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        val previewQuery2 = "the+matrix"
+                        val effectiveLanding = landingUrl.ifBlank { apiUrl.ifBlank { "https://your-site.com/search/?q=DVORA" } }
+                        val isSplit = landingUrl.isNotBlank() && landingUrl.trimEnd('/') != apiUrl.trimEnd('/')
+                        Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = cardBg)) {
+                            Column(Modifier.padding(10.dp)) {
+                                Text("🔗 Match will open:", fontSize = 11.sp, color = BeeColors.HoneyGold, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.height(3.dp))
+                                Text(
+                                    effectiveLanding.replace("DVORA", previewQuery2),
+                                    fontSize = 10.sp, color = textColor.copy(alpha = 0.65f), fontFamily = FontFamily.Monospace
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                if (isSplit) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text("✅", fontSize = 12.sp)
+                                        Spacer(Modifier.width(4.dp))
+                                        Text(
+                                            "Split mode — search API and landing site are different",
+                                            fontSize = 10.sp, color = beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark),
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
+                                } else if (landingUrl.isBlank()) {
+                                    Text(
+                                        "ℹ️ Reusing the search API URL as landing link",
+                                        fontSize = 10.sp, color = textColor.copy(alpha = 0.5f)
+                                    )
+                                }
+                                if (landingUrl.isNotBlank() && !landingUrl.contains("DVORA")) {
+                                    Spacer(Modifier.height(4.dp))
+                                    Text("⚠️ Add DVORA somewhere in the URL", fontSize = 10.sp, color = BeeColors.PollenOrange, fontWeight = FontWeight.SemiBold)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (step > 0) {
+                    TextButton(onClick = { step-- }) {
+                        Text("← Back", color = BeeColors.DeepAmber)
+                    }
+                    Spacer(Modifier.width(4.dp))
+                }
+                if (step < totalSteps - 1) {
+                    Button(
+                        onClick  = { step++ },
+                        enabled  = step == 0 || apiUrl.isNotBlank(),
+                        colors   = ButtonDefaults.buttonColors(containerColor = BeeColors.DeepAmber),
+                        shape    = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("Next →", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    Button(
+                        onClick  = {
+                            if (apiUrl.isNotBlank()) onSave(ApiEntry(
+                                type       = apiType,
+                                apiUrl     = apiUrl.trimEnd('/'),
+                                landingUrl = landingUrl.trimEnd('/').ifBlank { null }
+                            ))
+                        },
+                        enabled  = apiUrl.isNotBlank(),
+                        colors   = ButtonDefaults.buttonColors(containerColor = BeeColors.HoneyGold),
+                        shape    = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("💾 Save", color = BeeColors.BeeBlack, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = textColor.copy(alpha = 0.6f))
+            }
+        }
+    )
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1662,7 +2049,7 @@ fun loadSources(context: Context, key: String): List<String> {
                 "+https://www.lookmovie2.to/shows/search/?q=", "+https://hydrahd.ru/index.php?menu=search&query=",
                 "+https://1movies.bz/browser?keyword=", "+https://yflix.to/browser?keyword=",
                 "+https://hianime.city/?s=", "+https://gogoanime.by/?s=",
-                 "+https://hianime.dk/filter?keyword="
+                "+https://hianime.dk/filter?keyword="
             )
             "movies" -> listOf(
                 "+https://ww25.soap2day.day/?s=", "+https://hydrahd.ru/index.php?menu=search&query=",
@@ -1670,11 +2057,14 @@ fun loadSources(context: Context, key: String): List<String> {
                 "+https://www.lookmovie2.to/movies/search/?q=", "+https://1movies.bz/browser?keyword=", "+https://yflix.to/browser?keyword="
             )
             "manual_checks" -> listOf(
-                 "https://67movies.net/", "https://popcornmovies.org/"
+                "https://67movies.net/", "https://popcornmovies.org/"
 
             )
             "api_sites" -> listOf(
-                "v1:https://ww8.123moviesfree.net", "v1:https://ww4.fmovies.co","v1:https://ww1.yesmovies.ag", "stremio:https://v3-cinemeta.strem.io"
+                "v1:https://ww8.123moviesfree.net/searching?q=DVORA&limit=40&offset=0|https://ww8.123moviesfree.net/search/?q=DVORA",
+                "v1:https://ww4.fmovies.co/searching?q=DVORA&limit=40&offset=0|https://ww4.fmovies.co/search/?q=DVORA",
+                "v1:https://ww1.yesmovies.ag/searching?q=DVORA&limit=40&offset=0|https://ww1.yesmovies.ag/search.html?q=DVORA",
+                "stremio:https://v3-cinemeta.strem.io"
             )
             "exclusions" -> listOf(
                 "addtoany.com", "facebook.com", "twitter.com", "reddit.com",

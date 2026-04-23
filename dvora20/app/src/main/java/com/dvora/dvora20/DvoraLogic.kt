@@ -351,14 +351,35 @@ class DvoraScanner {
         return@withContext listOf(SearchResult(fallbackUrl, false, foundDetails = "No Stremio matches for '$searchTerm'"))
     }
 
-    suspend fun scanV1(baseUrl: String, searchTerm: String): List<SearchResult> = withContext(Dispatchers.IO) {
-        val variants = listOf(" " to "space", "-" to "dash", "+" to "plus")
-        val seenNames = mutableSetOf<String>()
+    /**
+     * Scan a V1 JSON API site using full URL templates.
+     * Put "DVORA" anywhere in the URL where the search query should go.
+     *
+     * [apiUrlTemplate]     – e.g. "https://ww1.yesmovies.ag/searching?q=DVORA&limit=40&offset=0"
+     * [landingUrlTemplate] – e.g. "https://yesmovies.ag/search/?q=DVORA"  (fully independent)
+     *                        Null → reuse the API URL template as the result link.
+     */
+    suspend fun scanV1(
+        apiUrlTemplate:     String,
+        searchTerm:         String,
+        landingUrlTemplate: String? = null
+    ): List<SearchResult> = withContext(Dispatchers.IO) {
+        val hasApiPlaceholder     = apiUrlTemplate.contains("DVORA")
+        val hasLandingPlaceholder = landingUrlTemplate?.contains("DVORA") == true
+
+        val separators = listOf("+", "-", " ")
+        val seenNames  = mutableSetOf<String>()
         val allMatches = mutableListOf<SearchResult>()
 
-        for ((sep, _) in variants) {
+        for (sep in separators) {
             val query = searchTerm.replace(" ", sep)
-            val apiURL = "$baseUrl/searching?q=$query&limit=40&offset=0"
+
+            // Build the API search URL
+            val apiURL = if (hasApiPlaceholder)
+                apiUrlTemplate.replace("DVORA", query)
+            else
+                "$apiUrlTemplate/searching?q=$query&limit=40&offset=0"   // legacy bare-base fallback
+
             try {
                 val request = Request.Builder().url(apiURL).header("User-Agent", userAgent).build()
                 client.newCall(request).execute().use { response ->
@@ -371,7 +392,13 @@ class DvoraScanner {
                         if (key in seenNames) return@forEach
                         if (titleMatches(item.t, searchTerm)) {
                             seenNames.add(key)
-                            val finalUrl = "$baseUrl/search/?q=$query"
+                            // Landing URL is completely independent from the API URL
+                            val finalUrl = when {
+                                hasLandingPlaceholder  -> landingUrlTemplate!!.replace("DVORA", query)
+                                landingUrlTemplate != null -> "$landingUrlTemplate/search/?q=$query"  // legacy
+                                hasApiPlaceholder      -> apiUrlTemplate.replace("DVORA", query)      // reuse api template
+                                else                   -> "$apiUrlTemplate/search/?q=$query"          // legacy
+                            }
                             allMatches.add(SearchResult(finalUrl, true, foundDetails = "Match: ${item.t} (${item.y ?: ""})"))
                         }
                     }
@@ -380,7 +407,15 @@ class DvoraScanner {
         }
 
         if (allMatches.isNotEmpty()) return@withContext allMatches
-        val fallbackUrl = "$baseUrl/searching?q=${searchTerm.replace(" ", "+")}&limit=40&offset=0"
+
+        // No matches — point at the landing URL so user can check manually
+        val fbQuery = searchTerm.replace(" ", "+")
+        val fallbackUrl = when {
+            hasLandingPlaceholder  -> landingUrlTemplate!!.replace("DVORA", fbQuery)
+            landingUrlTemplate != null -> "$landingUrlTemplate/search/?q=$fbQuery"
+            hasApiPlaceholder      -> apiUrlTemplate.replace("DVORA", fbQuery)
+            else                   -> "$apiUrlTemplate/searching?q=$fbQuery&limit=40&offset=0"
+        }
         return@withContext listOf(SearchResult(fallbackUrl, false, foundDetails = "No v1 matches for '$searchTerm'"))
     }
 
