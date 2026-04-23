@@ -127,7 +127,7 @@ function buildStreamCard(stream) {
       ${isDRM ? `<div class="drm-notice">This stream is protected by DRM (Widevine/PlayReady). It cannot be downloaded.</div>` : ''}
       <div class="stream-actions">
         <button class="btn btn-ghost btn-sm js-copy" data-id="${stream.id}">Copy URL</button>
-        ${!isDRM ? `<button class="btn btn-ghost btn-sm js-ffmpeg-cmd" data-id="${stream.id}">ffmpeg cmd</button>` : ''}
+
         ${downloadBtn}
       </div>
     </div>`;
@@ -247,7 +247,7 @@ async function downloadDASH(stream, variantIndex) {
     const blob = new Blob([data.buffer], { type: 'video/mp4' });
     await chrome.downloads.download({ url: URL.createObjectURL(blob), filename: outputName, saveAs: true });
   } catch (err) {
-    throw new Error(`DASH download via FFmpeg failed (${err.message}).\n\nTry using the "ffmpeg cmd" button to download via command line instead.`);
+    throw new Error(`DASH download via FFmpeg failed (${err.message}).`);
   }
 
   setProgress(100, 'Done!', '');
