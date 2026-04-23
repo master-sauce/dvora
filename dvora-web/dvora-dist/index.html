@@ -316,15 +316,18 @@ a.cu:hover{color:var(--hg);}
         <textarea class="cta" id="ta-manual" rows="12" placeholder="+https://example.com/search?q="></textarea>
         <div class="cfoot"><button class="savebtn" onclick="saveCfg('manual_checks.txt','ta-manual','ss-manual')">✓ Save</button><span class="ss" id="ss-manual"></span></div>
       </div>
+
       <div class="stabc" id="tab-api">
-        <div class="cdesc">One entry per line. Prefix selects API type:<br><br>
-          <code>v1:https://ww3.somesite.com</code> — <code>/searching?q=</code> JSON endpoint<br>
+        <div class="cdesc">One entry per line. Put <code>DVORA</code> where the search term goes.<br><br>
+          <code>v1:https://site.com/searching?q=DVORA&amp;limit=40&amp;offset=0</code> — V1 JSON API<br>
+          <code>v1:https://site.com/api?q=DVORA|https://site.com/search/?q=DVORA</code> — with separate landing URL<br>
           <code>stremio:https://v3-cinemeta.strem.io</code> — Stremio catalog endpoint<br><br>
-          Bare URL with no prefix is treated as <code>v1:</code>.</div>
-        <textarea class="cta" id="ta-api" rows="12" placeholder="stremio:https://v3-cinemeta.strem.io&#10;v1:https://ww3.somesite.com"></textarea>
+          Use <code>|</code> to split API search URL from landing URL. Bare URL treated as <code>v1:</code>.</div>
+        <textarea class="cta" id="ta-api" rows="12" placeholder="v1:https://site.com/searching?q=DVORA&limit=40&offset=0|https://site.com/search/?q=DVORA&#10;stremio:https://v3-cinemeta.strem.io"></textarea>
         <div class="cfoot"><button class="savebtn" onclick="saveCfg('api_sites.txt','ta-api','ss-api')">✓ Save</button><span class="ss" id="ss-api"></span></div>
       </div>
-      <div class="stabc" id="tab-exclusions">
+
+        <div class="stabc" id="tab-exclusions">
         <div class="cdesc">One pattern per line. Any link URL containing one of these strings will be <strong>skipped</strong> during scanning.<br>Lines starting with <code>//</code> are comments.</div>
         <textarea class="cta" id="ta-exclusions" rows="12" placeholder="facebook.com&#10;/login&#10;#comment"></textarea>
         <div class="cfoot"><button class="savebtn" onclick="saveCfg('exclusions.txt','ta-exclusions','ss-exclusions')">✓ Save</button><span class="ss" id="ss-exclusions"></span></div>

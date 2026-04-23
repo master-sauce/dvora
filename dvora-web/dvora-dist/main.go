@@ -45,7 +45,6 @@ type SearchResponse struct {
 	Results []SiteResult `json:"results"`
 }
 
-// IMDb suggestion API
 type ImdbResult struct {
 	ImdbID    string `json:"imdbId"`
 	Title     string `json:"title"`
@@ -71,7 +70,6 @@ type imdbImage struct {
 	ImageURL string `json:"imageUrl"`
 }
 
-// Wizdom search API item
 type wizdomItem struct {
 	Title   string `json:"title"`
 	TitleEn string `json:"title_en"`
@@ -79,21 +77,18 @@ type wizdomItem struct {
 	Type    string `json:"type"`
 }
 
-// Wizdom releases API — rich metadata per title.
-// Subs is RawMessage because movies return an array and TV returns a seasons object.
 type WizdomRelease struct {
 	Imdb        string          `json:"imdb"`
-	Title       string          `json:"title"`    // Hebrew title
-	TitleEn     string          `json:"title_en"` // English title
+	Title       string          `json:"title"`
+	TitleEn     string          `json:"title_en"`
 	Year        int             `json:"year"`
 	Rating      string          `json:"rating"`
 	Genres      string          `json:"genres"`
 	PosterSmall string          `json:"poster_small"`
-	Type        string          `json:"type"` // "movie" or "tv"
+	Type        string          `json:"type"`
 	Subs        json.RawMessage `json:"subs"`
 }
 
-// SubResult — returned to the frontend, includes rich Wizdom data
 type SubResult struct {
 	URL       string `json:"url"`
 	Found     bool   `json:"found"`
@@ -117,9 +112,7 @@ type SubResponse struct {
 }
 
 // ─── countSubs ────────────────────────────────────────────────────────────────
-// Movies → subs is an array of versions.
-// TV     → subs is a seasons object: { "1": {...}, "2": {...} }.
-// Returns the element/key count, or 0 if empty/unparseable.
+
 func countSubs(raw json.RawMessage) int {
 	if len(raw) == 0 {
 		return 0
@@ -136,7 +129,7 @@ func countSubs(raw json.RawMessage) int {
 	if json.Unmarshal(raw, &obj) == nil {
 		return len(obj)
 	}
-	return 1 // non-empty but opaque structure → at least 1
+	return 1
 }
 
 // ─── HTML parsing ─────────────────────────────────────────────────────────────
@@ -263,14 +256,13 @@ func scanSite(siteURL, searchTerm string) (bool, string, []LogEntry, error) {
 	return false, "No matches found", logs, nil
 }
 
-// titleMatches checks whether a result title contains the search term,
-// trying space, dash, and plus as separators in both the query and the title.
+// ─── titleMatches ─────────────────────────────────────────────────────────────
+
 func titleMatches(title, searchTerm string) bool {
 	t := strings.ToLower(title)
 	seps := []string{" ", "-", "+"}
 	for _, qs := range seps {
 		q := strings.ToLower(strings.ReplaceAll(searchTerm, " ", qs))
-		// Also normalise the title with each separator before comparing
 		for _, ts := range seps {
 			norm := strings.ReplaceAll(t, ts, qs)
 			if strings.Contains(norm, q) {
@@ -281,19 +273,35 @@ func titleMatches(title, searchTerm string) bool {
 	return false
 }
 
+// ─── parseAPILine ─────────────────────────────────────────────────────────────
+
+func parseAPILine(line string) (apiType, apiURL, landingURL string) {
+	switch {
+	case strings.HasPrefix(line, "stremio:"):
+		return "stremio", strings.TrimPrefix(line, "stremio:"), ""
+	default:
+		rest := strings.TrimPrefix(line, "v1:")
+		parts := strings.SplitN(rest, "|", 2)
+		land := ""
+		if len(parts) > 1 {
+			land = strings.TrimSpace(parts[1])
+		}
+		return "v1", strings.TrimSpace(parts[0]), land
+	}
+}
+
 // ─── Movie API (v1) ───────────────────────────────────────────────────────────
 
-func scanMovieAPI(baseURL, searchTerm string) (bool, []MovieMatch, []LogEntry, error) {
+func scanMovieAPI(apiTemplate, landingTemplate, searchTerm string) (bool, []MovieMatch, []LogEntry, error) {
 	var logs []LogEntry
 	add := func(lvl, msg string) { logs = append(logs, LogEntry{lvl, msg}) }
 
-	client := &http.Client{Timeout: 10 * time.Second}
+	hasAPIPlaceholder     := strings.Contains(apiTemplate, "DVORA")
+	hasLandingPlaceholder := landingTemplate != "" && strings.Contains(landingTemplate, "DVORA")
 
-	// Try space, dash, and plus variants of the search term
+	client := &http.Client{Timeout: 10 * time.Second}
 	variants := []struct{ sep, label string }{
-		{" ", "space"},
-		{"-", "dash"},
-		{"+", "plus"},
+		{" ", "space"}, {"-", "dash"}, {"+", "plus"},
 	}
 
 	seenNames := make(map[string]bool)
@@ -301,7 +309,12 @@ func scanMovieAPI(baseURL, searchTerm string) (bool, []MovieMatch, []LogEntry, e
 
 	for _, v := range variants {
 		q := strings.ReplaceAll(searchTerm, " ", v.sep)
-		apiURL := baseURL + "/searching?q=" + q + "&limit=40&offset=0"
+		var apiURL string
+		if hasAPIPlaceholder {
+			apiURL = strings.ReplaceAll(apiTemplate, "DVORA", q)
+		} else {
+			apiURL = apiTemplate + "/searching?q=" + q + "&limit=40&offset=0"
+		}
 		add("info", fmt.Sprintf("API GET %s [%s]", apiURL, v.label))
 
 		req, _ := http.NewRequest("GET", apiURL, nil)
@@ -332,7 +345,6 @@ func scanMovieAPI(baseURL, searchTerm string) (bool, []MovieMatch, []LogEntry, e
 		}
 		add("info", fmt.Sprintf("[%s] %d results", v.label, len(ar.Data)))
 
-		searchURL := baseURL + "/search/?q=" + q
 		for _, item := range ar.Data {
 			if len(allMatches) >= 10 {
 				break
@@ -343,7 +355,18 @@ func scanMovieAPI(baseURL, searchTerm string) (bool, []MovieMatch, []LogEntry, e
 			}
 			if titleMatches(item.T, searchTerm) {
 				seenNames[key] = true
-				allMatches = append(allMatches, MovieMatch{Name: item.T, URL: searchURL})
+				var matchURL string
+				switch {
+				case hasLandingPlaceholder:
+					matchURL = strings.ReplaceAll(landingTemplate, "DVORA", q)
+				case landingTemplate != "":
+					matchURL = landingTemplate + "/search/?q=" + q
+				case hasAPIPlaceholder:
+					matchURL = strings.ReplaceAll(apiTemplate, "DVORA", q)
+				default:
+					matchURL = apiTemplate + "/search/?q=" + q
+				}
+				allMatches = append(allMatches, MovieMatch{Name: item.T, URL: matchURL})
 				add("match", fmt.Sprintf(`✓ [%s] "%s" (%d)`, v.label, item.T, item.Y))
 			} else {
 				add("skip", fmt.Sprintf(`  [%s] no match: "%s"`, v.label, item.T))
@@ -371,12 +394,8 @@ func scanStremio(baseURL, searchTerm, mode string) (bool, []MovieMatch, []LogEnt
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
-
-	// Try space, dash, and plus variants of the search term
 	variants := []struct{ sep, label string }{
-		{" ", "space"},
-		{"-", "dash"},
-		{"+", "plus"},
+		{" ", "space"}, {"-", "dash"}, {"+", "plus"},
 	}
 
 	seenNames := make(map[string]bool)
@@ -449,7 +468,7 @@ func scanStremio(baseURL, searchTerm, mode string) (bool, []MovieMatch, []LogEnt
 	return false, nil, logs, nil
 }
 
-// ─── IMDb suggestion API ─────────────────────────────────────────────────────
+// ─── IMDb suggestion API ──────────────────────────────────────────────────────
 
 func searchIMDb(searchTerm string) ([]ImdbResult, error) {
 	q := strings.ToLower(strings.TrimSpace(searchTerm))
@@ -518,25 +537,15 @@ func searchIMDb(searchTerm string) ([]ImdbResult, error) {
 }
 
 // ─── Subtitle search ──────────────────────────────────────────────────────────
-// Step 1 — collect candidate IMDb IDs from Wizdom search + IMDb suggestion API.
-// Step 2 — verify each candidate against wizdom.xyz/api/releases/{id}:
-//   - Uses a no-redirect client — Wizdom returns 3xx with JSON body for TV shows.
-//     Following the redirect would lose the response body.
-//   - 4xx / 5xx → skip (title has no data on Wizdom).
-//   - Empty / null body → skip.
-//   - Non-empty body → confirmed. Parse WizdomRelease for rich metadata.
-//
-// The URL path (tv/movie) always comes from the user's mode toggle, never from
-// the release's own type field (which can be null or inconsistent).
+
 func searchSubtitles(searchTerm, mode string) SubResponse {
 	typePath := "tv"
 	if mode == "movies" {
 		typePath = "movie"
 	}
 
-	wizdomIds := make(map[string]string) // imdbId → display title
+	wizdomIds := make(map[string]string)
 
-	// ── Source A: Wizdom search API ───────────────────────────────────────────
 	wizdomAPIURL := "https://wizdom.xyz/api/search?search=" + url.QueryEscape(searchTerm) + "&page=0"
 	func() {
 		req, err := http.NewRequest("GET", wizdomAPIURL, nil)
@@ -578,7 +587,6 @@ func searchSubtitles(searchTerm, mode string) SubResponse {
 		}
 	}()
 
-	// ── Source B: IMDb suggestion API ─────────────────────────────────────────
 	if imdbResults, err := searchIMDb(searchTerm); err == nil {
 		for _, r := range imdbResults {
 			if _, exists := wizdomIds[r.ImdbID]; !exists {
@@ -594,8 +602,6 @@ func searchSubtitles(searchTerm, mode string) SubResponse {
 		}
 	}
 
-	// ── Step 2: verify each candidate via /api/releases/{imdbId} ─────────────
-	// No-redirect client: Wizdom sends HTTP 3xx for TV with the JSON in the body.
 	relClient := &http.Client{
 		Timeout: 10 * time.Second,
 		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
@@ -628,18 +634,15 @@ func searchSubtitles(searchTerm, mode string) SubResponse {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
 
-			// Skip error responses
 			if resp.StatusCode >= 400 {
 				return
 			}
 
-			// Skip genuinely empty responses
 			trimmed := strings.TrimSpace(string(body))
 			if trimmed == "" || trimmed == "null" || trimmed == "[]" || trimmed == "{}" {
 				return
 			}
 
-			// Parse rich metadata — best effort, never blocks the result
 			var release WizdomRelease
 			json.Unmarshal(body, &release)
 
@@ -666,7 +669,7 @@ func searchSubtitles(searchTerm, mode string) SubResponse {
 				Rating:    release.Rating,
 				Genres:    release.Genres,
 				PosterURL: release.PosterSmall,
-				Type:      typePath, // always from user toggle, not from release.Type
+				Type:      typePath,
 				SubsCount: countSubs(release.Subs),
 			}
 		}(imdbID, displayTitle)
@@ -814,15 +817,16 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 			go func(i int, line string) {
 				defer wg.Done()
 				var sr SiteResult
-				if strings.HasPrefix(line, "stremio:") {
-					baseURL := strings.TrimPrefix(line, "stremio:")
+				apiType, apiUrlTmpl, landingUrlTmpl := parseAPILine(line)
+				qe := strings.ReplaceAll(q, " ", "+")
+
+				if apiType == "stremio" {
 					mt := "series"
 					if mode == "movies" {
 						mt = "movie"
 					}
-					qe := strings.ReplaceAll(q, " ", "+")
-					dispURL := baseURL + "/catalog/" + mt + "/top/search=" + qe + ".json"
-					found, matches, logs, err := scanStremio(baseURL, q, mode)
+					dispURL := apiUrlTmpl + "/catalog/" + mt + "/top/search=" + qe + ".json"
+					found, matches, logs, err := scanStremio(apiUrlTmpl, q, mode)
 					mu := ""
 					if len(matches) > 0 {
 						mu = matches[0].URL
@@ -833,10 +837,13 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 						sr.Logs = append(sr.Logs, LogEntry{"warn", "Error: " + err.Error()})
 					}
 				} else {
-					baseURL := strings.TrimPrefix(line, "v1:")
-					qe := strings.ReplaceAll(q, " ", "+")
-					dispURL := baseURL + "/searching?q=" + qe + "&limit=40&offset=0"
-					found, matches, logs, err := scanMovieAPI(baseURL, q)
+					var dispURL string
+					if strings.Contains(apiUrlTmpl, "DVORA") {
+						dispURL = strings.ReplaceAll(apiUrlTmpl, "DVORA", qe)
+					} else {
+						dispURL = apiUrlTmpl + "/searching?q=" + qe + "&limit=40&offset=0"
+					}
+					found, matches, logs, err := scanMovieAPI(apiUrlTmpl, landingUrlTmpl, q)
 					mu := ""
 					if len(matches) > 0 {
 						mu = matches[0].URL
@@ -862,20 +869,12 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 	if len(manLines) > 0 {
 		send(map[string]string{"event": "section_start", "section": "manual", "title": "Manual Checks"})
 		for _, line := range manLines {
-			var fi, base string
-			switch {
-			case strings.HasPrefix(line, "+"):
-				fi = strings.ReplaceAll(q, " ", "+")
-				base = line[1:]
-			case strings.HasPrefix(line, "-"):
-				fi = strings.ReplaceAll(q, " ", "-")
-				base = line[1:]
-			default:
-				fi = q
-				base = line
+			manURL := line
+			if strings.HasPrefix(line, "+") || strings.HasPrefix(line, "-") {
+				manURL = line[1:]
 			}
 			sr := SiteResult{
-				URL:  base + fi,
+				URL:  manURL,
 				Type: "manual",
 				Logs: []LogEntry{{"info", "Manual check — open in browser to verify"}},
 			}
@@ -981,8 +980,6 @@ func main() {
 			"addtoany.com", "facebook.com", "twitter.com", "reddit.com",
 			"pinterest.com", "whatsapp.com", "t.me", "mailto:",
 			"/login", "/register", "/signup", "/feed", "#", "/filter", "/search", "/browser", "/?s=",
-			"// This is a comment line",
-			"// Another comment",
 		}, "\n")
 		os.WriteFile("exclusions.txt", []byte(defaults), 0644)
 		log.Printf("Created exclusions.txt with defaults")

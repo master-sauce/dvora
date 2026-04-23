@@ -1,4 +1,4 @@
-https://ww4.fmovies.co
-https://ww8.123moviesfree.net
-https://ww1.yesmovies.ag
+v1:https://ww8.123moviesfree.net/searching?q=DVORA&limit=40&offset=0|https://ww8.123moviesfree.net/search/?q=DVORA
+v1:https://ww4.fmovies.co/searching?q=DVORA&limit=40&offset=0|https://ww4.fmovies.co/search/?q=DVORA
+v1:https://ww1.yesmovies.ag/searching?q=DVORA&limit=40&offset=0|https://ww1.yesmovies.ag/search.html?q=DVORA
 stremio:https://v3-cinemeta.strem.io
