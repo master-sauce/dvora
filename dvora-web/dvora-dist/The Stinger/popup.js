@@ -127,7 +127,6 @@ function buildStreamCard(stream) {
       ${isDRM ? `<div class="drm-notice">This stream is protected by DRM (Widevine/PlayReady). It cannot be downloaded.</div>` : ''}
       <div class="stream-actions">
         <button class="btn btn-ghost btn-sm js-copy" data-id="${stream.id}">Copy URL</button>
-
         ${downloadBtn}
       </div>
     </div>`;
@@ -258,8 +257,18 @@ async function downloadDASH(stream, variantIndex) {
 
 async function downloadHLS(stream, variantIndex) {
   let targetUrl = stream.url;
+  let audioUrl  = null;
+
   if (stream.isMaster && stream.variants?.length) {
     targetUrl = (stream.variants[variantIndex] || stream.variants[0]).url;
+    try {
+      const masterResp = await fetch(stream.url, { signal: abortController.signal });
+      if (masterResp.ok) {
+        const masterText = await masterResp.text();
+        audioUrl = parseBestAudioRendition(masterText, stream.url);
+        if (audioUrl) console.log('Found separate audio track:', audioUrl);
+      }
+    } catch {}
   }
 
   setProgress(2, 'Fetching playlist…', '');
@@ -275,9 +284,52 @@ async function downloadHLS(stream, variantIndex) {
     throw new Error(`No segments found in playlist.\n\nPlaylist preview:\n${playlistResult.rawText?.substring(0, 500) || '(empty)'}`);
   }
 
-  currentDownload = { streamId: stream.id, stream, total: segments.length, done: 0, failed: 0 };
+  let audioSegments = null;
+  if (audioUrl) {
+    try {
+      const audioResult = await fetchPlaylist(audioUrl, abortController.signal, stream.fetchHeaders);
+      if (audioResult?.segments?.length) {
+        audioSegments = audioResult.segments;
+        console.log(`Audio track: ${audioSegments.length} segments`);
+      }
+    } catch (e) {
+      console.warn('Audio playlist fetch failed, using embedded audio:', e);
+    }
+  }
 
-  await downloadAndMergeSegments({ ...stream, segments, encryption, initSegment });
+  currentDownload = {
+    streamId: stream.id, stream,
+    total: segments.length + (audioSegments?.length || 0),
+    done: 0, failed: 0
+  };
+
+  await downloadAndMergeSegments({ ...stream, segments, encryption, initSegment, audioSegments });
+}
+
+// Parse EXT-X-MEDIA TYPE=AUDIO from master playlist
+function parseBestAudioRendition(masterText, masterBaseUrl) {
+  const lines       = masterText.split(/\r?\n/);
+  const renditions  = [];
+
+  for (const line of lines) {
+    if (!line.startsWith('#EXT-X-MEDIA')) continue;
+    const typeMatch = line.match(/TYPE=([^,^\r\n]+)/);
+    if (!typeMatch || typeMatch[1].trim() !== 'AUDIO') continue;
+    const uriMatch     = line.match(/URI="([^"]+)"/);
+    const langMatch    = line.match(/LANGUAGE="([^"]+)"/);
+    const defaultMatch = line.match(/DEFAULT=(YES|NO)/);
+    const nameMatch    = line.match(/NAME="([^"]+)"/);
+    if (!uriMatch) continue;
+    renditions.push({
+      url:       resolveUrl(uriMatch[1], masterBaseUrl),
+      language:  langMatch?.[1]  || '',
+      isDefault: defaultMatch?.[1] === 'YES',
+      name:      nameMatch?.[1]  || ''
+    });
+  }
+
+  if (!renditions.length) return null;
+  return (renditions.find(r => r.isDefault) || renditions[0]).url;
 }
 
 async function fetchPlaylist(url, signal, extraHeaders = {}) {
@@ -300,37 +352,36 @@ async function fetchPlaylist(url, signal, extraHeaders = {}) {
 const CONCURRENT = 6;
 
 async function downloadAndMergeSegments(stream) {
-  const { segments, initSegment } = stream;
-  const isEncrypted = stream.encryption?.method === 'AES-128';
-  const signal      = abortController.signal;
+  const { segments, initSegment, audioSegments } = stream;
+  const isEncrypted   = stream.encryption?.method === 'AES-128';
+  const hasAudioTrack = audioSegments?.length > 0;
+  const signal        = abortController.signal;
+  const totalSegs     = segments.length + (hasAudioTrack ? audioSegments.length : 0);
 
-  setProgress(3, isEncrypted ? 'Fetching keys…' : 'Starting…', `${segments.length} segments`);
+  setProgress(3, isEncrypted ? 'Fetching keys…' : 'Starting…',
+    `${segments.length} segs${hasAudioTrack ? ' + audio track' : ''}`);
 
   const keys         = isEncrypted ? await fetchKeys(stream) : new Map();
   const segmentFiles = new Array(segments.length).fill(null);
+  const audioFiles   = hasAudioTrack ? new Array(audioSegments.length).fill(null) : [];
 
+  // fMP4 init segment
   if (initSegment) {
     try {
-      setProgress(4, 'Fetching init segment…', '');
       const initData = await downloadWithRetry(initSegment, signal);
       await ffmpeg.writeFile('init.mp4', new Uint8Array(initData));
     } catch (e) { console.warn('Init segment failed:', e); }
   }
 
+  // ── Download video segments ─────────────────────────────────────────────────
   for (let i = 0; i < segments.length; i += CONCURRENT) {
     if (signal.aborted) throw Object.assign(new Error('Cancelled'), { name: 'AbortError' });
-
-    const batch = segments.slice(i, i + CONCURRENT).map((seg, offset) => ({ seg, index: i + offset }));
-
+    const batch = segments.slice(i, i + CONCURRENT).map((seg, off) => ({ seg, index: i + off }));
     await Promise.all(batch.map(async ({ seg, index }) => {
       try {
-        let data;
-        if (seg.byteRange) {
-          const { length, offset } = seg.byteRange;
-          data = await fetchByteRange(seg.url, offset, offset + length - 1, signal);
-        } else {
-          data = await downloadWithRetry(seg.url, signal);
-        }
+        let data = seg.byteRange
+          ? await fetchByteRange(seg.url, seg.byteRange.offset, seg.byteRange.offset + seg.byteRange.length - 1, signal)
+          : await downloadWithRetry(seg.url, signal);
         if (isEncrypted && seg.key?.uri) data = await decryptSegment(data, seg.key, keys);
         const ext      = seg.url.match(/\.(m4s|mp4|ts|aac|mp3)(\?|$)/i)?.[1] || 'ts';
         const filename = `seg_${String(index).padStart(5, '0')}.${ext}`;
@@ -342,53 +393,113 @@ async function downloadAndMergeSegments(stream) {
         console.warn(`Seg ${index} failed:`, err.message);
         currentDownload.failed++;
       }
-
       const sofar = currentDownload.done + currentDownload.failed;
-      setProgress(
-        5 + Math.round((sofar / segments.length) * 55),
-        'Downloading segments…',
-        `${currentDownload.done} / ${segments.length} · ${currentDownload.failed} failed`
-      );
+      setProgress(5 + Math.round((sofar / totalSegs) * 52), 'Downloading segments…',
+        `${currentDownload.done} / ${totalSegs} · ${currentDownload.failed} failed`);
     }));
   }
 
-  const downloaded = segmentFiles.filter(Boolean);
-  if (!downloaded.length) throw new Error('No segments downloaded successfully.');
-  if (currentDownload.failed / segments.length > 0.15) {
-    throw new Error(`Too many failures: ${currentDownload.failed}/${segments.length}`);
+  // ── Download audio segments ─────────────────────────────────────────────────
+  if (hasAudioTrack) {
+    for (let i = 0; i < audioSegments.length; i += CONCURRENT) {
+      if (signal.aborted) throw Object.assign(new Error('Cancelled'), { name: 'AbortError' });
+      const batch = audioSegments.slice(i, i + CONCURRENT).map((seg, off) => ({ seg, index: i + off }));
+      await Promise.all(batch.map(async ({ seg, index }) => {
+        try {
+          let data = await downloadWithRetry(seg.url, signal);
+          if (isEncrypted && seg.key?.uri) data = await decryptSegment(data, seg.key, keys);
+          const ext      = seg.url.match(/\.(m4s|mp4|ts|aac|mp3)(\?|$)/i)?.[1] || 'aac';
+          const filename = `aud_${String(index).padStart(5, '0')}.${ext}`;
+          await ffmpeg.writeFile(filename, new Uint8Array(data));
+          audioFiles[index] = filename;
+          currentDownload.done++;
+        } catch (err) {
+          if (err.name === 'AbortError') throw err;
+          console.warn(`Audio seg ${index} failed:`, err.message);
+          currentDownload.failed++;
+        }
+        const sofar = currentDownload.done + currentDownload.failed;
+        setProgress(5 + Math.round((sofar / totalSegs) * 52), 'Downloading audio track…',
+          `${currentDownload.done} / ${totalSegs}`);
+      }));
+    }
   }
 
-  setProgress(62, 'Merging…', `${downloaded.length} segments`);
+  const downloaded      = segmentFiles.filter(Boolean);
+  const downloadedAudio = audioFiles.filter(Boolean);
 
-  const concatEntries = [];
-  if (initSegment) {
-    try { await ffmpeg.readFile('init.mp4'); concatEntries.push(`file 'init.mp4'`); } catch {}
+  if (!downloaded.length) throw new Error('No video segments downloaded successfully.');
+  if (currentDownload.failed / totalSegs > 0.15)
+    throw new Error(`Too many failures: ${currentDownload.failed}/${totalSegs}`);
+
+  setProgress(58, 'Merging…', `${downloaded.length} segments`);
+
+  // ── Build ffconcat files with duration metadata ─────────────────────────────
+  // Using ffconcat v1.0 format with per-segment durations forces FFmpeg to
+  // synthesize clean sequential timestamps from declared durations rather than
+  // using the raw absolute TS timestamps (which cause playback stuttering).
+  const videoConcatLines = ['ffconcat version 1.0'];
+  try { await ffmpeg.readFile('init.mp4'); videoConcatLines.push(`file 'init.mp4'`); } catch {}
+  for (let i = 0; i < segmentFiles.length; i++) {
+    if (!segmentFiles[i]) continue;
+    videoConcatLines.push(`file '${segmentFiles[i]}'`);
+    if (segments[i]?.duration > 0) {
+      videoConcatLines.push(`duration ${segments[i].duration.toFixed(6)}`);
+    }
   }
-  concatEntries.push(...downloaded.map(f => `file '${f}'`));
-  await ffmpeg.writeFile('concat.txt', concatEntries.join('\n'));
-
-  setProgress(65, 'Converting to MP4…', 'Please wait…');
-
-  ffmpeg.on('progress', ({ progress }) => {
-    setProgress(Math.min(65 + Math.round((progress || 0) * 30), 95), 'Converting…');
-  });
+  await ffmpeg.writeFile('concat_video.txt', videoConcatLines.join('\n'));
 
   const outputName = `${sanitizeFilename(stream.title || 'video')}.mp4`;
 
-  await ffmpeg.exec([
-    '-f', 'concat', '-safe', '0',
-    '-i', 'concat.txt',
-    '-c', 'copy',
-    '-bsf:a', 'aac_adtstoasc',
-    '-movflags', '+faststart',
-    outputName
-  ]);
+  setProgress(62, 'Converting to MP4…', 'Please wait…');
+  ffmpeg.on('progress', ({ progress }) => {
+    setProgress(Math.min(62 + Math.round((progress || 0) * 33), 95), 'Converting…');
+  });
+
+  if (hasAudioTrack && downloadedAudio.length > 0) {
+    const audioConcatLines = ['ffconcat version 1.0'];
+    for (let i = 0; i < audioFiles.length; i++) {
+      if (!audioFiles[i]) continue;
+      audioConcatLines.push(`file '${audioFiles[i]}'`);
+      if (audioSegments[i]?.duration > 0) {
+        audioConcatLines.push(`duration ${audioSegments[i].duration.toFixed(6)}`);
+      }
+    }
+    await ffmpeg.writeFile('concat_audio.txt', audioConcatLines.join('\n'));
+
+    await ffmpeg.exec([
+      '-f', 'concat', '-safe', '0', '-i', 'concat_video.txt',
+      '-f', 'concat', '-safe', '0', '-i', 'concat_audio.txt',
+      '-map', '0:v:0',
+      '-map', '1:a:0',
+      '-c', 'copy',
+      '-bsf:a', 'aac_adtstoasc',
+      '-avoid_negative_ts', 'make_zero',
+      '-max_muxing_queue_size', '1024',
+      '-movflags', '+faststart',
+      outputName
+    ]);
+
+    ffmpeg.deleteFile('concat_audio.txt').catch(() => {});
+    for (const f of downloadedAudio) ffmpeg.deleteFile(f).catch(() => {});
+  } else {
+    await ffmpeg.exec([
+      '-f', 'concat', '-safe', '0',
+      '-i', 'concat_video.txt',
+      '-c', 'copy',
+      '-bsf:a', 'aac_adtstoasc',
+      '-avoid_negative_ts', 'make_zero',
+      '-max_muxing_queue_size', '1024',
+      '-movflags', '+faststart',
+      outputName
+    ]);
+  }
 
   setProgress(96, 'Saving…', '');
   const data = await ffmpeg.readFile(outputName);
 
   for (const f of downloaded) ffmpeg.deleteFile(f).catch(() => {});
-  ffmpeg.deleteFile('concat.txt').catch(() => {});
+  ffmpeg.deleteFile('concat_video.txt').catch(() => {});
   ffmpeg.deleteFile('init.mp4').catch(() => {});
   ffmpeg.deleteFile(outputName).catch(() => {});
 
