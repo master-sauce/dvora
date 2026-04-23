@@ -29,7 +29,6 @@
     }
   ],
   "action": {
-    "default_popup": "popup.html",
     "default_title": "Dvora's Stinger"
   },
   "web_accessible_resources": [

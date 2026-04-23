@@ -1,8 +1,20 @@
 const streamStore = new Map();
 const seenUrls = new Set();
-const tabRequests = new Map(); // tabId -> Set of recent request headers
+const tabRequests = new Map();
 
 console.log('Background script started');
+
+// ── Open popup as persistent window ──────────────────────────────────────────
+
+chrome.action.onClicked.addListener(() => {
+  chrome.windows.create({
+    url: chrome.runtime.getURL('popup.html'),
+    type: 'popup',
+    width: 440,
+    height: 680,
+    focused: true
+  });
+});
 
 // ── Request interception ───────────────────────────────────────────────────────
 
@@ -11,19 +23,14 @@ chrome.webRequest.onBeforeRequest.addListener(
     const url = details.url;
     const urlLower = url.toLowerCase();
 
-    // 1. HLS — classic .m3u8 and common variants
     if (isM3U8Url(urlLower)) {
       captureM3U8(details);
       return;
     }
-
-    // 2. DASH — MPD manifests
     if (isMpdUrl(urlLower)) {
       captureMPD(details);
       return;
     }
-
-    // 3. Direct video files (MP4, WebM, MKV, AVI, MOV, TS)
     if (isDirectVideoUrl(urlLower)) {
       captureDirectVideo(details);
       return;
@@ -43,11 +50,10 @@ chrome.webRequest.onHeadersReceived.addListener(
     const url = details.url;
     const urlLower = url.toLowerCase();
 
-    // Already handled by URL pattern
     if (isM3U8Url(urlLower) || isMpdUrl(urlLower)) return;
 
     if (
-      ct.includes('mpegurl') ||          // application/vnd.apple.mpegurl, application/x-mpegurl
+      ct.includes('mpegurl') ||
       ct.includes('x-mpegurl') ||
       ct.includes('application/hls') ||
       ct.includes('x-hls')
@@ -57,22 +63,16 @@ chrome.webRequest.onHeadersReceived.addListener(
       return;
     }
 
-    if (
-      ct.includes('dash+xml') ||         // application/dash+xml
-      ct.includes('mpd')
-    ) {
+    if (ct.includes('dash+xml') || ct.includes('mpd')) {
       console.log('DASH detected via Content-Type:', url, ct);
       captureMPD(details);
       return;
     }
 
-    // Catch video served as octet-stream or text/plain with video-like URL patterns
-    if (
-      ct.includes('octet-stream') || ct.includes('text/plain')
-    ) {
+    if (ct.includes('octet-stream') || ct.includes('text/plain')) {
       if (looksLikePlaylistUrl(urlLower)) {
         console.log('Possible playlist via octet-stream/text/plain:', url);
-        captureM3U8(details); // will validate #EXTM3U before storing
+        captureM3U8(details);
       }
     }
   },
@@ -85,7 +85,6 @@ chrome.webRequest.onHeadersReceived.addListener(
 function isM3U8Url(url) {
   if (url.includes('.m3u8')) return true;
   if (url.includes('m3u8')) return true;
-  // Common path patterns even without extension
   if (/\/(playlist|manifest|index|master|video|hls|stream)(\.php|\.aspx|\.m3u8)?(\?|$|\/)/i.test(url)) {
     return looksLikePlaylistUrl(url);
   }
@@ -117,7 +116,7 @@ function looksLikePlaylistUrl(url) {
   );
 }
 
-// ── M3U8 capture ─────────────────────────────────────────────────────────────
+// ── M3U8 capture ──────────────────────────────────────────────────────────────
 
 async function captureM3U8(details) {
   const normalizedUrl = normalizeUrl(details.url);
@@ -127,7 +126,6 @@ async function captureM3U8(details) {
   console.log('Processing M3U8:', details.url);
 
   try {
-    // Fetch with same Origin/Referer headers the page used, to avoid 403s
     const headers = buildFetchHeaders(details);
     const response = await fetch(details.url, { headers });
     if (!response.ok) {
@@ -139,7 +137,6 @@ async function captureM3U8(details) {
     console.log('M3U8 preview:', text.substring(0, 300));
 
     if (!text.includes('#EXTM3U')) {
-      // Might still be a redirect — log but don't store
       console.log('Not #EXTM3U, skipping');
       seenUrls.delete(normalizedUrl);
       return;
@@ -162,7 +159,6 @@ async function captureM3U8(details) {
       segmentCount: 0,
       totalDuration: 0,
       encryption: null,
-      // Store request headers so popup can replay them if needed
       fetchHeaders: headers
     };
 
@@ -178,7 +174,6 @@ async function captureM3U8(details) {
     }
 
     console.log(`Stored HLS: ${streamData.id} (${isMaster ? streamData.variants.length + ' variants' : streamData.segments.length + ' segments'})`);
-
     storeStream(streamData);
 
   } catch (error) {
@@ -245,7 +240,6 @@ function parseMPD(text, baseUrl) {
     isEncrypted = true;
   }
 
-  // Extract duration from mediaPresentationDuration
   const durMatch = text.match(/mediaPresentationDuration="PT([\d.]+H)?([\d.]+M)?([\d.]+S)?"/);
   if (durMatch) {
     const h = parseFloat(durMatch[1]) || 0;
@@ -254,7 +248,6 @@ function parseMPD(text, baseUrl) {
     totalDuration = h * 3600 + m * 60 + s;
   }
 
-  // Extract AdaptationSets with video
   const adaptationSets = [...text.matchAll(/<AdaptationSet([^>]*)>([\s\S]*?)<\/AdaptationSet>/g)];
   for (const [, attrs, content] of adaptationSets) {
     const mimeType = (attrs.match(/mimeType="([^"]+)"/) || content.match(/mimeType="([^"]+)"/))?.[1] || '';
@@ -263,11 +256,10 @@ function parseMPD(text, baseUrl) {
     const representations = [...content.matchAll(/<Representation([^>]*)>/g)];
     for (const [, repAttrs] of representations) {
       const bandwidth = parseInt(repAttrs.match(/bandwidth="(\d+)"/)?.[1] || '0');
-      const width = repAttrs.match(/width="(\d+)"/)?.[1];
+      const width  = repAttrs.match(/width="(\d+)"/)?.[1];
       const height = repAttrs.match(/height="(\d+)"/)?.[1];
-      const id = repAttrs.match(/id="([^"]+)"/)?.[1] || '';
+      const id     = repAttrs.match(/id="([^"]+)"/)?.[1] || '';
 
-      // Try to find base URL for this representation
       const baseUrlMatch = content.match(/<BaseURL>([^<]+)<\/BaseURL>/);
       const segUrl = baseUrlMatch ? resolveUrl(baseUrlMatch[1], baseUrl) : baseUrl;
 
@@ -294,7 +286,7 @@ async function captureDirectVideo(details) {
   seenUrls.add(normalizedUrl);
 
   const title = await getPageTitle(details.tabId);
-  const ext = details.url.match(/\.(mp4|webm|mkv|avi|mov|flv|wmv|ogv|m4v)/i)?.[1]?.toUpperCase() || 'VIDEO';
+  const ext   = details.url.match(/\.(mp4|webm|mkv|avi|mov|flv|wmv|ogv|m4v)/i)?.[1]?.toUpperCase() || 'VIDEO';
 
   const streamData = {
     id: 'stream_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
@@ -322,17 +314,15 @@ async function captureDirectVideo(details) {
 function parseMasterPlaylist(text, baseUrl, streamData) {
   const lines = text.split(/\r?\n/);
 
-  // Also parse EXT-X-MEDIA for audio tracks info
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     if (line.startsWith('#EXT-X-STREAM-INF')) {
-      const bandwidthMatch = line.match(/BANDWIDTH=(\d+)/);
+      const bandwidthMatch  = line.match(/BANDWIDTH=(\d+)/);
       const resolutionMatch = line.match(/RESOLUTION=(\d+x\d+)/);
-      const codecsMatch = line.match(/CODECS="([^"]+)"/);
-      const nameMatch = line.match(/NAME="([^"]+)"/);
-      const frameRateMatch = line.match(/FRAME-RATE=([\d.]+)/);
+      const codecsMatch     = line.match(/CODECS="([^"]+)"/);
+      const nameMatch       = line.match(/NAME="([^"]+)"/);
+      const frameRateMatch  = line.match(/FRAME-RATE=([\d.]+)/);
 
-      // Find next non-comment, non-empty line
       let nextLine = null;
       for (let j = i + 1; j < lines.length; j++) {
         const c = lines[j].trim();
@@ -341,12 +331,12 @@ function parseMasterPlaylist(text, baseUrl, streamData) {
 
       if (nextLine) {
         streamData.variants.push({
-          url: resolveUrl(nextLine, baseUrl),
-          bandwidth: bandwidthMatch ? parseInt(bandwidthMatch[1]) : null,
-          resolution: resolutionMatch ? resolutionMatch[1] : null,
-          codecs: codecsMatch ? codecsMatch[1] : null,
-          name: nameMatch ? nameMatch[1] : null,
-          frameRate: frameRateMatch ? parseFloat(frameRateMatch[1]) : null
+          url:        resolveUrl(nextLine, baseUrl),
+          bandwidth:  bandwidthMatch  ? parseInt(bandwidthMatch[1])   : null,
+          resolution: resolutionMatch ? resolutionMatch[1]            : null,
+          codecs:     codecsMatch     ? codecsMatch[1]                : null,
+          name:       nameMatch       ? nameMatch[1]                  : null,
+          frameRate:  frameRateMatch  ? parseFloat(frameRateMatch[1]) : null
         });
       }
     }
@@ -357,10 +347,9 @@ function parseMasterPlaylist(text, baseUrl, streamData) {
 
 function parseMediaPlaylist(text, baseUrl, streamData) {
   const lines = text.split(/\r?\n/);
-  let currentKey = null;
-  let seq = 0;
+  let currentKey      = null;
+  let seq             = 0;
   let byteRangeOffset = null;
-  let byteRangeBaseUrl = null;
 
   const seqMatch = text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/);
   if (seqMatch) seq = parseInt(seqMatch[1]);
@@ -370,14 +359,14 @@ function parseMediaPlaylist(text, baseUrl, streamData) {
     if (!line) continue;
 
     if (line.startsWith('#EXT-X-KEY')) {
-      const methodMatch = line.match(/METHOD=([^,\r\n]+)/);
-      const uriMatch = line.match(/URI="([^"]+)"/);
-      const ivMatch = line.match(/IV=0x([0-9a-fA-F]+)/);
+      const methodMatch = line.match(/METHOD=([^,^\r\n]+)/);
+      const uriMatch    = line.match(/URI="([^"]+)"/);
+      const ivMatch     = line.match(/IV=0x([0-9a-fA-F]+)/);
       const method = methodMatch ? methodMatch[1].trim() : 'NONE';
       currentKey = {
         method,
         uri: uriMatch ? resolveUrl(uriMatch[1], baseUrl) : null,
-        iv: ivMatch ? ivMatch[1] : null,
+        iv:  ivMatch  ? ivMatch[1] : null,
         sequence: seq
       };
       if (method !== 'NONE') streamData.encryption = currentKey;
@@ -388,24 +377,21 @@ function parseMediaPlaylist(text, baseUrl, streamData) {
       if (uriMatch) streamData.initSegment = resolveUrl(uriMatch[1], baseUrl);
     }
 
-    // Byte range support: segments are ranges within a single file
     if (line.startsWith('#EXT-X-BYTERANGE')) {
       const match = line.match(/#EXT-X-BYTERANGE:(\d+)(?:@(\d+))?/);
       if (match) {
         const length = parseInt(match[1]);
         const offset = match[2] !== undefined ? parseInt(match[2]) : (byteRangeOffset || 0);
         byteRangeOffset = offset + length;
-        // Will be associated with next segment
         streamData._nextByteRange = `${length}@${offset}`;
       }
     }
 
     if (line.startsWith('#EXTINF')) {
-      const durMatch = line.match(/#EXTINF:([^,\r\n]+)/);
+      const durMatch = line.match(/#EXTINF:([^,^\r\n]+)/);
       const duration = durMatch ? parseFloat(durMatch[1]) : 0;
 
-      // Also handle inline byte range on same EXTINF line: #EXTINF:10.0,\n#EXT-X-BYTERANGE...
-      let nextLine = null;
+      let nextLine        = null;
       let inlineByteRange = null;
 
       for (let j = i + 1; j < lines.length; j++) {
@@ -426,9 +412,9 @@ function parseMediaPlaylist(text, baseUrl, streamData) {
 
       if (nextLine) {
         const seg = {
-          url: resolveUrl(nextLine, baseUrl),
+          url:      resolveUrl(nextLine, baseUrl),
           duration,
-          key: currentKey?.method !== 'NONE' ? currentKey : null,
+          key:      currentKey?.method !== 'NONE' ? currentKey : null,
           sequence: seq++
         };
         if (inlineByteRange || streamData._nextByteRange) {
@@ -463,13 +449,10 @@ function isChildOfKnownMaster(url) {
 
 function buildFetchHeaders(details) {
   const headers = {};
-  // Pass Referer so servers don't 403 hotlink-protected streams
   if (details.tabId && details.tabId > 0) {
     try {
-      // We can't easily get the tab URL here synchronously,
-      // but the initiator gives us origin info
       if (details.initiator) {
-        headers['Origin'] = details.initiator;
+        headers['Origin']  = details.initiator;
         headers['Referer'] = details.initiator + '/';
       }
     } catch {}
@@ -486,9 +469,7 @@ function resolveUrl(url, baseUrl) {
     const base = new URL(baseUrl);
     if (url.startsWith('/')) return `${base.protocol}//${base.host}${url}`;
     return baseUrl.substring(0, baseUrl.lastIndexOf('/') + 1) + url;
-  } catch {
-    return url;
-  }
+  } catch { return url; }
 }
 
 function normalizeUrl(url) {
@@ -496,18 +477,14 @@ function normalizeUrl(url) {
     const u = new URL(url);
     u.search = '';
     return u.toString().toLowerCase();
-  } catch {
-    return url.toLowerCase();
-  }
+  } catch { return url.toLowerCase(); }
 }
 
 async function getPageTitle(tabId) {
   try {
     const tab = await chrome.tabs.get(tabId);
     return tab.title || 'Unknown Video';
-  } catch {
-    return 'Unknown Video';
-  }
+  } catch { return 'Unknown Video'; }
 }
 
 function storeStream(streamData) {
@@ -540,8 +517,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'videoDetected') {
     const { url, type, tabId } = request;
     const details = { url, tabId: sender.tab?.id || tabId || -1, initiator: request.initiator };
-    if (isM3U8Url(url.toLowerCase())) captureM3U8(details);
-    else if (isMpdUrl(url.toLowerCase())) captureMPD(details);
+    if (isM3U8Url(url.toLowerCase()))             captureM3U8(details);
+    else if (isMpdUrl(url.toLowerCase()))         captureMPD(details);
     else if (isDirectVideoUrl(url.toLowerCase())) captureDirectVideo(details);
     return true;
   }

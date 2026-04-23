@@ -39,7 +39,6 @@ body {
   position: relative;
 }
 
-/* Honeycomb grid overlay */
 body::before {
   content: '';
   position: fixed;
@@ -132,6 +131,14 @@ body > * { position: relative; z-index: 1; }
   color: var(--honey);
   border-color: var(--border-bright);
   box-shadow: 0 0 10px rgba(245,166,35,0.2);
+}
+
+/* Close button gets red hover */
+.icon-btn-close:hover {
+  background: rgba(255, 80, 80, 0.15);
+  color: #ff8080;
+  border-color: rgba(255, 80, 80, 0.35);
+  box-shadow: 0 0 10px rgba(255, 80, 80, 0.2);
 }
 
 /* ── Stats bar ── */
@@ -235,7 +242,6 @@ body > * { position: relative; z-index: 1; }
   position: relative;
 }
 
-/* Honey left accent stripe */
 .stream-card::before {
   content: '';
   position: absolute;
@@ -445,7 +451,6 @@ body > * { position: relative; z-index: 1; }
   overflow: hidden;
 }
 
-/* Bee stripe texture on button */
 .btn-primary::before {
   content: '';
   position: absolute;
@@ -551,7 +556,7 @@ body > * { position: relative; z-index: 1; }
   background: repeating-linear-gradient(
     90deg,
     var(--honey-light) 0px, var(--honey-light) 12px,
-    var(--honey-dark) 12px, var(--honey-dark) 16px
+    var(--honey-dark)  12px, var(--honey-dark)  16px
   );
   background-size: 16px 100%;
   border-radius: 3px;
@@ -561,7 +566,6 @@ body > * { position: relative; z-index: 1; }
   position: relative;
 }
 
-/* Glow at leading edge */
 .progress-fill::after {
   content: '';
   position: absolute;

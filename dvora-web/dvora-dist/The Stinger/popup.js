@@ -18,6 +18,7 @@ async function init() {
   document.getElementById('refreshBtn').addEventListener('click', loadStreams);
   document.getElementById('clearBtn').addEventListener('click', clearStreams);
   document.getElementById('cancelBtn').addEventListener('click', cancelDownload);
+  document.getElementById('closeBtn').addEventListener('click', () => window.close());
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.action === 'streamDetected') loadStreams();
   });
@@ -50,8 +51,8 @@ async function loadStreams() {
 }
 
 function displayStreams(streams) {
-  const list = document.getElementById('streamsList');
-  const dot = document.getElementById('statsDot');
+  const list      = document.getElementById('streamsList');
+  const dot       = document.getElementById('statsDot');
   const statsText = document.getElementById('statsText');
 
   statsText.textContent = streams.length === 0
@@ -75,7 +76,7 @@ function displayStreams(streams) {
 
 function streamTypeLabel(stream) {
   switch (stream.type) {
-    case 'HLS': return 'HLS';
+    case 'HLS':  return 'HLS';
     case 'DASH': return 'DASH';
     case 'MP4': case 'WEBM': case 'MKV': case 'AVI': case 'MOV': case 'FLV': case 'WMV': return stream.type;
     default: return stream.type || 'VIDEO';
@@ -83,26 +84,22 @@ function streamTypeLabel(stream) {
 }
 
 function buildStreamCard(stream) {
-  const isDRM = stream.encryption?.method === 'DRM';
-  const isEncrypted = !!stream.encryption && !isDRM;
-  const hasVariants = stream.isMaster && stream.variants?.length > 0;
-  const segCount = stream.segmentCount ?? 0;
+  const isDRM         = stream.encryption?.method === 'DRM';
+  const isEncrypted   = !!stream.encryption && !isDRM;
+  const hasVariants   = stream.isMaster && stream.variants?.length > 0;
+  const segCount      = stream.segmentCount ?? 0;
   const totalDuration = stream.totalDuration ?? 0;
-  const typeLabel = streamTypeLabel(stream);
+  const typeLabel     = streamTypeLabel(stream);
   const isDirectVideo = stream.isDirectVideo;
 
   const card = document.createElement('div');
-  card.className = 'stream-card';
+  card.className  = 'stream-card';
   card.dataset.id = stream.id;
 
   let encBadge = '';
-  if (isDRM) {
-    encBadge = `<span class="badge badge-drm">🔐 DRM</span>`;
-  } else if (isEncrypted) {
-    encBadge = `<span class="badge badge-encrypted">🔒 AES-128</span>`;
-  } else {
-    encBadge = `<span class="badge badge-clear">🔓 CLEAR</span>`;
-  }
+  if (isDRM)            encBadge = `<span class="badge badge-drm">🔐 DRM</span>`;
+  else if (isEncrypted) encBadge = `<span class="badge badge-encrypted">🔒 AES-128</span>`;
+  else                  encBadge = `<span class="badge badge-clear">🔓 CLEAR</span>`;
 
   const downloadBtn = isDRM
     ? `<button class="btn btn-primary js-download disabled-drm" data-id="${stream.id}" disabled title="DRM-protected — cannot download">🔐 DRM Protected</button>`
@@ -118,7 +115,6 @@ function buildStreamCard(stream) {
           ${encBadge}
         </div>
       </div>
-
       <div class="stream-meta">
         ${isDirectVideo
           ? `<span class="meta-item">Direct file</span>`
@@ -126,12 +122,9 @@ function buildStreamCard(stream) {
         ${totalDuration ? `<span class="meta-item">${formatDuration(totalDuration)}</span>` : ''}
         <span class="meta-item">${formatAge(stream.timestamp)}</span>
       </div>
-
       <div class="segment-track"><div class="segment-track-fill"></div></div>
-
       ${hasVariants && !isDRM ? buildQualitySelector(stream) : ''}
       ${isDRM ? `<div class="drm-notice">This stream is protected by DRM (Widevine/PlayReady). It cannot be downloaded.</div>` : ''}
-
       <div class="stream-actions">
         <button class="btn btn-ghost btn-sm js-copy" data-id="${stream.id}">Copy URL</button>
         ${!isDRM ? `<button class="btn btn-ghost btn-sm js-ffmpeg-cmd" data-id="${stream.id}">ffmpeg cmd</button>` : ''}
@@ -163,26 +156,22 @@ function buildQualitySelector(stream) {
 // ── Action handlers ────────────────────────────────────────────────────────────
 
 async function handleCopy(e, stream) {
-  const btn = e.currentTarget;
+  const btn      = e.currentTarget;
   const original = btn.textContent;
-  try {
-    await navigator.clipboard.writeText(stream.url);
-    btn.textContent = '✓ Copied';
-  } catch { btn.textContent = 'Failed'; }
+  try { await navigator.clipboard.writeText(stream.url); btn.textContent = '✓ Copied'; }
+  catch { btn.textContent = 'Failed'; }
   setTimeout(() => { btn.textContent = original; }, 1500);
 }
 
 async function handleFfmpegCmd(e, stream) {
-  const btn = e.currentTarget;
+  const btn      = e.currentTarget;
   const original = btn.textContent;
-  const url = (stream.isMaster && stream.variants?.length) ? stream.variants[0].url : stream.url;
-  const cmd = stream.type === 'HLS' || stream.type === 'DASH'
+  const url      = (stream.isMaster && stream.variants?.length) ? stream.variants[0].url : stream.url;
+  const cmd      = stream.type === 'HLS' || stream.type === 'DASH'
     ? `ffmpeg -i "${url}" -c copy -bsf:a aac_adtstoasc output.mp4`
     : `ffmpeg -i "${url}" -c copy output.mp4`;
-  try {
-    await navigator.clipboard.writeText(cmd);
-    btn.textContent = '✓ Copied';
-  } catch { btn.textContent = 'Failed'; }
+  try { await navigator.clipboard.writeText(cmd); btn.textContent = '✓ Copied'; }
+  catch { btn.textContent = 'Failed'; }
   setTimeout(() => { btn.textContent = original; }, 1500);
 }
 
@@ -195,7 +184,7 @@ async function handleDownload(streamId) {
   }
 
   const variantSelect = document.getElementById(`variant-${streamId}`);
-  const variantIndex = variantSelect ? parseInt(variantSelect.value, 10) : 0;
+  const variantIndex  = variantSelect ? parseInt(variantSelect.value, 10) : 0;
 
   const { stream } = await chrome.runtime.sendMessage({ action: 'getStream', streamId });
   if (!stream) { alert('Stream data not found. Try refreshing.'); return; }
@@ -205,13 +194,9 @@ async function handleDownload(streamId) {
   abortController = new AbortController();
 
   try {
-    if (stream.isDirectVideo) {
-      await downloadDirectVideo(stream);
-    } else if (stream.type === 'DASH') {
-      await downloadDASH(stream, variantIndex);
-    } else {
-      await downloadHLS(stream, variantIndex);
-    }
+    if (stream.isDirectVideo)        await downloadDirectVideo(stream);
+    else if (stream.type === 'DASH') await downloadDASH(stream, variantIndex);
+    else                             await downloadHLS(stream, variantIndex);
   } catch (err) {
     if (err.name !== 'AbortError') {
       console.error('Download error:', err);
@@ -233,9 +218,9 @@ async function downloadDirectVideo(stream) {
   });
 
   setProgress(92, 'Saving…', '');
-  const ext = stream.url.match(/\.(mp4|webm|mkv|mov|avi|flv)/i)?.[1] || 'mp4';
+  const ext        = stream.url.match(/\.(mp4|webm|mkv|mov|avi|flv)/i)?.[1] || 'mp4';
   const outputName = `${sanitizeFilename(stream.title || 'video')}.${ext}`;
-  const blob = new Blob([data], { type: `video/${ext}` });
+  const blob       = new Blob([data], { type: `video/${ext}` });
   await chrome.downloads.download({ url: URL.createObjectURL(blob), filename: outputName, saveAs: true });
   setProgress(100, 'Done!', '');
   setTimeout(hideDownloadPanel, 1200);
@@ -244,37 +229,24 @@ async function downloadDirectVideo(stream) {
 // ── DASH download ─────────────────────────────────────────────────────────────
 
 async function downloadDASH(stream, variantIndex) {
-  // For DASH, use the best available variant URL and let FFmpeg handle it
-  // FFmpeg natively understands MPD manifests
-  const variant = stream.variants?.[variantIndex] || stream.variants?.[0];
+  const variant  = stream.variants?.[variantIndex] || stream.variants?.[0];
   const inputUrl = variant?.url || stream.url;
 
   setProgress(10, 'Starting DASH download…', 'FFmpeg will process segments');
 
   const outputName = `${sanitizeFilename(stream.title || 'video')}.mp4`;
 
-  // FFmpeg can handle DASH manifests natively via network
-  // We write a small script to ffmpeg stdin
   ffmpeg.on('progress', ({ progress }) => {
     setProgress(Math.min(10 + Math.round((progress || 0) * 85), 95), 'Processing DASH…');
   });
 
   try {
-    await ffmpeg.exec([
-      '-i', inputUrl,
-      '-c', 'copy',
-      '-movflags', '+faststart',
-      outputName
-    ]);
-
+    await ffmpeg.exec(['-i', inputUrl, '-c', 'copy', '-movflags', '+faststart', outputName]);
     const data = await ffmpeg.readFile(outputName);
     ffmpeg.deleteFile(outputName).catch(() => {});
-
     const blob = new Blob([data.buffer], { type: 'video/mp4' });
     await chrome.downloads.download({ url: URL.createObjectURL(blob), filename: outputName, saveAs: true });
   } catch (err) {
-    // DASH with FFmpeg often fails due to network access from WASM
-    // Fall back to copying the URL
     throw new Error(`DASH download via FFmpeg failed (${err.message}).\n\nTry using the "ffmpeg cmd" button to download via command line instead.`);
   }
 
@@ -286,7 +258,6 @@ async function downloadDASH(stream, variantIndex) {
 
 async function downloadHLS(stream, variantIndex) {
   let targetUrl = stream.url;
-
   if (stream.isMaster && stream.variants?.length) {
     targetUrl = (stream.variants[variantIndex] || stream.variants[0]).url;
   }
@@ -301,9 +272,7 @@ async function downloadHLS(stream, variantIndex) {
   const { segments, encryption, initSegment } = playlistResult;
 
   if (!segments.length) {
-    throw new Error(
-      `No segments found in playlist.\n\nPlaylist preview:\n${playlistResult.rawText?.substring(0, 500) || '(empty)'}`
-    );
+    throw new Error(`No segments found in playlist.\n\nPlaylist preview:\n${playlistResult.rawText?.substring(0, 500) || '(empty)'}`);
   }
 
   currentDownload = { streamId: stream.id, stream, total: segments.length, done: 0, failed: 0 };
@@ -333,14 +302,13 @@ const CONCURRENT = 6;
 async function downloadAndMergeSegments(stream) {
   const { segments, initSegment } = stream;
   const isEncrypted = stream.encryption?.method === 'AES-128';
-  const signal = abortController.signal;
+  const signal      = abortController.signal;
 
   setProgress(3, isEncrypted ? 'Fetching keys…' : 'Starting…', `${segments.length} segments`);
 
-  const keys = isEncrypted ? await fetchKeys(stream) : new Map();
+  const keys         = isEncrypted ? await fetchKeys(stream) : new Map();
   const segmentFiles = new Array(segments.length).fill(null);
 
-  // fMP4 init segment
   if (initSegment) {
     try {
       setProgress(4, 'Fetching init segment…', '');
@@ -349,7 +317,6 @@ async function downloadAndMergeSegments(stream) {
     } catch (e) { console.warn('Init segment failed:', e); }
   }
 
-  // Download segments in parallel batches
   for (let i = 0; i < segments.length; i += CONCURRENT) {
     if (signal.aborted) throw Object.assign(new Error('Cancelled'), { name: 'AbortError' });
 
@@ -358,20 +325,14 @@ async function downloadAndMergeSegments(stream) {
     await Promise.all(batch.map(async ({ seg, index }) => {
       try {
         let data;
-
         if (seg.byteRange) {
-          // Byte-range segment
           const { length, offset } = seg.byteRange;
           data = await fetchByteRange(seg.url, offset, offset + length - 1, signal);
         } else {
           data = await downloadWithRetry(seg.url, signal);
         }
-
-        if (isEncrypted && seg.key?.uri) {
-          data = await decryptSegment(data, seg.key, keys);
-        }
-
-        const ext = seg.url.match(/\.(m4s|mp4|ts|aac|mp3)(\?|$)/i)?.[1] || 'ts';
+        if (isEncrypted && seg.key?.uri) data = await decryptSegment(data, seg.key, keys);
+        const ext      = seg.url.match(/\.(m4s|mp4|ts|aac|mp3)(\?|$)/i)?.[1] || 'ts';
         const filename = `seg_${String(index).padStart(5, '0')}.${ext}`;
         await ffmpeg.writeFile(filename, new Uint8Array(data));
         segmentFiles[index] = filename;
@@ -397,8 +358,8 @@ async function downloadAndMergeSegments(stream) {
     throw new Error(`Too many failures: ${currentDownload.failed}/${segments.length}`);
   }
 
-  // Build concat list
   setProgress(62, 'Merging…', `${downloaded.length} segments`);
+
   const concatEntries = [];
   if (initSegment) {
     try { await ffmpeg.readFile('init.mp4'); concatEntries.push(`file 'init.mp4'`); } catch {}
@@ -456,9 +417,7 @@ async function fetchKeys(stream) {
 async function decryptSegment(encryptedData, keyInfo, keys) {
   const keyData = keys.get(keyInfo.uri);
   if (!keyData) throw new Error(`Key not found: ${keyInfo.uri}`);
-
   const cryptoKey = await crypto.subtle.importKey('raw', keyData, { name: 'AES-CBC' }, false, ['decrypt']);
-
   let iv;
   if (keyInfo.iv) {
     iv = hexToBuffer(keyInfo.iv.padStart(32, '0'));
@@ -466,7 +425,6 @@ async function decryptSegment(encryptedData, keyInfo, keys) {
     iv = new Uint8Array(16);
     new DataView(iv.buffer).setUint32(12, keyInfo.sequence || 0, false);
   }
-
   return crypto.subtle.decrypt({ name: 'AES-CBC', iv }, cryptoKey, encryptedData);
 }
 
@@ -479,11 +437,10 @@ async function downloadWithRetry(url, signal, retries = 3, onProgress) {
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 
       if (onProgress && resp.body) {
-        // Stream with progress
-        const reader = resp.body.getReader();
+        const reader        = resp.body.getReader();
         const contentLength = parseInt(resp.headers.get('Content-Length') || '0');
-        const chunks = [];
-        let received = 0;
+        const chunks        = [];
+        let received        = 0;
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -507,10 +464,7 @@ async function downloadWithRetry(url, signal, retries = 3, onProgress) {
 }
 
 async function fetchByteRange(url, start, end, signal) {
-  const resp = await fetch(url, {
-    signal,
-    headers: { 'Range': `bytes=${start}-${end}` }
-  });
+  const resp = await fetch(url, { signal, headers: { 'Range': `bytes=${start}-${end}` } });
   if (!resp.ok && resp.status !== 206) throw new Error(`HTTP ${resp.status}`);
   return await resp.arrayBuffer();
 }
@@ -518,11 +472,11 @@ async function fetchByteRange(url, start, end, signal) {
 // ── M3U8 playlist parser ───────────────────────────────────────────────────────
 
 function parseMediaPlaylist(text, baseUrl) {
-  const lines = text.split(/\r?\n/);
+  const lines    = text.split(/\r?\n/);
   const segments = [];
-  let currentKey = null;
-  let seq = 0;
-  let initSegment = null;
+  let currentKey      = null;
+  let seq             = 0;
+  let initSegment     = null;
   let byteRangeOffset = 0;
 
   const seqMatch = text.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/);
@@ -534,13 +488,13 @@ function parseMediaPlaylist(text, baseUrl) {
 
     if (line.startsWith('#EXT-X-KEY')) {
       const methodMatch = line.match(/METHOD=([^,\r\n]+)/);
-      const uriMatch = line.match(/URI="([^"]+)"/);
-      const ivMatch = line.match(/IV=0x([0-9a-fA-F]+)/);
+      const uriMatch    = line.match(/URI="([^"]+)"/);
+      const ivMatch     = line.match(/IV=0x([0-9a-fA-F]+)/);
       const method = methodMatch ? methodMatch[1].trim() : 'NONE';
       currentKey = {
         method,
         uri: uriMatch ? resolveUrl(uriMatch[1], baseUrl) : null,
-        iv: ivMatch ? ivMatch[1] : null,
+        iv:  ivMatch  ? ivMatch[1] : null,
         sequence: seq
       };
     }
@@ -550,23 +504,20 @@ function parseMediaPlaylist(text, baseUrl) {
       if (uriMatch) initSegment = resolveUrl(uriMatch[1], baseUrl);
     }
 
-    // Byte range declared before segment
     if (line.startsWith('#EXT-X-BYTERANGE:')) {
       const match = line.match(/#EXT-X-BYTERANGE:(\d+)(?:@(\d+))?/);
       if (match) {
         const length = parseInt(match[1]);
         const offset = match[2] !== undefined ? parseInt(match[2]) : byteRangeOffset;
         byteRangeOffset = offset + length;
-        // attach to next EXTINF's segment
         lines[i] = `__BYTERANGE__${length}@${offset}`;
       }
     }
 
     if (line.startsWith('#EXTINF')) {
-      const durMatch = line.match(/#EXTINF:([^,\r\n]+)/);
+      const durMatch = line.match(/#EXTINF:([^,^\r\n]+)/);
       const duration = durMatch ? parseFloat(durMatch[1]) : 0;
-
-      let nextLine = null;
+      let nextLine  = null;
       let byteRange = null;
 
       for (let j = i + 1; j < lines.length; j++) {
@@ -592,9 +543,9 @@ function parseMediaPlaylist(text, baseUrl) {
 
       if (nextLine) {
         segments.push({
-          url: resolveUrl(nextLine, baseUrl),
+          url:      resolveUrl(nextLine, baseUrl),
           duration,
-          key: currentKey?.method !== 'NONE' ? currentKey : null,
+          key:      currentKey?.method !== 'NONE' ? currentKey : null,
           sequence: seq++,
           byteRange: byteRange || null
         });
@@ -631,13 +582,14 @@ function hideDownloadPanel() {
 }
 
 function setProgress(pct, title, status) {
-  document.getElementById('progressFill').style.width = `${pct}%`;
-  document.getElementById('progressPercent').textContent = `${pct}%`;
-  if (title !== undefined) document.getElementById('dlTitle').textContent = title;
+  document.getElementById('progressFill').style.width     = `${pct}%`;
+  document.getElementById('progressPercent').textContent  = `${pct}%`;
+  if (title  !== undefined) document.getElementById('dlTitle').textContent        = title;
   if (status !== undefined) document.getElementById('progressStatus').textContent = status;
 }
 
 function cancelDownload() { abortController?.abort(); }
+
 async function clearStreams() {
   await chrome.runtime.sendMessage({ action: 'clearStreams' });
   loadStreams();
@@ -650,13 +602,15 @@ function formatDuration(secs) {
   const h = Math.floor(secs / 3600);
   const m = Math.floor((secs % 3600) / 60);
   const s = Math.floor(secs % 60);
-  return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`;
+  return h > 0
+    ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`
+    : `${m}:${String(s).padStart(2,'0')}`;
 }
 
 function formatAge(ts) {
   if (!ts) return '';
   const diff = Math.floor((Date.now() - ts) / 1000);
-  if (diff < 60) return `${diff}s ago`;
+  if (diff < 60)   return `${diff}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   return `${Math.floor(diff / 3600)}h ago`;
 }
