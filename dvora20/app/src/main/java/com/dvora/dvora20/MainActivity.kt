@@ -1323,7 +1323,7 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
                     Text("🔖", fontSize = 16.sp); Spacer(Modifier.width(6.dp))
-                    Text("ALL BOOKMARKS  (\${bookmarks.size})", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp, color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)))
+                    Text("ALL BOOKMARKS  (${bookmarks.size})", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp, color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)))
                 }
             }
             items(withoutReminder + withReminder) { bm ->
