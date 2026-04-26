@@ -284,7 +284,7 @@ fun copyToClipboard(context: Context, text: String) {
 
 fun openUrl(context: Context, url: String) {
     try {
-        val cleanUrl = if (url.startsWith("http")) url else "https://\$url"
+        val cleanUrl = if (url.startsWith("http")) url else "https://$url"
 
         // Try Stremio app for Stremio web URLs
         if (cleanUrl.contains("web.stremio.com") && cleanUrl.contains("/detail/")) {
@@ -293,7 +293,7 @@ fun openUrl(context: Context, url: String) {
             if (match != null) {
                 val type = match.groupValues[1]
                 val id   = match.groupValues[2]
-                val deepLink = "stremio:///detail/\$type/\$id"
+                val deepLink = "stremio:///detail/$type/$id"
                 try {
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(deepLink)))
                     return
@@ -678,7 +678,7 @@ fun ResultItem(result: SearchResult, showDetails: Boolean = false) {
                     Text(result.foundDetails, fontSize = 12.sp, color = beeAdapt(Color(0xFF4E342E), BeeColors.DarkOnSurface), fontWeight = FontWeight.Medium)
                 }
                 if (result.errorMessage != null)
-                    Text("⚠️ \${result.errorMessage}", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    Text("⚠️ ${result.errorMessage}", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
             }
             if (result.found) IconButton(onClick = { copyToClipboard(context, result.url) }) {
                 Icon(Icons.Default.ContentCopy, "Copy", tint = BeeColors.DeepAmber)
@@ -942,7 +942,7 @@ fun SubtitlesScreen(scanner: DvoraScanner, onBack: () -> Unit, onToggleDark: () 
         } else Spacer(Modifier.height(4.dp))
         if (results.isEmpty() && !isSearching && searchTerm.isNotBlank()) {
             Box(Modifier.fillMaxWidth().padding(top = 32.dp), contentAlignment = Alignment.Center) {
-                Text("No Hebrew subtitles found for \"\$searchTerm\"", color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                Text("No Hebrew subtitles found for \"$searchTerm\"", color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)), fontSize = 13.sp, fontWeight = FontWeight.Medium)
             }
         }
         LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 4.dp)) {
@@ -1032,7 +1032,7 @@ fun ImdbScreen(scanner: DvoraScanner, onBack: () -> Unit, onToggleDark: () -> Un
         if (searchTerm.isBlank()) { results = emptyList(); errorMsg = null; return@LaunchedEffect }
         delay(350); isSearching = true; errorMsg = null
         val found = scanner.searchImdb(searchTerm); results = found
-        errorMsg = if (found.isEmpty()) "No results found for \"\$searchTerm\"" else null
+        errorMsg = if (found.isEmpty()) "No results found for \"$searchTerm\"" else null
         isSearching = false
     }
 
@@ -1243,7 +1243,7 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
                         "MONTHLY" -> " · Repeats monthly"
                         else      -> ""
                     }
-                    Toast.makeText(context, "⏰ Reminder: \$formatted at \$timeStr\$recLabel", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "⏰ Reminder: $formatted at $timeStr $recLabel", Toast.LENGTH_LONG).show()
                     timePickerTargetId = null
                 }) { Text("Set Reminder", color = BeeColors.DeepAmber, fontWeight = FontWeight.Bold) }
             },
@@ -1263,7 +1263,7 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
                 context.startActivity(
                     Intent(
                         Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
-                        Uri.parse("package:\${context.packageName}")
+                        Uri.parse("package:${context.packageName}")
                     )
                 )
             }
