@@ -608,3 +608,35 @@ body > * { position: relative; z-index: 1; }
 }
 
 .footer .btn { font-size: 11px; padding: 7px; }
+
+
+/* ── yt-dlp Setup Panel ── */
+.setup-panel {
+  border-top: 1px solid var(--border);
+  background: linear-gradient(135deg, rgba(42,30,8,0.97), rgba(20,13,3,0.97));
+  padding: 14px 18px;
+  flex-shrink: 0;
+  position: relative;
+}
+.setup-panel.hidden { display: none; }
+.setup-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.setup-title { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--honey); text-transform: uppercase; letter-spacing: 1px; }
+.setup-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 2px; }
+.setup-close:hover { color: #ff8080; }
+.setup-form { display: flex; flex-direction: column; gap: 10px; }
+.setup-form label { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+.setup-form select {
+  background: rgba(0,0,0,0.3); border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text); padding: 6px 8px; font-family: 'DM Mono', monospace; font-size: 11px;
+}
+.setup-note { font-size: 9.5px; color: var(--muted); line-height: 1.4; margin-top: 4px; }
+
+/* ── OS Toggle ── */
+.os-toggle { display: flex; gap: 4px; margin-left: auto; }
+.os-btn {
+  background: rgba(245,166,35,0.08); border: 1px solid var(--border); color: var(--muted);
+  padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 10px; font-family: 'DM Mono', monospace;
+  transition: all 0.15s;
+}
+.os-btn:hover { background: rgba(245,166,35,0.15); color: var(--honey); }
+.os-btn.active { background: rgba(245,166,35,0.25); color: var(--honey-light); border-color: var(--border-bright); }

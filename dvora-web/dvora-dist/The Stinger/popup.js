@@ -8,6 +8,7 @@ let ffmpegReady = false;
 let ffmpegLoading = false;
 let currentDownload = null;
 let abortController = null;
+let targetOS = 'windows'; // Default to Windows for download paths
 
 document.addEventListener('DOMContentLoaded', init);
 
@@ -21,6 +22,24 @@ async function init() {
   document.getElementById('closeBtn').addEventListener('click', () => window.close());
   chrome.runtime.onMessage.addListener((msg) => {
     if (msg.action === 'streamDetected') loadStreams();
+  });
+
+  // ── Setup Panel Init ──────────────────────────────────────────────────────
+  document.getElementById('setupYtdlpBtn').addEventListener('click', () => {
+    document.getElementById('setupPanel').classList.remove('hidden');
+  });
+  document.getElementById('setupClose').addEventListener('click', () => {
+    document.getElementById('setupPanel').classList.add('hidden');
+  });
+  document.getElementById('copySetupCmd').addEventListener('click', copySetupScript);
+
+  // ── OS Toggle Init ────────────────────────────────────────────────────────
+  document.querySelectorAll('.os-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.os-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      targetOS = btn.dataset.os;
+    });
   });
 }
 
@@ -78,6 +97,7 @@ function streamTypeLabel(stream) {
   switch (stream.type) {
     case 'HLS':  return 'HLS';
     case 'DASH': return 'DASH';
+    case 'YOUTUBE': return 'YT';
     case 'MP4': case 'WEBM': case 'MKV': case 'AVI': case 'MOV': case 'FLV': case 'WMV': return stream.type;
     default: return stream.type || 'VIDEO';
   }
@@ -91,6 +111,7 @@ function buildStreamCard(stream) {
   const totalDuration = stream.totalDuration ?? 0;
   const typeLabel     = streamTypeLabel(stream);
   const isDirectVideo = stream.isDirectVideo;
+  const isYouTube     = stream.type === 'YOUTUBE';
 
   const card = document.createElement('div');
   card.className  = 'stream-card';
@@ -101,9 +122,14 @@ function buildStreamCard(stream) {
   else if (isEncrypted) encBadge = `<span class="badge badge-encrypted">🔒 AES-128</span>`;
   else                  encBadge = `<span class="badge badge-clear">🔓 CLEAR</span>`;
 
-  const downloadBtn = isDRM
-    ? `<button class="btn btn-primary js-download disabled-drm" data-id="${stream.id}" disabled title="DRM-protected — cannot download">🔐 DRM Protected</button>`
-    : `<button class="btn btn-primary js-download" data-id="${stream.id}">↓ Download MP4</button>`;
+  let downloadBtn;
+  if (isYouTube) {
+    downloadBtn = `<button class="btn btn-primary js-ytdlp" data-id="${stream.id}">📋 Copy youtube command</button>`;
+  } else if (isDRM) {
+    downloadBtn = `<button class="btn btn-primary js-download disabled-drm" data-id="${stream.id}" disabled title="DRM-protected — cannot download">🔐 DRM Protected</button>`;
+  } else {
+    downloadBtn = `<button class="btn btn-primary js-download" data-id="${stream.id}">↓ Download MP4</button>`;
+  }
 
   card.innerHTML = `
     <div class="stream-card-body">
@@ -123,7 +149,7 @@ function buildStreamCard(stream) {
         <span class="meta-item">${formatAge(stream.timestamp)}</span>
       </div>
       <div class="segment-track"><div class="segment-track-fill"></div></div>
-      ${hasVariants && !isDRM ? buildQualitySelector(stream) : ''}
+      ${hasVariants && !isDRM && !isYouTube ? buildQualitySelector(stream) : ''}
       ${isDRM ? `<div class="drm-notice">This stream is protected by DRM (Widevine/PlayReady). It cannot be downloaded.</div>` : ''}
       <div class="stream-actions">
         <button class="btn btn-ghost btn-sm js-copy" data-id="${stream.id}">Copy URL</button>
@@ -132,7 +158,10 @@ function buildStreamCard(stream) {
     </div>`;
 
   card.querySelector('.js-copy').addEventListener('click', (e) => handleCopy(e, stream));
-  if (!isDRM) {
+  
+  if (isYouTube) {
+    card.querySelector('.js-ytdlp')?.addEventListener('click', (e) => handleYtDlp(e, stream));
+  } else if (!isDRM) {
     card.querySelector('.js-ffmpeg-cmd')?.addEventListener('click', (e) => handleFfmpegCmd(e, stream));
     card.querySelector('.js-download')?.addEventListener('click', () => handleDownload(stream.id));
   }
@@ -159,6 +188,20 @@ async function handleCopy(e, stream) {
   const original = btn.textContent;
   try { await navigator.clipboard.writeText(stream.url); btn.textContent = '✓ Copied'; }
   catch { btn.textContent = 'Failed'; }
+  setTimeout(() => { btn.textContent = original; }, 1500);
+}
+
+async function handleYtDlp(e, stream) {
+  const btn = e.currentTarget;
+  const original = btn.textContent;
+  const dlPath = targetOS === 'windows' ? '%USERPROFILE%\\Downloads' : '~/Downloads';
+  const cmd = `yt-dlp -f "bv*+ba/b" --merge-output-format mp4 -o "${dlPath}/%(title)s [%(id)s].%(ext)s" "${stream.url}"`;
+  try {
+    await navigator.clipboard.writeText(cmd);
+    btn.textContent = '✓ Copied!';
+  } catch {
+    btn.textContent = 'Failed';
+  }
   setTimeout(() => { btn.textContent = original; }, 1500);
 }
 
@@ -204,6 +247,47 @@ async function handleDownload(streamId) {
   } finally {
     currentDownload = null;
     hideDownloadPanel();
+  }
+}
+
+// ── Setup Script Generator ────────────────────────────────────────────────────
+
+async function copySetupScript() {
+  const platform = document.getElementById('setupPlatform').value;
+  const btn = document.getElementById('copySetupCmd');
+  const originalText = btn.textContent;
+
+  let setupCmd = '';
+  if (platform === 'windows') {
+    setupCmd = `@echo off
+where yt-dlp >nul 2>&1
+if %ERRORLEVEL% EQU 0 (
+  echo yt-dlp is already installed.
+) else (
+  echo Installing yt-dlp...
+  winget install yt-dlp
+  echo yt-dlp installed successfully.
+)`;
+  } else {
+    setupCmd = `#!/bin/bash
+if command -v yt-dlp &> /dev/null; then
+  echo "yt-dlp is already installed."
+else
+  echo "Installing yt-dlp..."
+  mkdir -p ~/.local/bin
+  curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o ~/.local/bin/yt-dlp
+  chmod a+rx ~/.local/bin/yt-dlp
+  echo "yt-dlp installed successfully."
+fi`;
+  }
+
+  try {
+    await navigator.clipboard.writeText(setupCmd);
+    btn.textContent = '✓ Copied!';
+    setTimeout(() => { btn.textContent = originalText; }, 2000);
+  } catch {
+    btn.textContent = 'Failed';
+    setTimeout(() => { btn.textContent = originalText; }, 2000);
   }
 }
 
@@ -435,9 +519,6 @@ async function downloadAndMergeSegments(stream) {
   setProgress(58, 'Merging…', `${downloaded.length} segments`);
 
   // ── Build ffconcat files with duration metadata ─────────────────────────────
-  // Using ffconcat v1.0 format with per-segment durations forces FFmpeg to
-  // synthesize clean sequential timestamps from declared durations rather than
-  // using the raw absolute TS timestamps (which cause playback stuttering).
   const videoConcatLines = ['ffconcat version 1.0'];
   try { await ffmpeg.readFile('init.mp4'); videoConcatLines.push(`file 'init.mp4'`); } catch {}
   for (let i = 0; i < segmentFiles.length; i++) {
@@ -598,7 +679,7 @@ function parseMediaPlaylist(text, baseUrl) {
     if (!line || line === '#EXTM3U') continue;
 
     if (line.startsWith('#EXT-X-KEY')) {
-      const methodMatch = line.match(/METHOD=([^,\r\n]+)/);
+      const methodMatch = line.match(/METHOD=([^,^\r\n]+)/);
       const uriMatch    = line.match(/URI="([^"]+)"/);
       const ivMatch     = line.match(/IV=0x([0-9a-fA-F]+)/);
       const method = methodMatch ? methodMatch[1].trim() : 'NONE';

@@ -193,7 +193,7 @@
   setTimeout(scanDOM, 2000);
   setTimeout(scanDOM, 5000);
 
-  // ── Watch video element src changes ───────────────────────────────────────
+  // ── Watch video element src changes ─────────────────────────────────────────
 
   const videoObs = new MutationObserver((muts) => {
     for (const mut of muts) {
@@ -244,5 +244,23 @@
       });
     }
   });
+
+  // ── YouTube Detection ──────────────────────────────────────────────────────
+  function checkYouTube() {
+    const href = window.location.href;
+    if (/youtube\.com\/(watch|shorts|embed|live)\?|youtu\.be\//.test(href)) {
+      chrome.runtime.sendMessage({
+        action: 'videoDetected',
+        url: href,
+        type: 'YOUTUBE',
+        initiator: window.location.origin
+      }).catch(() => {});
+    }
+  }
+
+  // Run on initial load & YouTube SPA navigation
+  setTimeout(checkYouTube, 1500);
+  window.addEventListener('yt-navigate-finish', checkYouTube);
+  window.addEventListener('popstate', checkYouTube);
 
 })();

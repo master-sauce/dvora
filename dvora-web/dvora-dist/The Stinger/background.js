@@ -309,6 +309,37 @@ async function captureDirectVideo(details) {
   storeStream(streamData);
 }
 
+// ── YouTube capture ───────────────────────────────────────────────────────────
+
+async function captureYouTube(details) {
+  const normalizedUrl = normalizeUrl(details.url);
+  if (seenUrls.has(normalizedUrl)) return;
+  seenUrls.add(normalizedUrl);
+
+  console.log('Processing YouTube:', details.url);
+  const title = await getPageTitle(details.tabId);
+
+  const streamData = {
+    id: 'stream_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+    url: details.url,
+    timestamp: Date.now(),
+    tabId: details.tabId,
+    type: 'YOUTUBE',
+    isMaster: false,
+    isDirectVideo: false,
+    title,
+    playlistText: null,
+    segments: [],
+    variants: [],
+    segmentCount: 0,
+    totalDuration: 0,
+    encryption: null
+  };
+
+  console.log(`Stored YouTube: ${streamData.id}`);
+  storeStream(streamData);
+}
+
 // ── Playlist parsers ──────────────────────────────────────────────────────────
 
 function parseMasterPlaylist(text, baseUrl, streamData) {
@@ -517,7 +548,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'videoDetected') {
     const { url, type, tabId } = request;
     const details = { url, tabId: sender.tab?.id || tabId || -1, initiator: request.initiator };
-    if (isM3U8Url(url.toLowerCase()))             captureM3U8(details);
+    if (type === 'YOUTUBE') {
+      captureYouTube(details);
+    } else if (isM3U8Url(url.toLowerCase()))             captureM3U8(details);
     else if (isMpdUrl(url.toLowerCase()))         captureMPD(details);
     else if (isDirectVideoUrl(url.toLowerCase())) captureDirectVideo(details);
     return true;

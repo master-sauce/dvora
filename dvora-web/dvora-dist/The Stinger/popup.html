@@ -47,8 +47,33 @@
     </div>
   </div>
 
+  <!-- yt-dlp Setup Panel -->
+  <div id="setupPanel" class="setup-panel hidden">
+    <div class="setup-header">
+      <span class="setup-title">yt-dlp Setup</span>
+      <button class="setup-close" id="setupClose">✕</button>
+    </div>
+    <div class="setup-form">
+      <label>Platform
+        <select id="setupPlatform">
+          <option value="windows">Windows</option>
+          <option value="linux">Linux</option>
+          <option value="mac">macOS</option>
+        </select>
+      </label>
+      <button class="btn btn-primary" id="copySetupCmd">📋 Copy Setup Script</button>
+      <div class="setup-note">Copies a terminal script that checks if yt-dlp is installed and installs it if missing. Also configures download commands to save to your OS Downloads folder.</div>
+    </div>
+  </div>
+
   <footer class="footer">
     <button class="btn btn-ghost" id="clearBtn">Clear all</button>
+    <button class="btn btn-ghost" id="setupYtdlpBtn">🛠 Setup yt-dlp</button>
+    <div class="os-toggle" id="osToggle">
+      <button class="os-btn active" data-os="windows">🪟 Win</button>
+      <button class="os-btn" data-os="mac">🍎 Mac</button>
+      <button class="os-btn" data-os="linux">🐧 Linux</button>
+    </div>
   </footer>
 
   <script src="lib/ffmpeg/ffmpeg.js"></script>
