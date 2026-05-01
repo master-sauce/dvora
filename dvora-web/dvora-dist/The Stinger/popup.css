@@ -24,11 +24,13 @@
   --border-bright: rgba(245, 166, 35, 0.40);
 }
 
-/* ── Body with hex pattern ── */
+/* ── Responsive Body ── */
 body {
-  width: 420px;
-  min-height: 520px;
-  max-height: 700px;
+  min-width: 400px;
+  width: 100%;
+  min-height: 500px;
+  height: 100vh;
+  max-height: none;
   font-family: 'Nunito', sans-serif;
   background-color: var(--comb);
   background-image: radial-gradient(ellipse at top, #2d1c05 0%, var(--comb) 60%);
@@ -62,6 +64,7 @@ body > * { position: relative; z-index: 1; }
   background: linear-gradient(135deg, rgba(244,162,23,0.12) 0%, transparent 100%);
   position: relative;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .header::after {
@@ -133,7 +136,12 @@ body > * { position: relative; z-index: 1; }
   box-shadow: 0 0 10px rgba(245,166,35,0.2);
 }
 
-/* Close button gets red hover */
+.icon-btn.active {
+  background: rgba(245,166,35,0.3);
+  color: var(--honey-light);
+  border-color: var(--border-bright);
+}
+
 .icon-btn-close:hover {
   background: rgba(255, 80, 80, 0.15);
   color: #ff8080;
@@ -149,6 +157,7 @@ body > * { position: relative; z-index: 1; }
   gap: 8px;
   border-bottom: 1px solid var(--border);
   background: rgba(0,0,0,0.2);
+  flex-shrink: 0;
 }
 
 .stats-dot {
@@ -188,6 +197,7 @@ body > * { position: relative; z-index: 1; }
   display: flex;
   flex-direction: column;
   gap: 9px;
+  min-height: 0; /* Critical for flex scrolling */
 }
 
 .streams-list::-webkit-scrollbar { width: 3px; }
@@ -598,18 +608,6 @@ body > * { position: relative; z-index: 1; }
   text-align: right;
 }
 
-/* ── Footer ── */
-.footer {
-  padding: 9px 10px;
-  border-top: 1px solid var(--border);
-  display: flex;
-  gap: 7px;
-  background: rgba(0,0,0,0.25);
-}
-
-.footer .btn { font-size: 11px; padding: 7px; }
-
-
 /* ── yt-dlp Setup Panel ── */
 .setup-panel {
   border-top: 1px solid var(--border);
@@ -640,3 +638,15 @@ body > * { position: relative; z-index: 1; }
 }
 .os-btn:hover { background: rgba(245,166,35,0.15); color: var(--honey); }
 .os-btn.active { background: rgba(245,166,35,0.25); color: var(--honey-light); border-color: var(--border-bright); }
+
+/* ── Footer ── */
+.footer {
+  padding: 9px 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 7px;
+  background: rgba(0,0,0,0.25);
+  flex-shrink: 0;
+}
+
+.footer .btn { font-size: 11px; padding: 7px; }

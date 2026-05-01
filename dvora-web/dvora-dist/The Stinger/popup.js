@@ -8,7 +8,7 @@ let ffmpegReady = false;
 let ffmpegLoading = false;
 let currentDownload = null;
 let abortController = null;
-let targetOS = 'windows'; // Default to Windows for download paths
+let targetOS = 'windows';
 
 document.addEventListener('DOMContentLoaded', init);
 
@@ -41,6 +41,10 @@ async function init() {
       targetOS = btn.dataset.os;
     });
   });
+
+  // ── Fullscreen Toggle Init ────────────────────────────────────────────────
+  document.getElementById('fullscreenBtn').addEventListener('click', toggleFullscreen);
+  updateFullscreenIcon();
 }
 
 async function loadFFmpeg() {
@@ -124,7 +128,7 @@ function buildStreamCard(stream) {
 
   let downloadBtn;
   if (isYouTube) {
-    downloadBtn = `<button class="btn btn-primary js-ytdlp" data-id="${stream.id}">📋 Copy Youtube command</button>`;
+    downloadBtn = `<button class="btn btn-primary js-ytdlp" data-id="${stream.id}">📋 Copy Youtube Command</button>`;
   } else if (isDRM) {
     downloadBtn = `<button class="btn btn-primary js-download disabled-drm" data-id="${stream.id}" disabled title="DRM-protected — cannot download">🔐 DRM Protected</button>`;
   } else {
@@ -289,6 +293,29 @@ fi`;
     btn.textContent = 'Failed';
     setTimeout(() => { btn.textContent = originalText; }, 2000);
   }
+}
+
+// ── Fullscreen Toggle ────────────────────────────────────────────────────────
+
+async function toggleFullscreen() {
+  try {
+    const win = await chrome.windows.getCurrent();
+    const isMaximized = win.state === 'maximized' || win.state === 'fullscreen';
+    const newState = isMaximized ? 'normal' : 'maximized';
+    await chrome.windows.update(win.id, { state: newState });
+    updateFullscreenIcon();
+  } catch (e) {
+    console.error('Fullscreen toggle failed:', e);
+  }
+}
+
+async function updateFullscreenIcon() {
+  try {
+    const win = await chrome.windows.getCurrent();
+    const isMaximized = win.state === 'maximized' || win.state === 'fullscreen';
+    document.getElementById('fullscreenBtn').classList.toggle('active', isMaximized);
+    document.getElementById('fullscreenBtn').title = isMaximized ? 'Exit fullscreen' : 'Toggle fullscreen';
+  } catch {}
 }
 
 // ── Direct video download ─────────────────────────────────────────────────────
