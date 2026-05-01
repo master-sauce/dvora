@@ -124,7 +124,7 @@ function buildStreamCard(stream) {
 
   let downloadBtn;
   if (isYouTube) {
-    downloadBtn = `<button class="btn btn-primary js-ytdlp" data-id="${stream.id}">📋 Copy youtube command</button>`;
+    downloadBtn = `<button class="btn btn-primary js-ytdlp" data-id="${stream.id}">📋 Copy Youtube command</button>`;
   } else if (isDRM) {
     downloadBtn = `<button class="btn btn-primary js-download disabled-drm" data-id="${stream.id}" disabled title="DRM-protected — cannot download">🔐 DRM Protected</button>`;
   } else {
