@@ -1,4 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.Dvora20" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.Dvora20" parent="android:Theme.Material.Light.NoActionBar">
+        <!-- Window background matches the app's Bee light theme (WaxWhite) -->
+        <item name="android:windowBackground">@color/bee_wax_white</item>
+        <item name="android:colorBackground">@color/bee_wax_white</item>
+
+        <!-- Status / navigation bar tones matching the Bee palette -->
+        <item name="android:statusBarColor">@color/bee_wax_white</item>
+        <item name="android:navigationBarColor">@color/bee_wax_white</item>
+
+        <!-- Material accent colors aligned with the Bee theme -->
+        <item name="android:colorPrimary">@color/bee_honey_gold</item>
+        <item name="android:colorPrimaryDark">@color/bee_deep_amber</item>
+        <item name="android:colorAccent">@color/bee_honey_gold</item>
+    </style>
 </resources>

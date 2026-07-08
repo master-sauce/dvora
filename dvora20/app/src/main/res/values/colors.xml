@@ -7,4 +7,16 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- Bee theme colors (match BeeColors in MainActivity.kt) -->
+    <color name="bee_honey_gold">#FFFFC107</color>
+    <color name="bee_deep_amber">#FFFF8F00</color>
+    <color name="bee_pollen_orange">#FFFF6D00</color>
+    <color name="bee_wax_white">#FFFFFDE7</color>
+    <color name="bee_honeycomb_yellow">#FFFFECB3</color>
+    <color name="bee_bee_black">#FF1A1200</color>
+    <color name="bee_dark_comb">#FF1C1500</color>
+    <color name="bee_dark_cell">#FF2A1F00</color>
+    <color name="bee_dark_stripe">#FF3A2B00</color>
+    <color name="bee_dark_on_surface">#FFFFE082</color>
 </resources>
