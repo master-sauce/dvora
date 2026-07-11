@@ -282,11 +282,43 @@ fun copyToClipboard(context: Context, text: String) {
     clipboard.setPrimaryClip(ClipData.newPlainText("url", text))
 }
 
+// IDM (Internet Download Manager) packages — tried in order before the default browser.
+private val IDM_PACKAGES = listOf(
+    "idm.internet.download.manager.plus",
+    "idm.internet.download.manager"
+)
+
+/**
+ * Attempts to open [url] in one of the installed IDM apps by pinning the
+ * ACTION_VIEW intent to each package in turn. Returns true if any IDM app
+ * accepted the intent, false otherwise (caller should fall back to browser).
+ */
+private fun tryOpenInIdm(context: Context, url: String): Boolean {
+    val cleanUrl = if (url.startsWith("http")) url else "https://$url"
+    for (pkg in IDM_PACKAGES) {
+        try {
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(cleanUrl)).apply {
+                setPackage(pkg)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            // resolveActivity returns null if the package isn't installed or
+            // can't handle the intent — avoids an exception on Android 11+.
+            if (intent.resolveActivity(context.packageManager) != null) {
+                context.startActivity(intent)
+                return true
+            }
+        } catch (_: Exception) {
+            // This IDM variant isn't installed or refused — try the next one.
+        }
+    }
+    return false
+}
+
 fun openUrl(context: Context, url: String) {
     try {
         val cleanUrl = if (url.startsWith("http")) url else "https://$url"
 
-        // Try Stremio app for Stremio web URLs
+        // 1) Stremio web URLs go to the Stremio app (NOT a download manager).
         if (cleanUrl.contains("web.stremio.com") && cleanUrl.contains("/detail/")) {
             val regex = Regex("detail/(movie|series)/([^/]+)")
             val match = regex.find(cleanUrl)
@@ -298,11 +330,15 @@ fun openUrl(context: Context, url: String) {
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(deepLink)))
                     return
                 } catch (_: Exception) {
-                    // Stremio not installed, fall through to browser
+                    // Stremio not installed, fall through to IDM / browser
                 }
             }
         }
 
+        // 2) Try IDM apps (download manager) before the default browser.
+        if (tryOpenInIdm(context, cleanUrl)) return
+
+        // 3) Fall back to the default browser
         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(cleanUrl)))
     } catch (_: Exception) {
         Toast.makeText(context, "Could not open URL", Toast.LENGTH_SHORT).show()

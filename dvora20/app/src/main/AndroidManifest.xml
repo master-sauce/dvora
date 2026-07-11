@@ -13,6 +13,10 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="stremio" />
         </intent>
+        <!-- Allow visibility of IDM (Internet Download Manager) packages so
+             resolveActivity() can detect them on Android 11+. -->
+        <package android:name="idm.internet.download.manager.plus" />
+        <package android:name="idm.internet.download.manager" />
     </queries>
 
     <application
