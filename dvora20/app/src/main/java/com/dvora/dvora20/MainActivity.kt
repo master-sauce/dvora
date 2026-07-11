@@ -43,8 +43,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import android.app.AlarmManager
@@ -1635,6 +1637,7 @@ fun extractDomain(url: String): String {
 @Composable
 fun ApiSourcesEditor(apiSites: List<String>, onUpdate: (List<String>) -> Unit) {
     var showWizard    by remember { mutableStateOf(false) }
+    var showTester    by remember { mutableStateOf(false) }
     var editingIndex  by remember { mutableIntStateOf(-1) }
     var editingEntry  by remember { mutableStateOf<ApiEntry?>(null) }
 
@@ -1643,15 +1646,27 @@ fun ApiSourcesEditor(apiSites: List<String>, onUpdate: (List<String>) -> Unit) {
     val cardBg    = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
 
     Column(modifier = Modifier.padding(16.dp).background(bgColor)) {
-        Button(
-            onClick = { editingIndex = -1; editingEntry = null; showWizard = true },
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = BeeColors.DeepAmber),
-            shape = RoundedCornerShape(10.dp)
-        ) {
-            Icon(Icons.Default.Add, null, tint = Color.White)
-            Spacer(Modifier.width(8.dp))
-            Text("🧙 Add API Source", color = Color.White, fontWeight = FontWeight.Bold)
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = { editingIndex = -1; editingEntry = null; showWizard = true },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = BeeColors.DeepAmber),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Icon(Icons.Default.Add, null, tint = Color.White)
+                Spacer(Modifier.width(6.dp))
+                Text("🧙 Add API Source", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+            Button(
+                onClick = { showTester = true },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = BeeColors.HoneyGold),
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Icon(Icons.Default.Search, null, tint = BeeColors.BeeBlack)
+                Spacer(Modifier.width(6.dp))
+                Text("🧪 Test API Endpoint", color = BeeColors.BeeBlack, fontWeight = FontWeight.Bold)
+            }
         }
         Spacer(Modifier.height(12.dp))
 
@@ -1744,6 +1759,12 @@ fun ApiSourcesEditor(apiSites: List<String>, onUpdate: (List<String>) -> Unit) {
                 onUpdate(updated)
                 showWizard = false; editingIndex = -1; editingEntry = null
             }
+        )
+    }
+
+    if (showTester) {
+        ApiEndpointTesterDialog(
+            onDismiss = { showTester = false }
         )
     }
 }
@@ -1889,14 +1910,14 @@ fun ApiSourceWizardDialog(
                         Text("Landing URL", fontWeight = FontWeight.Bold, color = textColor, fontSize = 14.sp)
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "The link Dvora opens when a match is found.\nPut DVORA where the title goes — this URL is completely independent from the search API above.\nLeave empty to reuse the search API URL.",
+                            "The link Dvora opens when a match is found.\nPut DVORA where the title goes — this URL is completely independent from the search API above.\nThis field is required.",
                             fontSize = 11.sp, color = textColor.copy(alpha = 0.6f)
                         )
                         Spacer(Modifier.height(10.dp))
                         OutlinedTextField(
                             value         = landingUrl,
                             onValueChange = { landingUrl = it },
-                            label         = { Text("Landing URL  (use DVORA as placeholder, optional)") },
+                            label         = { Text("Landing URL  (use DVORA as placeholder, required)") },
                             placeholder   = { Text("https://yesmovies.ag/search/?q=DVORA", color = textColor.copy(alpha = 0.35f)) },
                             modifier      = Modifier.fillMaxWidth(),
                             singleLine    = true,
@@ -1904,7 +1925,7 @@ fun ApiSourceWizardDialog(
                         )
                         Spacer(Modifier.height(10.dp))
                         val previewQuery2 = "the+matrix"
-                        val effectiveLanding = landingUrl.ifBlank { apiUrl.ifBlank { "https://your-site.com/search/?q=DVORA" } }
+                        val effectiveLanding = landingUrl.ifBlank { "https://your-site.com/search/?q=DVORA" }
                         val isSplit = landingUrl.isNotBlank() && landingUrl.trimEnd('/') != apiUrl.trimEnd('/')
                         Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = cardBg)) {
                             Column(Modifier.padding(10.dp)) {
@@ -1925,10 +1946,11 @@ fun ApiSourceWizardDialog(
                                             fontWeight = FontWeight.SemiBold
                                         )
                                     }
-                                } else if (landingUrl.isBlank()) {
+                                }
+                                if (landingUrl.isBlank()) {
                                     Text(
-                                        "ℹ️ Reusing the search API URL as landing link",
-                                        fontSize = 10.sp, color = textColor.copy(alpha = 0.5f)
+                                        "⚠️ Landing URL is required",
+                                        fontSize = 10.sp, color = BeeColors.PollenOrange, fontWeight = FontWeight.SemiBold
                                     )
                                 }
                                 if (landingUrl.isNotBlank() && !landingUrl.contains("DVORA")) {
@@ -1961,13 +1983,13 @@ fun ApiSourceWizardDialog(
                 } else {
                     Button(
                         onClick  = {
-                            if (apiUrl.isNotBlank()) onSave(ApiEntry(
+                            if (apiUrl.isNotBlank() && landingUrl.isNotBlank()) onSave(ApiEntry(
                                 type       = apiType,
                                 apiUrl     = apiUrl.trimEnd('/'),
-                                landingUrl = landingUrl.trimEnd('/').ifBlank { null }
+                                landingUrl = landingUrl.trimEnd('/')
                             ))
                         },
-                        enabled  = apiUrl.isNotBlank(),
+                        enabled  = apiUrl.isNotBlank() && landingUrl.isNotBlank(),
                         colors   = ButtonDefaults.buttonColors(containerColor = BeeColors.HoneyGold),
                         shape    = RoundedCornerShape(8.dp)
                     ) {
@@ -1979,6 +2001,241 @@ fun ApiSourceWizardDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Cancel", color = textColor.copy(alpha = 0.6f))
+            }
+        }
+    )
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// API ENDPOINT TESTER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+data class JsonKeyPath(
+    val path: String,   // e.g. "data.title" or "data[0].name"
+    val sampleValue: String,
+    val selected: Boolean = false
+)
+
+fun flattenJson(element: com.google.gson.JsonElement, prefix: String = ""): List<JsonKeyPath> {
+    val result = mutableListOf<JsonKeyPath>()
+    when {
+        element.isJsonObject -> {
+            element.asJsonObject.entrySet().forEach { (key, value) ->
+                val newPrefix = if (prefix.isEmpty()) key else "$prefix.$key"
+                result.addAll(flattenJson(value, newPrefix))
+            }
+        }
+        element.isJsonArray -> {
+            val arr = element.asJsonArray
+            if (arr.size() > 0) {
+                // Show first item's keys with array index notation
+                result.addAll(flattenJson(arr[0], "$prefix[0]"))
+            } else {
+                result.add(JsonKeyPath(prefix, "[] (empty array)"))
+            }
+        }
+        else -> {
+            val valueStr = element.toString().trim('"')
+            result.add(JsonKeyPath(prefix, valueStr.take(80)))
+        }
+    }
+    return result
+}
+
+@Composable
+fun ApiEndpointTesterDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    var endpointUrl by remember { mutableStateOf("") }
+    var isLoading   by remember { mutableStateOf(false) }
+    var rawJson     by remember { mutableStateOf("") }
+    var errorMsg    by remember { mutableStateOf<String?>(null) }
+    var keyPaths    by remember { mutableStateOf<List<JsonKeyPath>>(emptyList()) }
+    var selectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+    val bgColor   = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
+    val textColor = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface)
+    val cardBg    = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor   = bgColor,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("🧪 ", fontSize = 20.sp)
+                Text("Test API Endpoint", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp,
+                    color = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold))
+            }
+        },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    "Paste an API endpoint URL (use DVORA as the search placeholder). Dvora will fetch it, show the JSON, and let you pick which key-value pairs to use for matching.",
+                    fontSize = 11.sp, color = textColor.copy(alpha = 0.6f)
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value         = endpointUrl,
+                    onValueChange = { endpointUrl = it },
+                    label         = { Text("API Endpoint URL  (use DVORA as placeholder)") },
+                    placeholder   = { Text("https://example.com/search?q=DVORA", color = textColor.copy(alpha = 0.35f)) },
+                    modifier      = Modifier.fillMaxWidth(),
+                    singleLine    = true,
+                    colors        = beeTextFieldColors()
+                )
+                Spacer(Modifier.height(10.dp))
+                Button(
+                    onClick = {
+                        if (endpointUrl.isBlank()) {
+                            errorMsg = "Please enter a URL"
+                            return@Button
+                        }
+                        // Replace DVORA with a real movie title so the API returns real results
+                        val testUrl = endpointUrl.replace("DVORA", "interstellar")
+                        isLoading = true
+                        errorMsg = null
+                        rawJson = ""
+                        keyPaths = emptyList()
+                        selectedKeys = emptySet()
+                        scope.launch {
+                            try {
+                                val result = withContext(Dispatchers.IO) {
+                                    val client = okhttp3.OkHttpClient.Builder()
+                                        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                                        .readTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+                                        .build()
+                                    val request = okhttp3.Request.Builder()
+                                        .url(testUrl)
+                                        .header("User-Agent", "Mozilla/5.0 (Linux; Android 10) Dvora/2.0")
+                                        .header("Accept", "application/json")
+                                        .build()
+                                    client.newCall(request).execute().use { response ->
+                                        if (!response.isSuccessful) {
+                                            return@withContext "HTTP_ERROR:${response.code}"
+                                        }
+                                        val body = response.body?.string() ?: return@withContext "EMPTY_BODY"
+                                        body
+                                    }
+                                }
+                                if (result.startsWith("HTTP_ERROR:")) {
+                                    errorMsg = result
+                                } else if (result == "EMPTY_BODY") {
+                                    errorMsg = "Empty response body"
+                                } else {
+                                    rawJson = result
+                                    try {
+                                        val parsed = com.google.gson.JsonParser.parseString(result)
+                                        keyPaths = flattenJson(parsed)
+                                    } catch (_: Exception) {
+                                        errorMsg = "Response is not valid JSON"
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                errorMsg = "${e.javaClass.simpleName}: ${e.message ?: "Unknown error"}"
+                            } finally {
+                                isLoading = false
+                            }
+                        }
+                    },
+                    enabled = !isLoading && endpointUrl.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = BeeColors.DeepAmber),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    if (isLoading) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text("Fetching...", color = Color.White, fontWeight = FontWeight.Bold)
+                    } else {
+                        Text("🚀 Fetch JSON", color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                errorMsg?.let { err ->
+                    Spacer(Modifier.height(8.dp))
+                    Text("⚠️ $err", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+
+                if (rawJson.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Text("📄 Raw JSON Response:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BeeColors.DeepAmber)
+                    Spacer(Modifier.height(4.dp))
+                    Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = cardBg)) {
+                        Text(
+                            rawJson.take(2000) + if (rawJson.length > 2000) "\n... (truncated)" else "",
+                            modifier = Modifier.padding(8.dp),
+                            fontSize = 10.sp, fontFamily = FontFamily.Monospace,
+                            color = textColor.copy(alpha = 0.75f),
+                            maxLines = 12
+                        )
+                    }
+                }
+
+                if (keyPaths.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Text("🔑 Pick key-value pairs to match on:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BeeColors.DeepAmber)
+                    Spacer(Modifier.height(4.dp))
+                    Text("Tap to select/deselect. Selected keys will be used when scanning for matches.",
+                        fontSize = 10.sp, color = textColor.copy(alpha = 0.55f))
+                    Spacer(Modifier.height(6.dp))
+                    keyPaths.forEach { kp ->
+                        val isSelected = kp.path in selectedKeys
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
+                                .clickable {
+                                    selectedKeys = if (isSelected) selectedKeys - kp.path else selectedKeys + kp.path
+                                },
+                            shape = RoundedCornerShape(6.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isSelected) BeeColors.HoneyGold.copy(alpha = 0.25f) else cardBg
+                            ),
+                            border = androidx.compose.foundation.BorderStroke(
+                                if (isSelected) 2.dp else 1.dp,
+                                if (isSelected) BeeColors.DeepAmber else BeeColors.HoneyGold.copy(alpha = 0.3f)
+                            )
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(8.dp)) {
+                                Checkbox(
+                                    checked = isSelected,
+                                    onCheckedChange = {
+                                        selectedKeys = if (it) selectedKeys + kp.path else selectedKeys - kp.path
+                                    },
+                                    colors = CheckboxDefaults.colors(checkedColor = BeeColors.DeepAmber)
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(kp.path, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = textColor, fontFamily = FontFamily.Monospace)
+                                    Text("e.g. ${kp.sampleValue}", fontSize = 10.sp, color = textColor.copy(alpha = 0.6f), maxLines = 1)
+                                }
+                            }
+                        }
+                    }
+
+                    if (selectedKeys.isNotEmpty()) {
+                        Spacer(Modifier.height(10.dp))
+                        Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = BeeColors.HoneyGold.copy(alpha = 0.15f))) {
+                            Column(Modifier.padding(10.dp)) {
+                                Text("✅ Selected keys for matching:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BeeColors.DeepAmber)
+                                Spacer(Modifier.height(4.dp))
+                                selectedKeys.forEach { key ->
+                                    Text("• $key", fontSize = 11.sp, color = textColor, fontFamily = FontFamily.Monospace)
+                                }
+                                Spacer(Modifier.height(6.dp))
+                                Text(
+                                    "ℹ️ These keys will be checked against the search title. When creating an API source, the scanner will look for these fields in the JSON response.",
+                                    fontSize = 10.sp, color = textColor.copy(alpha = 0.55f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close", color = BeeColors.DeepAmber, fontWeight = FontWeight.Bold)
             }
         }
     )
