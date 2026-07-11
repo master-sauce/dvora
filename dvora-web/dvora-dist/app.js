@@ -549,4 +549,430 @@ function cp(text,btn){
     .then(()=>{const o=btn.textContent;btn.textContent='✓ Copied!';setTimeout(()=>btn.textContent=o,1500);})
     .catch(()=>{const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);const o=btn.textContent;btn.textContent='✓ Copied!';setTimeout(()=>btn.textContent=o,1500);});
 }
+
+// ── CUSTOM API TYPES ──────────────────────────────────────────────────────────
+// CustomApiType persistence + ApiEntry serialization + UI (dialog, wizard, list)
+
+const CUSTOM_TYPES_KEY='dvora_custom_api_types';
+let customApiTypes=[];
+let cmState={selectedKeys:new Set(),fetchedJson:null,flattenedKeys:[]};
+let addApiState={step:1,chosenType:null,chosenCustom:null};
+
+// ── CustomApiType localStorage ──
+function loadCustomApiTypes(){
+  try{
+    const raw=localStorage.getItem(CUSTOM_TYPES_KEY);
+    customApiTypes=raw?JSON.parse(raw):[];
+    if(!Array.isArray(customApiTypes))customApiTypes=[];
+  }catch(e){customApiTypes=[];}
+}
+function saveCustomApiTypes(){
+  try{localStorage.setItem(CUSTOM_TYPES_KEY,JSON.stringify(customApiTypes));}catch(e){}
+}
+function getCustomTypeById(id){
+  return customApiTypes.find(t=>t.id===id)||null;
+}
+// Load on startup
+loadCustomApiTypes();
+
+// ── ApiEntry model ──
+function makeApiEntry(opts){
+  return {
+    type:opts.type||'v1',
+    apiUrl:opts.apiUrl||'',
+    landingUrl:opts.landingUrl||null,
+    matchKeys:opts.matchKeys||[],
+    customName:opts.customName||null,
+  };
+}
+function apiEntryDisplayType(e){
+  if(e.type==='stremio')return 'Stremio';
+  if(e.type==='custom')return e.customName||'Custom';
+  return 'V1 JSON API';
+}
+// Serialize: type:apiUrl|landingUrl#matchKeys,joined@customName
+function serializeApiEntry(e){
+  let s=e.type+':'+e.apiUrl;
+  if(e.landingUrl)s+='|'+e.landingUrl;
+  if(e.matchKeys&&e.matchKeys.length)s+='#'+e.matchKeys.join(',');
+  if(e.customName)s+='@'+e.customName;
+  return s;
+}
+// Deserialize one line into ApiEntry (or null)
+function deserializeApiEntry(line){
+  line=line.trim();
+  if(!line)return null;
+  let type='v1',rest=line,customName=null,matchKeys=[],landingUrl=null,apiUrl='';
+  if(line.startsWith('stremio:')){type='stremio';rest=line.slice('stremio:'.length);}
+  else if(line.startsWith('custom:')){type='custom';rest=line.slice('custom:'.length);}
+  else if(line.startsWith('v1:')){type='v1';rest=line.slice('v1:'.length);}
+  else{type='v1';rest=line;}
+  // @customName
+  const atIdx=rest.lastIndexOf('@');
+  if(atIdx!==-1){customName=rest.slice(atIdx+1);rest=rest.slice(0,atIdx);}
+  // #matchKeys
+  const hashIdx=rest.indexOf('#');
+  if(hashIdx!==-1){const mk=rest.slice(hashIdx+1);rest=rest.slice(0,hashIdx);matchKeys=mk.split(',').map(k=>k.trim()).filter(k=>k);}
+  // |landingUrl
+  const pipeIdx=rest.indexOf('|');
+  if(pipeIdx!==-1){apiUrl=rest.slice(0,pipeIdx).trim();landingUrl=rest.slice(pipeIdx+1).trim();}
+  else{apiUrl=rest.trim();}
+  if(!apiUrl)return null;
+  return makeApiEntry({type,apiUrl,landingUrl:landingUrl||null,matchKeys,customName});
+}
+
+// ── Utility: extractDomain ──
+function extractDomain(url){
+  if(!url)return '';
+  const noScheme=url.split('://')[1]||url;
+  return noScheme.split('/')[0]||url.trim();
+}
+
+// ── Utility: flattenJson ──
+function flattenJson(element,prefix){
+  if(prefix===undefined)prefix='';
+  const result=[];
+  if(Array.isArray(element)){
+    if(element.length>0){
+      result.push(...flattenJson(element[0],prefix+'[0]'));
+    }else{
+      result.push({path:prefix,sampleValue:'[] (empty array)'});
+    }
+  }else if(element!==null&&typeof element==='object'){
+    for(const[key,value]of Object.entries(element)){
+      const newPrefix=prefix?prefix+'.'+key:key;
+      result.push(...flattenJson(value,newPrefix));
+    }
+  }else{
+    result.push({path:prefix,sampleValue:String(element).slice(0,80)});
+  }
+  return result;
+}
+
+// ── API SOURCES LIST RENDERING ──
+function renderApiList(){
+  const list=document.getElementById('apiList');
+  if(!list)return;
+  const raw=(document.getElementById('ta-api')||{}).value||'';
+  const entries=[];
+  raw.split('\n').forEach(line=>{
+    const e=deserializeApiEntry(line);
+    if(e)entries.push(e);
+  });
+  if(entries.length===0){
+    list.innerHTML='<div class="api-empty">No API sources configured. Click "Add API Source" above to add one.</div>';
+    return;
+  }
+  list.innerHTML='';
+  entries.forEach((e,idx)=>{
+    const item=document.createElement('div');
+    item.className='api-item';
+    const apiDomain=extractDomain(e.apiUrl);
+    const landDomain=e.landingUrl?extractDomain(e.landingUrl):null;
+    const isSplit=e.landingUrl&&e.landingUrl!==e.apiUrl;
+    const isCustom=e.type==='custom';
+    const displayType=apiEntryDisplayType(e);
+    let badges='<span class="badge-type">'+esc(displayType)+'</span>';
+    if(isSplit)badges+='<span class="badge-split">SPLIT</span>';
+    if(isCustom)badges+='<span class="badge-custom">CUSTOM</span>';
+    let landingLine='';
+    if(isSplit&&landDomain){
+      landingLine='<div class="api-item-landing">🔗 '+esc(landDomain)+'</div>';
+    }
+    item.innerHTML='<div class="api-item-info">'
+      +'<div class="api-item-domain">🔍 '+esc(apiDomain)+'</div>'
+      +landingLine
+      +'<div class="api-item-badges">'+badges+'</div>'
+      +'</div>'
+      +'<div class="api-item-actions">'
+      +'<button class="api-del" onclick="removeApiEntry('+idx+')">✕ Remove</button>'
+      +'</div>';
+    list.appendChild(item);
+  });
+}
+
+function removeApiEntry(idx){
+  const ta=document.getElementById('ta-api');
+  if(!ta)return;
+  const lines=ta.value.split('\n').filter(l=>l.trim());
+  if(idx<0||idx>=lines.length)return;
+  lines.splice(idx,1);
+  ta.value=lines.join('\n');
+  renderApiList();
+  // Auto-save to server
+  saveCfg('api_sites.txt','ta-api','ss-api');
+}
+
+function togApiRaw(btn){
+  const wrap=document.getElementById('apiRawWrap');
+  wrap.classList.toggle('open');
+  btn.textContent=wrap.classList.contains('open')?'▴ Raw editor (advanced)':'▾ Raw editor (advanced)';
+}
+
+// ── CREATE CUSTOM API TYPE DIALOG ──
+function openCreateCustomDialog(){openCreateCustom();}
+function openCreateCustom(){
+  // Reset state
+  cmState={selectedKeys:new Set(),fetchedJson:null,flattenedKeys:[]};
+  document.getElementById('cmApiUrl').value='';
+  document.getElementById('cmName').value='';
+  document.getElementById('cmLandingUrl').value='';
+  document.getElementById('cmJsonPreview').textContent='Fetch a URL to see the raw JSON response here.';
+  document.getElementById('cmJsonPreview').className='json-preview empty';
+  document.getElementById('cmKeyPicker').innerHTML='<div class="key-picker-empty">Fetch JSON first to see available keys.</div>';
+  document.getElementById('cmFetchStatus').textContent='';
+  document.getElementById('cmSaveStatus').textContent='';
+  document.getElementById('cmFetchBtn').disabled=false;
+  document.getElementById('customModal').classList.add('open');
+}
+function closeCreateCustom(){
+  document.getElementById('customModal').classList.remove('open');
+}
+function cmOnApiInput(){
+  // Clear previous fetch results when URL changes
+  if(cmState.fetchedJson){
+    cmState.fetchedJson=null;
+    cmState.flattenedKeys=[];
+    cmState.selectedKeys=new Set();
+    document.getElementById('cmJsonPreview').textContent='Fetch a URL to see the raw JSON response here.';
+    document.getElementById('cmJsonPreview').className='json-preview empty';
+    document.getElementById('cmKeyPicker').innerHTML='<div class="key-picker-empty">Fetch JSON first to see available keys.</div>';
+  }
+  document.getElementById('cmFetchStatus').textContent='';
+}
+async function cmFetchJson(){
+  const urlInput=document.getElementById('cmApiUrl').value.trim();
+  const status=document.getElementById('cmFetchStatus');
+  const preview=document.getElementById('cmJsonPreview');
+  const picker=document.getElementById('cmKeyPicker');
+  if(!urlInput){
+    status.textContent='Enter a URL first.';status.className='modal-status err';return;
+  }
+  // Replace DVORA with "interstellar" for testing
+  const testUrl=urlInput.replace(/DVORA/g,'interstellar');
+  const btn=document.getElementById('cmFetchBtn');
+  btn.disabled=true;status.textContent='Fetching...';status.className='modal-status info';
+  preview.textContent='';preview.className='json-preview empty';
+  picker.innerHTML='<div class="key-picker-empty">Fetching...</div>';
+  try{
+    const resp=await fetch('/proxy?url='+encodeURIComponent(testUrl));
+    const text=await resp.text();
+    let data;
+    try{data=JSON.parse(text);}catch(e){
+      // Maybe the proxy returned an error JSON
+      try{
+        const errObj=JSON.parse(text);
+        if(errObj.error){
+          status.textContent='✗ '+errObj.error;status.className='modal-status err';
+          preview.textContent=text.slice(0,2000);preview.className='json-preview';
+          picker.innerHTML='<div class="key-picker-empty">Could not parse JSON.</div>';
+          return;
+        }
+      }catch(_){}
+      status.textContent='✗ Invalid JSON response';status.className='modal-status err';
+      preview.textContent=text.slice(0,2000);preview.className='json-preview';
+      picker.innerHTML='<div class="key-picker-empty">Could not parse JSON.</div>';
+      return;
+    }
+    cmState.fetchedJson=data;
+    const pretty=JSON.stringify(data,null,2);
+    preview.textContent=pretty.length>2000?pretty.slice(0,2000)+'\n… (truncated)':pretty;
+    preview.className='json-preview';
+    status.textContent='✓ JSON fetched ('+pretty.length+' chars)';status.className='modal-status ok';
+    // Flatten and render key picker
+    cmState.flattenedKeys=flattenJson(data);
+    cmState.selectedKeys=new Set();
+    renderCmKeyPicker();
+  }catch(err){
+    status.textContent='✗ '+err.message;status.className='modal-status err';
+    picker.innerHTML='<div class="key-picker-empty">Fetch failed.</div>';
+  }finally{
+    btn.disabled=false;
+  }
+}
+function renderCmKeyPicker(){
+  const picker=document.getElementById('cmKeyPicker');
+  if(!cmState.flattenedKeys||cmState.flattenedKeys.length===0){
+    picker.innerHTML='<div class="key-picker-empty">No keys found in JSON.</div>';
+    return;
+  }
+  picker.innerHTML='';
+  cmState.flattenedKeys.forEach(k=>{
+    const card=document.createElement('div');
+    card.className='key-card'+(cmState.selectedKeys.has(k.path)?' selected':'');
+    card.innerHTML='<div class="key-check"></div>'
+      +'<div class="key-info">'
+      +'<div class="key-path">'+esc(k.path)+'</div>'
+      +'<div class="key-sample">sample: '+esc(k.sampleValue)+'</div>'
+      +'</div>';
+    card.onclick=()=>{
+      if(cmState.selectedKeys.has(k.path))cmState.selectedKeys.delete(k.path);
+      else cmState.selectedKeys.add(k.path);
+      card.classList.toggle('selected');
+    };
+    picker.appendChild(card);
+  });
+}
+function cmSave(){
+  const status=document.getElementById('cmSaveStatus');
+  const apiUrl=document.getElementById('cmApiUrl').value.trim();
+  const name=document.getElementById('cmName').value.trim();
+  const landingUrl=document.getElementById('cmLandingUrl').value.trim();
+  if(!apiUrl){status.textContent='✗ API URL is required';status.className='modal-status err';return;}
+  if(!apiUrl.includes('DVORA')){status.textContent='✗ API URL must contain DVORA placeholder';status.className='modal-status err';return;}
+  if(!name){status.textContent='✗ Name is required';status.className='modal-status err';return;}
+  if(!landingUrl){status.textContent='✗ Landing URL is required';status.className='modal-status err';return;}
+  if(cmState.selectedKeys.size===0){status.textContent='✗ Select at least one match key';status.className='modal-status err';return;}
+  const matchKeys=Array.from(cmState.selectedKeys);
+  const customType={
+    id:'custom_'+Date.now(),
+    name:name,
+    apiUrl:apiUrl,
+    landingUrl:landingUrl,
+    matchKeys:matchKeys,
+  };
+  customApiTypes.push(customType);
+  saveCustomApiTypes();
+  status.textContent='✓ Saved! "'+name+'" is now available in Add API Source';status.className='modal-status ok';
+  setTimeout(()=>{closeCreateCustom();},900);
+}
+
+// ── ADD API SOURCE WIZARD ──
+function openAddApiWizard(){
+  addApiState={step:1,chosenType:null,chosenCustom:null};
+  document.getElementById('addApiStatus').textContent='';
+  document.getElementById('addApiStep1').style.display='';
+  document.getElementById('addApiStep2').style.display='none';
+  document.getElementById('addApiBackBtn').style.display='none';
+  document.getElementById('addApiNextBtn').textContent='Next →';
+  document.getElementById('addApiUrl').value='';
+  document.getElementById('addApiLanding').value='';
+  renderAddApiTypeChooser();
+  document.getElementById('addApiModal').classList.add('open');
+}
+function closeAddApiWizard(){
+  document.getElementById('addApiModal').classList.remove('open');
+}
+function renderAddApiTypeChooser(){
+  const chooser=document.getElementById('addApiTypeChooser');
+  chooser.innerHTML='';
+  const options=[
+    {key:'v1',icon:'🟡',name:'V1 JSON API',desc:'Standard JSON API with data[].t / data[].y structure',mono:''},
+    {key:'stremio',icon:'🎬',name:'Stremio Addon',desc:'Stremio catalog endpoint (e.g. https://v3-cinemeta.strem.io)',mono:''},
+  ];
+  customApiTypes.forEach(t=>{
+    options.push({key:'custom:'+t.id,icon:'✦',name:t.name,desc:'Custom API type',mono:t.apiUrl});
+  });
+  options.forEach(opt=>{
+    const el=document.createElement('div');
+    el.className='type-option'+(addApiState.chosenType===opt.key?' selected':'');
+    el.innerHTML='<div class="type-icon">'+opt.icon+'</div>'
+      +'<div class="type-text">'
+      +'<div class="type-name">'+esc(opt.name)+'</div>'
+      +'<div class="type-desc">'+esc(opt.desc)+'</div>'
+      +(opt.mono?'<div class="type-desc mono">'+esc(opt.mono)+'</div>':'')
+      +'</div>';
+    el.onclick=()=>{
+      addApiState.chosenType=opt.key;
+      renderAddApiTypeChooser();
+    };
+    chooser.appendChild(el);
+  });
+}
+function addApiNext(){
+  const status=document.getElementById('addApiStatus');
+  if(addApiState.step===1){
+    if(!addApiState.chosenType){status.textContent='✗ Choose a type first';status.className='modal-status err';return;}
+    // Move to step 2
+    addApiState.step=2;
+    document.getElementById('addApiStep1').style.display='none';
+    document.getElementById('addApiStep2').style.display='';
+    document.getElementById('addApiBackBtn').style.display='';
+    document.getElementById('addApiNextBtn').textContent='✓ Add Source';
+    status.textContent='';
+    // Pre-fill if custom
+    if(addApiState.chosenType.startsWith('custom:')){
+      const id=addApiState.chosenType.slice('custom:'.length);
+      const t=getCustomTypeById(id);
+      if(t){
+        addApiState.chosenCustom=t;
+        document.getElementById('addApiUrl').value=t.apiUrl;
+        document.getElementById('addApiLanding').value=t.landingUrl;
+      }
+    }else if(addApiState.chosenType==='stremio'){
+      document.getElementById('addApiUrl').value='https://v3-cinemeta.strem.io';
+      document.getElementById('addApiLanding').value='';
+    }else{
+      // v1 — leave blank for user to fill
+      document.getElementById('addApiUrl').value='';
+      document.getElementById('addApiLanding').value='';
+    }
+    return;
+  }
+  // Step 2: save
+  const apiUrl=document.getElementById('addApiUrl').value.trim();
+  const landingUrl=document.getElementById('addApiLanding').value.trim();
+  if(!apiUrl){status.textContent='✗ API URL is required';status.className='modal-status err';return;}
+  if(!landingUrl){status.textContent='✗ Landing URL is required';status.className='modal-status err';return;}
+  let entry;
+  if(addApiState.chosenType.startsWith('custom:')){
+    const t=addApiState.chosenCustom;
+    if(!t){status.textContent='✗ Custom type not found';status.className='modal-status err';return;}
+    entry=makeApiEntry({
+      type:'custom',
+      apiUrl:apiUrl,
+      landingUrl:landingUrl,
+      matchKeys:t.matchKeys,
+      customName:t.name,
+    });
+  }else if(addApiState.chosenType==='stremio'){
+    entry=makeApiEntry({type:'stremio',apiUrl:apiUrl,landingUrl:null,matchKeys:[],customName:null});
+  }else{
+    entry=makeApiEntry({type:'v1',apiUrl:apiUrl,landingUrl:landingUrl,matchKeys:[],customName:null});
+  }
+  const line=serializeApiEntry(entry);
+  const ta=document.getElementById('ta-api');
+  const current=ta.value.trim();
+  ta.value=current?(current+'\n'+line):line;
+  renderApiList();
+  saveCfg('api_sites.txt','ta-api','ss-api');
+  status.textContent='✓ Added!';status.className='modal-status ok';
+  setTimeout(()=>{closeAddApiWizard();},700);
+}
+function addApiBack(){
+  addApiState.step=1;
+  document.getElementById('addApiStep1').style.display='';
+  document.getElementById('addApiStep2').style.display='none';
+  document.getElementById('addApiBackBtn').style.display='none';
+  document.getElementById('addApiNextBtn').textContent='Next →';
+  document.getElementById('addApiStatus').textContent='';
+}
+
+// ── Hook API list rendering into settings load ──
+const _origLoadCfgs=loadCfgs;
+loadCfgs=function(){
+  ['shows','movies','manual','api','exclusions'].forEach(k=>{
+    fetch('/config?file='+fm[k]).then(r=>r.json()).then(d=>{
+      document.getElementById('ta-'+k).value=d.content||'';
+      if(k==='api')renderApiList();
+    }).catch(()=>{});
+  });
+};
+// Re-render list when switching to api tab
+const _origSwitchTab=switchTab;
+switchTab=function(name){
+  activeTab=name;
+  document.querySelectorAll('.stab').forEach((b,i)=>b.classList.toggle('active',['shows','movies','manual','api','exclusions','logs'][i]===name));
+  document.querySelectorAll('.stabc').forEach(c=>c.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  if(name==='logs')renderLogs();
+  if(name==='api')renderApiList();
+};
+// Escape closes modals too
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    if(document.getElementById('customModal').classList.contains('open'))closeCreateCustom();
+    if(document.getElementById('addApiModal').classList.contains('open'))closeAddApiWizard();
+  }
+});
 function esc(s){if(!s)return '';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}

@@ -198,6 +198,84 @@ a.cu:hover{color:var(--hg);}
 .lsqlabel.sub{color:var(--sub);}
 .lsqval{font-size:.86rem;color:var(--tx);font-weight:600;}
 ::-webkit-scrollbar{width:5px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:var(--b2);border-radius:3px;}
+/* ── API SOURCES LIST ── */
+.api-list{margin-bottom:14px;}
+.api-item{background:var(--sf);border:1.5px solid var(--br);border-radius:11px;padding:11px 13px;margin-bottom:8px;display:flex;align-items:center;gap:11px;transition:border-color .18s;}
+.api-item:hover{border-color:var(--b2);}
+.api-item-info{flex:1;min-width:0;}
+.api-item-domain{font-weight:800;font-size:.86rem;color:var(--tx);display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.api-item-landing{font-size:.72rem;color:var(--tm);margin-top:2px;display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:600;}
+.api-item-badges{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px;}
+.api-item-actions{display:flex;flex-direction:column;gap:5px;flex-shrink:0;}
+.api-del{background:transparent;border:1px solid var(--b2);color:var(--tm);font-size:.62rem;padding:4px 8px;cursor:pointer;border-radius:6px;font-family:'Nunito',sans-serif;font-weight:700;transition:all .15s;}
+.api-del:hover{border-color:var(--po);color:var(--po);background:rgba(255,109,0,.07);}
+.badge-type{font-family:'Sora',sans-serif;font-size:.58rem;font-weight:700;letter-spacing:.08em;padding:3px 8px;border-radius:6px;background:rgba(255,193,7,.1);color:var(--api);border:1px solid rgba(255,193,7,.22);}
+.badge-split{font-family:'Sora',sans-serif;font-size:.58rem;font-weight:700;letter-spacing:.08em;padding:3px 8px;border-radius:6px;background:rgba(255,143,0,.1);color:var(--man);border:1px solid rgba(255,143,0,.28);}
+.badge-custom{font-family:'Sora',sans-serif;font-size:.58rem;font-weight:700;letter-spacing:.08em;padding:3px 8px;border-radius:6px;background:rgba(139,195,74,.14);color:var(--fgl);border:1px solid rgba(139,195,74,.33);}
+.api-empty{text-align:center;padding:24px;color:var(--tm);font-size:.76rem;letter-spacing:.06em;background:var(--sf);border:1.5px dashed var(--br);border-radius:11px;margin-bottom:10px;}
+.api-addrow{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
+.api-addbtn{flex:1;background:var(--bg);border:1.5px solid var(--hg);color:var(--hg);font-family:'Sora',sans-serif;font-weight:700;font-size:.72rem;letter-spacing:.1em;padding:9px 12px;cursor:pointer;border-radius:9px;transition:all .18s;text-transform:uppercase;}
+.api-addbtn:hover{background:var(--hg);color:var(--bg);}
+.api-addbtn.secondary{border-color:var(--b2);color:var(--tm);}
+.api-addbtn.secondary:hover{border-color:var(--fgl);color:var(--fgl);background:rgba(139,195,74,.07);}
+.api-raw-toggle{background:transparent;border:1px solid var(--b2);color:var(--tm);font-size:.66rem;font-weight:700;padding:6px 11px;cursor:pointer;border-radius:8px;font-family:'Nunito',sans-serif;transition:all .15s;margin-bottom:8px;}
+.api-raw-toggle:hover{border-color:var(--da);color:var(--da);}
+.api-raw-wrap{display:none;margin-bottom:10px;}
+.api-raw-wrap.open{display:block;}
+/* ── MODAL ── */
+.modal-ov{display:none;position:fixed;inset:0;z-index:300;background:rgba(20,12,0,.82);backdrop-filter:blur(6px);overflow-y:auto;}
+.modal-ov.open{display:flex;align-items:flex-start;justify-content:center;padding:30px 16px;}
+.modal-card{background:var(--bg);border:2px solid var(--br);border-radius:16px;max-width:620px;width:100%;box-shadow:0 12px 48px rgba(0,0,0,.5);animation:ci .25s forwards;overflow:hidden;}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:15px 20px;border-bottom:2px solid var(--br);background:var(--sf);}
+.modal-title{font-family:'Sora',sans-serif;font-size:.92rem;font-weight:800;letter-spacing:.12em;color:var(--hg);text-transform:uppercase;}
+.modal-body{padding:18px 20px 20px;max-height:70vh;overflow-y:auto;}
+.modal-foot{display:flex;gap:9px;align-items:center;justify-content:flex-end;padding:14px 20px;border-top:2px solid var(--br);background:var(--sf);flex-wrap:wrap;}
+.modal-step{font-size:.66rem;font-weight:800;letter-spacing:.18em;color:var(--da);text-transform:uppercase;margin-bottom:6px;}
+.modal-field{margin-bottom:14px;}
+.modal-field label{display:block;font-size:.68rem;font-weight:800;letter-spacing:.18em;text-transform:uppercase;color:var(--da);margin-bottom:6px;}
+.modal-input{width:100%;background:var(--sf);border:1.5px solid var(--b2);color:var(--tx);font-family:'Nunito',sans-serif;font-size:.84rem;font-weight:600;padding:10px 12px;border-radius:9px;outline:none;transition:border-color .18s;}
+.modal-input:focus{border-color:var(--hg);}
+.modal-input::placeholder{color:var(--tm);font-weight:400;}
+.modal-input.mono{font-family:monospace;font-size:.78rem;}
+.modal-hint{font-size:.68rem;color:var(--tm);margin-top:5px;line-height:1.6;}
+.modal-hint code{color:var(--hg);font-family:monospace;background:rgba(255,193,7,.1);padding:1px 5px;border-radius:4px;}
+.modal-btn{background:var(--bg);border:1.5px solid var(--b2);color:var(--tm);font-family:'Sora',sans-serif;font-weight:700;font-size:.72rem;letter-spacing:.1em;padding:8px 16px;cursor:pointer;border-radius:9px;transition:all .18s;text-transform:uppercase;}
+.modal-btn:hover{border-color:var(--hg);color:var(--hg);}
+.modal-btn.primary{border-color:var(--hg);color:var(--hg);}
+.modal-btn.primary:hover{background:var(--hg);color:var(--bg);}
+.modal-btn.primary:disabled{opacity:.4;cursor:not-allowed;}
+.modal-btn.danger{border-color:var(--po);color:var(--po);}
+.modal-btn.danger:hover{background:var(--po);color:var(--bg);}
+.modal-status{font-size:.7rem;font-weight:700;letter-spacing:.06em;margin-right:auto;}
+.modal-status.ok{color:var(--fgl);}
+.modal-status.err{color:var(--po);}
+.modal-status.info{color:var(--tm);}
+/* ── JSON PREVIEW ── */
+.json-preview{background:var(--sf);border:1.5px solid var(--br);border-radius:10px;padding:11px 13px;max-height:220px;overflow-y:auto;font-family:monospace;font-size:.7rem;line-height:1.6;color:var(--td);white-space:pre-wrap;word-break:break-all;margin-bottom:12px;}
+.json-preview.empty{color:var(--tm);font-style:italic;text-align:center;padding:24px;}
+/* ── KEY PICKER ── */
+.key-picker{max-height:280px;overflow-y:auto;margin-bottom:12px;}
+.key-card{background:var(--sf);border:1.5px solid var(--br);border-radius:9px;padding:9px 12px;margin-bottom:6px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:10px;}
+.key-card:hover{border-color:var(--b2);}
+.key-card.selected{border-color:var(--fgl);background:rgba(139,195,74,.07);}
+.key-check{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--b2);flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:.8rem;color:var(--fgl);transition:all .15s;}
+.key-card.selected .key-check{background:var(--fgl);border-color:var(--fgl);color:var(--bg);}
+.key-check::before{content:'';}
+.key-card.selected .key-check::before{content:'✓';}
+.key-info{flex:1;min-width:0;}
+.key-path{font-family:monospace;font-size:.76rem;font-weight:700;color:var(--hg);word-break:break-all;}
+.key-sample{font-size:.68rem;color:var(--tm);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.key-picker-empty{text-align:center;padding:18px;color:var(--tm);font-size:.74rem;}
+/* ── TYPE CHOOSER (wizard step 1) ── */
+.type-chooser{display:flex;flex-direction:column;gap:8px;margin-bottom:6px;}
+.type-option{background:var(--sf);border:1.5px solid var(--br);border-radius:10px;padding:12px 14px;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:11px;}
+.type-option:hover{border-color:var(--b2);}
+.type-option.selected{border-color:var(--hg);background:rgba(255,193,7,.07);}
+.type-icon{font-size:1.3rem;flex-shrink:0;}
+.type-text{flex:1;min-width:0;}
+.type-name{font-weight:800;font-size:.86rem;color:var(--tx);}
+.type-desc{font-size:.68rem;color:var(--tm);margin-top:2px;}
+.type-desc.mono{font-family:monospace;font-size:.66rem;word-break:break-all;}
 </style>
 </head>
 <body>
@@ -318,13 +396,23 @@ a.cu:hover{color:var(--hg);}
       </div>
 
       <div class="stabc" id="tab-api">
-        <div class="cdesc">One entry per line. Put <code>DVORA</code> where the search term goes.<br><br>
-          <code>v1:https://site.com/searching?q=DVORA&amp;limit=40&amp;offset=0</code> — V1 JSON API<br>
-          <code>v1:https://site.com/api?q=DVORA|https://site.com/search/?q=DVORA</code> — with separate landing URL<br>
-          <code>stremio:https://v3-cinemeta.strem.io</code> — Stremio catalog endpoint<br><br>
-          Use <code>|</code> to split API search URL from landing URL. Bare URL treated as <code>v1:</code>.</div>
-        <textarea class="cta" id="ta-api" rows="12" placeholder="v1:https://site.com/searching?q=DVORA&limit=40&offset=0|https://site.com/search/?q=DVORA&#10;stremio:https://v3-cinemeta.strem.io"></textarea>
-        <div class="cfoot"><button class="savebtn" onclick="saveCfg('api_sites.txt','ta-api','ss-api')">✓ Save</button><span class="ss" id="ss-api"></span></div>
+        <div class="cdesc">API sources are scanned in parallel during search. Each shows its domain and type. Use the buttons below to add a new source or create a custom API type with your own JSON key matching.</div>
+        <div class="api-addrow">
+          <button class="api-addbtn" onclick="openAddApiWizard()">＋ Add API Source</button>
+          <button class="api-addbtn secondary" onclick="openCreateCustomDialog()">✦ Create Custom API Type</button>
+        </div>
+        <div id="apiList" class="api-list"></div>
+        <button class="api-raw-toggle" onclick="togApiRaw(this)">▾ Raw editor (advanced)</button>
+        <div class="api-raw-wrap" id="apiRawWrap">
+          <div class="cdesc">One entry per line. Put <code>DVORA</code> where the search term goes.<br><br>
+            <code>v1:https://site.com/searching?q=DVORA&limit=40&offset=0</code> — V1 JSON API<br>
+            <code>v1:https://site.com/api?q=DVORA|https://site.com/search/?q=DVORA</code> — with separate landing URL<br>
+            <code>stremio:https://v3-cinemeta.strem.io</code> — Stremio catalog endpoint<br>
+            <code>custom:apiUrl|landingUrl#matchKey,joined@customName</code> — Custom API type<br><br>
+            Use <code>|</code> to split API search URL from landing URL. Bare URL treated as <code>v1:</code>.</div>
+          <textarea class="cta" id="ta-api" rows="10" placeholder="v1:https://site.com/searching?q=DVORA&limit=40&offset=0|https://site.com/search/?q=DVORA&#10;stremio:https://v3-cinemeta.strem.io"></textarea>
+          <div class="cfoot"><button class="savebtn" onclick="saveCfg('api_sites.txt','ta-api','ss-api')">✓ Save</button><span class="ss" id="ss-api"></span></div>
+        </div>
       </div>
 
         <div class="stabc" id="tab-exclusions">
@@ -354,6 +442,86 @@ a.cu:hover{color:var(--hg);}
 </div>
 
 </div>
+
+<!-- CREATE CUSTOM API TYPE MODAL -->
+<div class="modal-ov" id="customModal" onclick="if(event.target===this)closeCreateCustom()">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div class="modal-title">✦ Create Custom API Type</div>
+      <button class="scls" onclick="closeCreateCustom()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-field">
+        <label>1 · API Endpoint URL</label>
+        <input type="text" id="cmApiUrl" class="modal-input mono" placeholder="https://example.com/search?q=DVORA" oninput="cmOnApiInput()">
+        <div class="modal-hint">Use <code>DVORA</code> as the search placeholder. Example: <code>https://api.example.com/search?q=DVORA&limit=20</code></div>
+      </div>
+      <div class="modal-field">
+        <button class="modal-btn primary" id="cmFetchBtn" onclick="cmFetchJson()">⬇ Fetch JSON</button>
+        <span class="modal-status info" id="cmFetchStatus"></span>
+      </div>
+      <div class="json-preview empty" id="cmJsonPreview">Fetch a URL to see the raw JSON response here.</div>
+      <div class="modal-field">
+        <label>2 · Match Keys <span style="color:var(--tm);font-weight:600;text-transform:none;letter-spacing:0">(select which JSON keys to match titles on)</span></label>
+        <div class="key-picker" id="cmKeyPicker">
+          <div class="key-picker-empty">Fetch JSON first to see available keys.</div>
+        </div>
+      </div>
+      <div class="modal-field">
+        <label>3 · Name</label>
+        <input type="text" id="cmName" class="modal-input" placeholder="My V2 API">
+      </div>
+      <div class="modal-field">
+        <label>4 · Landing URL <span style="color:var(--po);font-weight:600;text-transform:none;letter-spacing:0">(required)</span></label>
+        <input type="text" id="cmLandingUrl" class="modal-input mono" placeholder="https://example.com/search?q=DVORA">
+        <div class="modal-hint">The URL Dvora opens when a match is found. Use <code>DVORA</code> as the search placeholder.</div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <span class="modal-status" id="cmSaveStatus"></span>
+      <button class="modal-btn" onclick="closeCreateCustom()">Cancel</button>
+      <button class="modal-btn primary" onclick="cmSave()">✓ Save Custom Type</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD API SOURCE WIZARD MODAL -->
+<div class="modal-ov" id="addApiModal" onclick="if(event.target===this)closeAddApiWizard()">
+  <div class="modal-card">
+    <div class="modal-head">
+      <div class="modal-title">＋ Add API Source</div>
+      <button class="scls" onclick="closeAddApiWizard()">✕</button>
+    </div>
+    <div class="modal-body" id="addApiBody">
+      <!-- Step 1: choose type -->
+      <div id="addApiStep1">
+        <div class="modal-step">Step 1 · Choose Type</div>
+        <div class="type-chooser" id="addApiTypeChooser"></div>
+      </div>
+      <!-- Step 2: configure -->
+      <div id="addApiStep2" style="display:none">
+        <div class="modal-step">Step 2 · Configure</div>
+        <div class="modal-field">
+          <label>API URL</label>
+          <input type="text" id="addApiUrl" class="modal-input mono" placeholder="https://example.com/search?q=DVORA">
+          <div class="modal-hint">Put <code>DVORA</code> where the search term goes.</div>
+        </div>
+        <div class="modal-field">
+          <label>Landing URL <span style="color:var(--po);font-weight:600;text-transform:none;letter-spacing:0">(required)</span></label>
+          <input type="text" id="addApiLanding" class="modal-input mono" placeholder="https://example.com/search?q=DVORA">
+          <div class="modal-hint">The URL opened when a match is found. Use <code>DVORA</code> as placeholder.</div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <span class="modal-status" id="addApiStatus"></span>
+      <button class="modal-btn" onclick="closeAddApiWizard()">Cancel</button>
+      <button class="modal-btn" id="addApiBackBtn" style="display:none" onclick="addApiBack()">← Back</button>
+      <button class="modal-btn primary" id="addApiNextBtn" onclick="addApiNext()">Next →</button>
+    </div>
+  </div>
+</div>
+
 <script src="/app.js"></script>
 </body>
 </html>

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -275,10 +276,37 @@ func titleMatches(title, searchTerm string) bool {
 
 // ─── parseAPILine ─────────────────────────────────────────────────────────────
 
-func parseAPILine(line string) (apiType, apiURL, landingURL string) {
+func parseAPILine(line string) (apiType, apiURL, landingURL string, matchKeys []string, customName string) {
 	switch {
 	case strings.HasPrefix(line, "stremio:"):
-		return "stremio", strings.TrimPrefix(line, "stremio:"), ""
+		return "stremio", strings.TrimPrefix(line, "stremio:"), "", nil, ""
+	case strings.HasPrefix(line, "custom:"):
+		rest := strings.TrimPrefix(line, "custom:")
+		// Format: apiUrl|landingUrl#matchKeys,joined@customName
+		atIdx := strings.LastIndex(rest, "@")
+		if atIdx != -1 {
+			customName = rest[atIdx+1:]
+			rest = rest[:atIdx]
+		}
+		hashIdx := strings.Index(rest, "#")
+		if hashIdx != -1 {
+			matchKeysStr := rest[hashIdx+1:]
+			rest = rest[:hashIdx]
+			for _, k := range strings.Split(matchKeysStr, ",") {
+				k = strings.TrimSpace(k)
+				if k != "" {
+					matchKeys = append(matchKeys, k)
+				}
+			}
+		}
+		pipeIdx := strings.Index(rest, "|")
+		if pipeIdx != -1 {
+			apiURL = strings.TrimSpace(rest[:pipeIdx])
+			landingURL = strings.TrimSpace(rest[pipeIdx+1:])
+		} else {
+			apiURL = strings.TrimSpace(rest)
+		}
+		return "custom", apiURL, landingURL, matchKeys, customName
 	default:
 		rest := strings.TrimPrefix(line, "v1:")
 		parts := strings.SplitN(rest, "|", 2)
@@ -286,7 +314,7 @@ func parseAPILine(line string) (apiType, apiURL, landingURL string) {
 		if len(parts) > 1 {
 			land = strings.TrimSpace(parts[1])
 		}
-		return "v1", strings.TrimSpace(parts[0]), land
+		return "v1", strings.TrimSpace(parts[0]), land, nil, ""
 	}
 }
 
@@ -296,7 +324,7 @@ func scanMovieAPI(apiTemplate, landingTemplate, searchTerm string) (bool, []Movi
 	var logs []LogEntry
 	add := func(lvl, msg string) { logs = append(logs, LogEntry{lvl, msg}) }
 
-	hasAPIPlaceholder     := strings.Contains(apiTemplate, "DVORA")
+	hasAPIPlaceholder := strings.Contains(apiTemplate, "DVORA")
 	hasLandingPlaceholder := landingTemplate != "" && strings.Contains(landingTemplate, "DVORA")
 
 	client := &http.Client{Timeout: 10 * time.Second}
@@ -466,6 +494,275 @@ func scanStremio(baseURL, searchTerm, mode string) (bool, []MovieMatch, []LogEnt
 	}
 	add("verdict", "NOT FOUND — 0 matched across all variants")
 	return false, nil, logs, nil
+}
+
+// ─── Custom API (user-defined JSON key paths) ─────────────────────────────────
+
+type jsonPathToken struct {
+	typ  string // "key", "index", "all"
+	name string
+	idx  int
+}
+
+func tokenizeJsonPath(path string) []jsonPathToken {
+	var tokens []jsonPathToken
+	for _, segment := range strings.Split(path, ".") {
+		if segment == "" {
+			continue
+		}
+		bracketIdx := strings.Index(segment, "[")
+		if bracketIdx == -1 {
+			tokens = append(tokens, jsonPathToken{typ: "key", name: segment})
+			continue
+		}
+		keyName := segment[:bracketIdx]
+		if keyName != "" {
+			tokens = append(tokens, jsonPathToken{typ: "key", name: keyName})
+		}
+		rest := segment[bracketIdx:]
+		for strings.HasPrefix(rest, "[") {
+			close := strings.Index(rest, "]")
+			if close == -1 {
+				break
+			}
+			inside := rest[1:close]
+			rest = rest[close+1:]
+			if inside == "" || inside == "*" {
+				tokens = append(tokens, jsonPathToken{typ: "all"})
+			} else {
+				n, err := strconv.Atoi(inside)
+				if err != nil {
+					n = 0
+				}
+				tokens = append(tokens, jsonPathToken{typ: "index", idx: n})
+			}
+		}
+	}
+	return tokens
+}
+
+// resolveJsonPath walks the JSON tree (interface{}/[]interface{}/map[string]interface{})
+// expanding [] into all array elements, and returns all leaf primitive values.
+func resolveJsonPath(root interface{}, path string) []interface{} {
+	tokens := tokenizeJsonPath(path)
+	current := []interface{}{root}
+	for _, tok := range tokens {
+		var next []interface{}
+		for _, el := range current {
+			switch tok.typ {
+			case "key":
+				if m, ok := el.(map[string]interface{}); ok {
+					if v, exists := m[tok.name]; exists {
+						next = append(next, v)
+					}
+				}
+			case "index":
+				if arr, ok := el.([]interface{}); ok && tok.idx < len(arr) {
+					next = append(next, arr[tok.idx])
+				}
+			case "all":
+				if arr, ok := el.([]interface{}); ok {
+					next = append(next, arr...)
+				}
+			}
+		}
+		current = next
+	}
+	var leaves []interface{}
+	var collect func(el interface{})
+	collect = func(el interface{}) {
+		switch v := el.(type) {
+		case []interface{}:
+			for _, e := range v {
+				collect(e)
+			}
+		case map[string]interface{}:
+			for _, e := range v {
+				collect(e)
+			}
+		case nil:
+			// skip
+		default:
+			leaves = append(leaves, v)
+		}
+	}
+	for _, el := range current {
+		collect(el)
+	}
+	return leaves
+}
+
+// guessYearFromSiblingKeys tries to find a year near a matched title in the JSON.
+func guessYearFromSiblingKeys(root interface{}, keyPath, titleValue string) string {
+	// Walk to the parent object of the matched leaf, then probe sibling keys.
+	yearKeys := []string{"year", "y", "releaseYear", "release_date", "releaseInfo"}
+	// Build the parent path by stripping the last key segment.
+	lastDot := strings.LastIndex(keyPath, ".")
+	lastBracket := strings.LastIndex(keyPath, "[")
+	cut := -1
+	if lastDot > lastBracket {
+		cut = lastDot
+	} else if lastBracket > lastDot {
+		cut = lastBracket
+	}
+	if cut <= 0 {
+		return ""
+	}
+	parentPath := keyPath[:cut]
+	// Normalize parent path too (so we scan all array items).
+	parentPath = normalizeKeyPath(parentPath)
+	// Resolve parent and look for year-like sibling values.
+	parents := resolveJsonPath(root, parentPath)
+	for _, p := range parents {
+		m, ok := p.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		for _, yk := range yearKeys {
+			if v, exists := m[yk]; exists {
+				switch yv := v.(type) {
+				case float64:
+					if yv >= 1900 && yv <= 2100 {
+						return strconv.Itoa(int(yv))
+					}
+				case string:
+					// Extract first 4-digit year-looking substring.
+					re := regexp.MustCompile(`\b(19|20)\d{2}\b`)
+					if m := re.FindString(yv); m != "" {
+						return m
+					}
+				}
+			}
+		}
+	}
+	return ""
+}
+
+// normalizeKeyPath replaces explicit array indices [0], [1], ... with [] so all
+// array items are scanned at search time.
+func normalizeKeyPath(keyPath string) string {
+	re := regexp.MustCompile(`\[\d+\]`)
+	return re.ReplaceAllString(keyPath, "[]")
+}
+
+func scanCustomAPI(apiTemplate, landingTemplate, searchTerm string, matchKeys []string) (bool, []MovieMatch, []LogEntry, error) {
+	var logs []LogEntry
+	add := func(lvl, msg string) { logs = append(logs, LogEntry{lvl, msg}) }
+
+	if len(matchKeys) == 0 {
+		add("warn", "No match keys configured for custom API")
+		add("verdict", "NOT FOUND — no match keys")
+		return false, nil, logs, nil
+	}
+	if landingTemplate == "" {
+		add("warn", "Landing URL is required for custom API")
+		add("verdict", "NOT FOUND — missing landing URL")
+		return false, nil, logs, nil
+	}
+
+	hasAPIPlaceholder := strings.Contains(apiTemplate, "DVORA")
+	hasLandingPlaceholder := strings.Contains(landingTemplate, "DVORA")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	variants := []struct{ sep, label string }{
+		{"+", "plus"}, {"-", "dash"}, {" ", "space"},
+	}
+
+	seenNames := make(map[string]bool)
+	var allMatches []MovieMatch
+
+	for _, v := range variants {
+		if len(allMatches) >= 10 {
+			break
+		}
+		q := strings.ReplaceAll(searchTerm, " ", v.sep)
+		var apiURL string
+		if hasAPIPlaceholder {
+			apiURL = strings.ReplaceAll(apiTemplate, "DVORA", q)
+		} else {
+			apiURL = apiTemplate + "/searching?q=" + q + "&limit=40&offset=0"
+		}
+		add("info", fmt.Sprintf("Custom API GET %s [%s]", apiURL, v.label))
+
+		req, _ := http.NewRequest("GET", apiURL, nil)
+		req.Header.Set("User-Agent", userAgent)
+		req.Header.Set("Accept", "application/json")
+		resp, err := client.Do(req)
+		if err != nil {
+			add("warn", fmt.Sprintf("[%s] request error: %s", v.label, err.Error()))
+			continue
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		add("info", fmt.Sprintf("[%s] HTTP %d", v.label, resp.StatusCode))
+		if resp.StatusCode != 200 {
+			add("warn", fmt.Sprintf("[%s] skipping — HTTP %d", v.label, resp.StatusCode))
+			continue
+		}
+
+		var root interface{}
+		if err := json.Unmarshal(body, &root); err != nil {
+			add("warn", fmt.Sprintf("[%s] JSON parse error: %s", v.label, err.Error()))
+			continue
+		}
+
+		// Collect candidate titles from all match keys.
+		var candidates []string
+		for _, keyPath := range matchKeys {
+			normalized := normalizeKeyPath(keyPath)
+			leaves := resolveJsonPath(root, normalized)
+			for _, leaf := range leaves {
+				if s, ok := leaf.(string); ok && s != "" {
+					candidates = append(candidates, s)
+				} else if n, ok := leaf.(float64); ok {
+					candidates = append(candidates, strconv.FormatFloat(n, 'f', -1, 64))
+				}
+			}
+		}
+		add("info", fmt.Sprintf("[%s] %d candidate(s) from %d key(s)", v.label, len(candidates), len(matchKeys)))
+
+		for _, cand := range candidates {
+			if len(allMatches) >= 10 {
+				break
+			}
+			key := strings.ToLower(cand)
+			if seenNames[key] {
+				continue
+			}
+			if titleMatches(cand, searchTerm) {
+				seenNames[key] = true
+				var matchURL string
+				if hasLandingPlaceholder {
+					matchURL = strings.ReplaceAll(landingTemplate, "DVORA", q)
+				} else {
+					matchURL = landingTemplate
+				}
+				year := guessYearFromSiblingKeys(root, matchKeys[0], cand)
+				name := cand
+				if year != "" {
+					name = cand + " (" + year + ")"
+				}
+				allMatches = append(allMatches, MovieMatch{Name: name, URL: matchURL})
+				add("match", fmt.Sprintf(`✓ [%s] "%s"`, v.label, name))
+			} else {
+				add("skip", fmt.Sprintf(`  [%s] no match: "%s"`, v.label, cand))
+			}
+		}
+	}
+
+	if len(allMatches) > 0 {
+		add("verdict", fmt.Sprintf("FOUND — %d result(s)", len(allMatches)))
+		return true, allMatches, logs, nil
+	}
+	// Fallback: point at the landing URL so the user can check manually.
+	var fallbackURL string
+	if hasLandingPlaceholder {
+		fallbackURL = strings.ReplaceAll(landingTemplate, "DVORA", strings.ReplaceAll(searchTerm, " ", "+"))
+	} else {
+		fallbackURL = landingTemplate
+	}
+	add("verdict", "NOT FOUND — 0 matched across all variants")
+	return false, []MovieMatch{{Name: searchTerm, URL: fallbackURL}}, logs, nil
 }
 
 // ─── IMDb suggestion API ──────────────────────────────────────────────────────
@@ -817,7 +1114,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 			go func(i int, line string) {
 				defer wg.Done()
 				var sr SiteResult
-				apiType, apiUrlTmpl, landingUrlTmpl := parseAPILine(line)
+				apiType, apiUrlTmpl, landingUrlTmpl, matchKeys, customName := parseAPILine(line)
 				qe := strings.ReplaceAll(q, " ", "+")
 
 				if apiType == "stremio" {
@@ -832,6 +1129,26 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 						mu = matches[0].URL
 					}
 					sr = SiteResult{URL: dispURL, Found: found, Type: "api", MovieURL: mu, Matches: matches, Logs: logs}
+					if err != nil {
+						sr.Error = err.Error()
+						sr.Logs = append(sr.Logs, LogEntry{"warn", "Error: " + err.Error()})
+					}
+				} else if apiType == "custom" {
+					var dispURL string
+					if strings.Contains(apiUrlTmpl, "DVORA") {
+						dispURL = strings.ReplaceAll(apiUrlTmpl, "DVORA", qe)
+					} else {
+						dispURL = apiUrlTmpl + "/searching?q=" + qe + "&limit=40&offset=0"
+					}
+					found, matches, logs, err := scanCustomAPI(apiUrlTmpl, landingUrlTmpl, q, matchKeys)
+					mu := ""
+					if len(matches) > 0 {
+						mu = matches[0].URL
+					}
+					sr = SiteResult{URL: dispURL, Found: found, Type: "api", MovieURL: mu, Matches: matches, Logs: logs}
+					if customName != "" {
+						sr.Details = customName
+					}
 					if err != nil {
 						sr.Error = err.Error()
 						sr.Logs = append(sr.Logs, LogEntry{"warn", "Error: " + err.Error()})
@@ -958,6 +1275,47 @@ func configHandler(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, `{"error":"method not allowed"}`, 405)
 }
 
+// ─── Proxy handler (for custom API JSON testing) ──────────────────────────────
+
+func proxyHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(204)
+		return
+	}
+	target := r.URL.Query().Get("url")
+	if target == "" {
+		http.Error(w, `{"error":"missing url"}`, 400)
+		return
+	}
+	client := &http.Client{Timeout: 12 * time.Second}
+	req, err := http.NewRequest("GET", target, nil)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "invalid url: " + err.Error()})
+		return
+	}
+	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("Accept", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	// Try to parse as JSON to validate; return raw if valid, else error.
+	var js interface{}
+	if err := json.Unmarshal(body, &js); err != nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{"error": "not valid JSON: " + err.Error(), "status": resp.StatusCode})
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(resp.StatusCode)
+	w.Write(body)
+}
+
 func indexHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 	http.ServeFile(w, r, "index.html")
@@ -990,6 +1348,7 @@ func main() {
 	http.HandleFunc("/imdb", imdbHandler)
 	http.HandleFunc("/subtitles", subtitleHandler)
 	http.HandleFunc("/config", configHandler)
+	http.HandleFunc("/proxy", proxyHandler)
 	port := "8080"
 	log.Printf("Dvora running at http://localhost:%s", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
