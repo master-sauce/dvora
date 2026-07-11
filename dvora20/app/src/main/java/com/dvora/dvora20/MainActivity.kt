@@ -2252,7 +2252,7 @@ fun ApiEndpointTesterDialog(
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(
-                    "Create your own custom API type (like v1). Paste an API endpoint URL (use DVORA as the search placeholder). Dvora will fetch it with a real movie title, show the JSON, and let you pick which key-value pairs to match on. Then name your API type, add a landing URL, and save it. It will appear as an option when adding API sources.",
+                    "Create your own custom API type (like v1). Paste an API endpoint URL (use DVORA as the search placeholder). Dvora will fetch it with a real movie title (interstellar), show the JSON, and let you pick which key-value pairs to match on. Then name your API type, add a landing URL, and save it. It will appear as an option when adding API sources.",
                     fontSize = 11.sp, color = textColor.copy(alpha = 0.6f)
                 )
                 Spacer(Modifier.height(10.dp))
