@@ -572,6 +572,39 @@ function saveCustomApiTypes(){
 function getCustomTypeById(id){
   return customApiTypes.find(t=>t.id===id)||null;
 }
+function deleteCustomApiType(id){
+  const t=getCustomTypeById(id);
+  if(!t)return;
+  if(!confirm('Delete custom API type "'+t.name+'"?\n\nThis removes the type definition. API sources already using it will remain in your list but will no longer be editable via the wizard.'))return;
+  customApiTypes=customApiTypes.filter(x=>x.id!==id);
+  saveCustomApiTypes();
+  renderCustomTypesList();
+  renderAddApiTypeChooser();
+}
+function renderCustomTypesList(){
+  const section=document.getElementById('customTypesSection');
+  const list=document.getElementById('customTypesList');
+  if(!section||!list)return;
+  if(customApiTypes.length===0){
+    section.style.display='none';
+    list.innerHTML='';
+    return;
+  }
+  section.style.display='';
+  list.innerHTML='';
+  customApiTypes.forEach(t=>{
+    const item=document.createElement('div');
+    item.className='custom-type-item';
+    const domain=extractDomain(t.apiUrl)||t.apiUrl;
+    const keys=(t.matchKeys||[]).join(', ');
+    item.innerHTML='<div class="custom-type-info">'
+      +'<div class="custom-type-name">✦ '+esc(t.name)+'</div>'
+      +'<div class="custom-type-meta">'+esc(domain)+(keys?' · keys: '+esc(keys):'')+'</div>'
+      +'</div>'
+      +'<button class="custom-type-del" onclick="deleteCustomApiType(\''+esc(t.id)+'\')">✕ Delete</button>';
+    list.appendChild(item);
+  });
+}
 // Load on startup
 loadCustomApiTypes();
 
@@ -651,6 +684,7 @@ function flattenJson(element,prefix){
 
 // ── API SOURCES LIST RENDERING ──
 function renderApiList(){
+  renderCustomTypesList();
   const list=document.getElementById('apiList');
   if(!list)return;
   const raw=(document.getElementById('ta-api')||{}).value||'';
@@ -833,6 +867,7 @@ function cmSave(){
   };
   customApiTypes.push(customType);
   saveCustomApiTypes();
+  renderCustomTypesList();
   status.textContent='✓ Saved! "'+name+'" is now available in Add API Source';status.className='modal-status ok';
   setTimeout(()=>{closeCreateCustom();},900);
 }
@@ -861,7 +896,7 @@ function renderAddApiTypeChooser(){
     {key:'stremio',icon:'🎬',name:'Stremio Addon',desc:'Stremio catalog endpoint (e.g. https://v3-cinemeta.strem.io)',mono:''},
   ];
   customApiTypes.forEach(t=>{
-    options.push({key:'custom:'+t.id,icon:'✦',name:t.name,desc:'Custom API type',mono:t.apiUrl});
+    options.push({key:'custom:'+t.id,icon:'✦',name:t.name,desc:'Custom API type',mono:t.apiUrl,customId:t.id});
   });
   options.forEach(opt=>{
     const el=document.createElement('div');
@@ -871,7 +906,8 @@ function renderAddApiTypeChooser(){
       +'<div class="type-name">'+esc(opt.name)+'</div>'
       +'<div class="type-desc">'+esc(opt.desc)+'</div>'
       +(opt.mono?'<div class="type-desc mono">'+esc(opt.mono)+'</div>':'')
-      +'</div>';
+      +'</div>'
+      +(opt.customId?'<button class="type-option-del" onclick="event.stopPropagation();deleteCustomApiType(\''+esc(opt.customId)+'\')">✕</button>':'');
     el.onclick=()=>{
       addApiState.chosenType=opt.key;
       renderAddApiTypeChooser();

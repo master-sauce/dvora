@@ -213,6 +213,17 @@ a.cu:hover{color:var(--hg);}
 .badge-split{font-family:'Sora',sans-serif;font-size:.58rem;font-weight:700;letter-spacing:.08em;padding:3px 8px;border-radius:6px;background:rgba(255,143,0,.1);color:var(--man);border:1px solid rgba(255,143,0,.28);}
 .badge-custom{font-family:'Sora',sans-serif;font-size:.58rem;font-weight:700;letter-spacing:.08em;padding:3px 8px;border-radius:6px;background:rgba(139,195,74,.14);color:var(--fgl);border:1px solid rgba(139,195,74,.33);}
 .api-empty{text-align:center;padding:24px;color:var(--tm);font-size:.76rem;letter-spacing:.06em;background:var(--sf);border:1.5px dashed var(--br);border-radius:11px;margin-bottom:10px;}
+.custom-types-section{margin-bottom:14px;background:var(--sf);border:1.5px solid var(--br);border-radius:11px;padding:11px 13px;}
+.custom-types-head{font-family:'Sora',sans-serif;font-size:.7rem;font-weight:700;letter-spacing:.1em;color:var(--fgl);text-transform:uppercase;margin-bottom:9px;}
+.custom-types-list{display:flex;flex-direction:column;gap:7px;}
+.custom-type-item{display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--br);border-radius:8px;padding:8px 11px;}
+.custom-type-info{flex:1;min-width:0;}
+.custom-type-name{font-family:'Sora',sans-serif;font-size:.74rem;font-weight:700;color:var(--tx);}
+.custom-type-meta{font-size:.62rem;color:var(--tm);margin-top:2px;word-break:break-all;}
+.custom-type-del{background:transparent;border:1px solid var(--b2);color:var(--tm);font-size:.62rem;padding:4px 9px;cursor:pointer;border-radius:6px;font-family:'Nunito',sans-serif;font-weight:700;transition:all .15s;flex-shrink:0;}
+.custom-type-del:hover{border-color:var(--po);color:var(--po);background:rgba(255,109,0,.07);}
+.type-option-del{background:transparent;border:1px solid var(--b2);color:var(--tm);font-size:.6rem;padding:3px 7px;cursor:pointer;border-radius:5px;font-family:'Nunito',sans-serif;font-weight:700;transition:all .15s;flex-shrink:0;margin-left:auto;}
+.type-option-del:hover{border-color:var(--po);color:var(--po);background:rgba(255,109,0,.07);}
 .api-addrow{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;}
 .api-addbtn{flex:1;background:var(--bg);border:1.5px solid var(--hg);color:var(--hg);font-family:'Sora',sans-serif;font-weight:700;font-size:.72rem;letter-spacing:.1em;padding:9px 12px;cursor:pointer;border-radius:9px;transition:all .18s;text-transform:uppercase;}
 .api-addbtn:hover{background:var(--hg);color:var(--bg);}
@@ -400,6 +411,10 @@ a.cu:hover{color:var(--hg);}
         <div class="api-addrow">
           <button class="api-addbtn" onclick="openAddApiWizard()">＋ Add API Source</button>
           <button class="api-addbtn secondary" onclick="openCreateCustomDialog()">✦ Create Custom API Type</button>
+        </div>
+        <div id="customTypesSection" class="custom-types-section" style="display:none">
+          <div class="custom-types-head">✦ Saved Custom API Types</div>
+          <div id="customTypesList" class="custom-types-list"></div>
         </div>
         <div id="apiList" class="api-list"></div>
         <button class="api-raw-toggle" onclick="togApiRaw(this)">▾ Raw editor (advanced)</button>
