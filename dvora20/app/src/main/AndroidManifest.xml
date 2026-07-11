@@ -17,6 +17,9 @@
              resolveActivity() can detect them on Android 11+. -->
         <package android:name="idm.internet.download.manager.plus" />
         <package android:name="idm.internet.download.manager" />
+        <!-- Allow visibility of the Brave browser package so resolveActivity()
+             can detect it on Android 11+. -->
+        <package android:name="com.brave.browser" />
     </queries>
 
     <application

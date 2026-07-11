@@ -288,6 +288,9 @@ private val IDM_PACKAGES = listOf(
     "idm.internet.download.manager"
 )
 
+// Brave browser package - tried after IDM, before the default browser.
+private const val BRAVE_PACKAGE = "com.brave.browser"
+
 /**
  * Attempts to open [url] in one of the installed IDM apps by pinning the
  * ACTION_VIEW intent to each package in turn. Returns true if any IDM app
@@ -314,6 +317,30 @@ private fun tryOpenInIdm(context: Context, url: String): Boolean {
     return false
 }
 
+/**
+ * Attempts to open [url] in the Brave browser by pinning the ACTION_VIEW
+ * intent to its package. Returns true if Brave accepted the intent, false
+ * otherwise (caller should fall back to the default browser).
+ */
+private fun tryOpenInBrave(context: Context, url: String): Boolean {
+    val cleanUrl = if (url.startsWith("http")) url else "https://$url"
+    try {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(cleanUrl)).apply {
+            setPackage(BRAVE_PACKAGE)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        // resolveActivity returns null if Brave isn't installed or can't
+        // handle the intent - avoids an exception on Android 11+.
+        if (intent.resolveActivity(context.packageManager) != null) {
+            context.startActivity(intent)
+            return true
+        }
+    } catch (_: Exception) {
+        // Brave isn't installed or refused - fall back to default browser.
+    }
+    return false
+}
+
 fun openUrl(context: Context, url: String) {
     try {
         val cleanUrl = if (url.startsWith("http")) url else "https://$url"
@@ -335,10 +362,13 @@ fun openUrl(context: Context, url: String) {
             }
         }
 
-        // 2) Try IDM apps (download manager) before the default browser.
+        // 2) Try IDM apps (download manager) first.
         if (tryOpenInIdm(context, cleanUrl)) return
 
-        // 3) Fall back to the default browser
+        // 3) Try Brave browser next.
+        if (tryOpenInBrave(context, cleanUrl)) return
+
+        // 4) Fall back to the default browser
         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(cleanUrl)))
     } catch (_: Exception) {
         Toast.makeText(context, "Could not open URL", Toast.LENGTH_SHORT).show()
