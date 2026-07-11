@@ -358,14 +358,19 @@ class DvoraScanner {
      * [apiUrlTemplate]     – e.g. "https://ww1.yesmovies.ag/searching?q=DVORA&limit=40&offset=0"
      * [landingUrlTemplate] – e.g. "https://yesmovies.ag/search/?q=DVORA"  (fully independent)
      *                        Null → reuse the API URL template as the result link.
+     * [matchKeys]          – Optional list of JSON key paths (e.g. "data.title") to extract
+     *                        candidate titles from the response. When provided, the scanner
+     *                        dynamically reads these fields instead of the hardcoded V1 shape.
      */
     suspend fun scanV1(
         apiUrlTemplate:     String,
         searchTerm:         String,
-        landingUrlTemplate: String? = null
+        landingUrlTemplate: String? = null,
+        matchKeys:          List<String> = emptyList()
     ): List<SearchResult> = withContext(Dispatchers.IO) {
         val hasApiPlaceholder     = apiUrlTemplate.contains("DVORA")
         val hasLandingPlaceholder = landingUrlTemplate?.contains("DVORA") == true
+        val useDynamicKeys        = matchKeys.isNotEmpty()
 
         val separators = listOf("+", "-", " ")
         val seenNames  = mutableSetOf<String>()
@@ -385,21 +390,42 @@ class DvoraScanner {
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) return@use
                     val body = response.body?.string() ?: return@use
-                    val v1Response = Gson().fromJson(body, V1Response::class.java)
-                    v1Response.data?.forEach { item ->
-                        if (allMatches.size >= 10) return@forEach
-                        val key = item.t.lowercase()
-                        if (key in seenNames) return@forEach
-                        if (titleMatches(item.t, searchTerm)) {
-                            seenNames.add(key)
-                            // Landing URL is completely independent from the API URL
-                            val finalUrl = when {
-                                hasLandingPlaceholder  -> landingUrlTemplate!!.replace("DVORA", query)
-                                landingUrlTemplate != null -> "$landingUrlTemplate/search/?q=$query"  // legacy
-                                hasApiPlaceholder      -> apiUrlTemplate.replace("DVORA", query)      // reuse api template
-                                else                   -> "$apiUrlTemplate/search/?q=$query"          // legacy
+
+                    if (useDynamicKeys) {
+                        // ── Dynamic mode: extract candidate titles from selected key paths ──
+                        val candidates = extractDynamicTitles(body, matchKeys)
+                        candidates.forEach { (title, year) ->
+                            if (allMatches.size >= 10) return@forEach
+                            val key = title.lowercase()
+                            if (key in seenNames) return@forEach
+                            if (titleMatches(title, searchTerm)) {
+                                seenNames.add(key)
+                                val finalUrl = when {
+                                    hasLandingPlaceholder  -> landingUrlTemplate!!.replace("DVORA", query)
+                                    landingUrlTemplate != null -> "$landingUrlTemplate/search/?q=$query"
+                                    hasApiPlaceholder      -> apiUrlTemplate.replace("DVORA", query)
+                                    else                   -> "$apiUrlTemplate/search/?q=$query"
+                                }
+                                allMatches.add(SearchResult(finalUrl, true, foundDetails = "Match: $title ($year)"))
                             }
-                            allMatches.add(SearchResult(finalUrl, true, foundDetails = "Match: ${item.t} (${item.y ?: ""})"))
+                        }
+                    } else {
+                        // ── Legacy mode: hardcoded V1 JSON shape ──
+                        val v1Response = Gson().fromJson(body, V1Response::class.java)
+                        v1Response.data?.forEach { item ->
+                            if (allMatches.size >= 10) return@forEach
+                            val key = item.t.lowercase()
+                            if (key in seenNames) return@forEach
+                            if (titleMatches(item.t, searchTerm)) {
+                                seenNames.add(key)
+                                val finalUrl = when {
+                                    hasLandingPlaceholder  -> landingUrlTemplate!!.replace("DVORA", query)
+                                    landingUrlTemplate != null -> "$landingUrlTemplate/search/?q=$query"  // legacy
+                                    hasApiPlaceholder      -> apiUrlTemplate.replace("DVORA", query)      // reuse api template
+                                    else                   -> "$apiUrlTemplate/search/?q=$query"          // legacy
+                                }
+                                allMatches.add(SearchResult(finalUrl, true, foundDetails = "Match: ${item.t} (${item.y ?: ""})"))
+                            }
                         }
                     }
                 }
@@ -417,6 +443,141 @@ class DvoraScanner {
             else                   -> "$apiUrlTemplate/searching?q=$fbQuery&limit=40&offset=0"
         }
         return@withContext listOf(SearchResult(fallbackUrl, false, foundDetails = "No v1 matches for '$searchTerm'"))
+    }
+
+    /**
+     * Extract candidate (title, year) pairs from a JSON response using the given key paths.
+     * Key paths use dot notation, e.g. "data.title", "data[0].name", "results[0].title".
+     * For array paths, all elements are scanned. Year is best-effort from a sibling "year"/"y" key.
+     */
+    private fun extractDynamicTitles(body: String, matchKeys: List<String>): List<Pair<String, String>> {
+        val results = mutableListOf<Pair<String, String>>()
+        try {
+            val root = com.google.gson.JsonParser.parseString(body) ?: return emptyList()
+            matchKeys.forEach { keyPath ->
+                // Normalize any explicit array index (e.g. "data[0].title") into "data[].title"
+                // so we scan EVERY item in the array, not just the first one. The picker only
+                // shows the first item's structure, but at scan time we want all results.
+                val normalizedPath = keyPath.replace(Regex("\\[\\d+]"), "[]")
+                val titleVals = resolveJsonPath(root, normalizedPath)
+                titleVals.forEach { titleEl ->
+                    val title = titleEl.asString ?: return@forEach
+                    // Try to find a sibling year field
+                    val year = guessYearForKey(root, normalizedPath, titleEl)
+                    results.add(title to (year ?: ""))
+                }
+            }
+        } catch (_: Exception) {}
+        return results
+    }
+
+    /**
+     * Resolve a dotted/bracket JSON path against a root element.
+     * Returns all matching JsonElements (arrays are expanded).
+     */
+    private fun resolveJsonPath(root: com.google.gson.JsonElement, path: String): List<com.google.gson.JsonElement> {
+        val tokens = tokenizeJsonPath(path)
+        var current = listOf(root)
+        for (token in tokens) {
+            val next = mutableListOf<com.google.gson.JsonElement>()
+            when (token) {
+                is PathToken.Key -> {
+                    current.forEach { el ->
+                        if (el.isJsonObject && el.asJsonObject.has(token.name)) {
+                            next.add(el.asJsonObject.get(token.name)!!)
+                        }
+                    }
+                }
+                is PathToken.Index -> {
+                    current.forEach { el ->
+                        if (el.isJsonArray && token.idx < el.asJsonArray.size()) {
+                            next.add(el.asJsonArray.get(token.idx))
+                        }
+                    }
+                }
+                is PathToken.AllItems -> {
+                    current.forEach { el ->
+                        if (el.isJsonArray) {
+                            el.asJsonArray.forEach { next.add(it) }
+                        }
+                    }
+                }
+            }
+            current = next
+        }
+        // Expand any trailing arrays into their string/primitive leaves
+        val leaves = mutableListOf<com.google.gson.JsonElement>()
+        current.forEach { collectLeafStrings(it, leaves) }
+        return leaves
+    }
+
+    private fun collectLeafStrings(el: com.google.gson.JsonElement, out: MutableList<com.google.gson.JsonElement>) {
+        if (el.isJsonPrimitive) {
+            out.add(el)
+        } else if (el.isJsonArray) {
+            el.asJsonArray.forEach { collectLeafStrings(it, out) }
+        }
+    }
+
+    private sealed class PathToken {
+        data class Key(val name: String) : PathToken()
+        data class Index(val idx: Int) : PathToken()
+        object AllItems : PathToken()
+    }
+
+    private fun tokenizeJsonPath(path: String): List<PathToken> {
+        val tokens = mutableListOf<PathToken>()
+        // Split on dots, then handle bracket notation within each segment
+        path.split(".").forEach { segment ->
+            if (segment.isEmpty()) return@forEach
+            // e.g. "results[0]" or "results[]"
+            val bracketIdx = segment.indexOf("[")
+            if (bracketIdx == -1) {
+                tokens.add(PathToken.Key(segment))
+            } else {
+                val keyName = segment.substring(0, bracketIdx)
+                if (keyName.isNotEmpty()) tokens.add(PathToken.Key(keyName))
+                // Parse all bracket groups in this segment
+                var rest = segment.substring(bracketIdx)
+                while (rest.startsWith("[")) {
+                    val close = rest.indexOf("]")
+                    if (close == -1) break
+                    val inside = rest.substring(1, close)
+                    rest = if (rest.length > close + 1) rest.substring(close + 1) else ""
+                    if (inside.isEmpty() || inside == "*") {
+                        tokens.add(PathToken.AllItems)
+                    } else {
+                        tokens.add(PathToken.Index(inside.toIntOrNull() ?: 0))
+                    }
+                }
+            }
+        }
+        return tokens
+    }
+
+    /**
+     * Best-effort: look for a sibling "year" or "y" field next to the title key.
+     */
+    private fun guessYearForKey(root: com.google.gson.JsonElement, titlePath: String, titleEl: com.google.gson.JsonElement): String? {
+        // Replace the last key segment with "year" / "y" and try to resolve
+        val lastDot = titlePath.lastIndexOf(".")
+        if (lastDot == -1) return null
+        val parent = titlePath.substring(0, lastDot)
+        val yearCandidates = listOf("year", "y", "releaseYear", "release_date", "releaseInfo")
+        for (yKey in yearCandidates) {
+            val yearVals = resolveJsonPath(root, "$parent.$yKey")
+            if (yearVals.isNotEmpty()) {
+                val yv = yearVals[0]
+                if (yv.isJsonPrimitive) {
+                    val s = yv.asString ?: continue
+                    // Extract a 4-digit year if present
+                    val m = Pattern.compile("\\d{4}").matcher(s)
+                    if (m.find()) return m.group()
+                    return s
+                }
+            }
+        }
+        return null
     }
 
     suspend fun searchImdb(searchTerm: String): List<ImdbResult> = withContext(Dispatchers.IO) {
