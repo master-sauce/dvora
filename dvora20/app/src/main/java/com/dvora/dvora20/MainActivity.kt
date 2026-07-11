@@ -1626,6 +1626,12 @@ fun parseApiEntry(raw: String): ApiEntry {
     return ApiEntry(type = type, apiUrl = parts[0].trim(), landingUrl = parts.getOrNull(1)?.trim()?.ifBlank { null })
 }
 
+fun extractDomain(url: String): String {
+    val noScheme = url.substringAfter("://")
+    val host = noScheme.substringBefore("/")
+    return host.ifBlank { url.trim() }
+}
+
 @Composable
 fun ApiSourcesEditor(apiSites: List<String>, onUpdate: (List<String>) -> Unit) {
     var showWizard    by remember { mutableStateOf(false) }
@@ -1691,31 +1697,24 @@ fun ApiSourcesEditor(apiSites: List<String>, onUpdate: (List<String>) -> Unit) {
                                 }
                             }
                             Spacer(Modifier.height(5.dp))
-                            // Show the URL with DVORA highlighted in amber
-                            val apiParts  = entry.apiUrl.split("DVORA")
-                            androidx.compose.foundation.text.BasicText(
-                                text = androidx.compose.ui.text.buildAnnotatedString {
-                                    append("🔍 ")
-                                    apiParts.forEachIndexed { i, part ->
-                                        withStyle(androidx.compose.ui.text.SpanStyle(color = textColor, fontSize = 11.sp)) { append(part) }
-                                        if (i < apiParts.size - 1) withStyle(androidx.compose.ui.text.SpanStyle(color = BeeColors.HoneyGold, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)) { append("DVORA") }
-                                    }
-                                },
+                            // Show only the domain name of the search API
+                            val apiDomain    = extractDomain(entry.apiUrl)
+                            val landDomain   = if (hasSplitUrl) extractDomain(entry.landingUrl!!) else apiDomain
+                            val domainsDiffer = hasSplitUrl && landDomain != apiDomain
+                            Text(
+                                "🔍 $apiDomain",
+                                fontSize = 12.sp,
+                                color = textColor,
                                 maxLines = 1,
-                                style = androidx.compose.ui.text.TextStyle.Default
+                                fontWeight = FontWeight.Medium
                             )
-                            if (hasSplitUrl) {
-                                val landParts = entry.landingUrl!!.split("DVORA")
-                                androidx.compose.foundation.text.BasicText(
-                                    text = androidx.compose.ui.text.buildAnnotatedString {
-                                        append("🔗 ")
-                                        landParts.forEachIndexed { i, part ->
-                                            withStyle(androidx.compose.ui.text.SpanStyle(color = textColor.copy(alpha = 0.7f), fontSize = 11.sp)) { append(part) }
-                                            if (i < landParts.size - 1) withStyle(androidx.compose.ui.text.SpanStyle(color = BeeColors.HoneyGold, fontWeight = FontWeight.ExtraBold, fontSize = 11.sp)) { append("DVORA") }
-                                        }
-                                    },
+                            if (domainsDiffer) {
+                                Text(
+                                    "🔗 $landDomain",
+                                    fontSize = 12.sp,
+                                    color = textColor.copy(alpha = 0.7f),
                                     maxLines = 1,
-                                    style = androidx.compose.ui.text.TextStyle.Default
+                                    fontWeight = FontWeight.Medium
                                 )
                             }
                         }
