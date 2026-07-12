@@ -479,7 +479,7 @@ func scanStremio(baseURL, searchTerm, mode string) (bool, []MovieMatch, []LogEnt
 				if id == "" {
 					id = item.ID
 				}
-				su := "https://web.stremio.com/#/detail/" + item.Type + "/" + id + "/" + id
+				su := "stremio:///detail/" + item.Type + "/" + id
 				allMatches = append(allMatches, MovieMatch{Name: item.Name, URL: su})
 				add("match", fmt.Sprintf(`✓ [%s] "%s" (%s)`, v.label, item.Name, item.ReleaseInfo))
 			} else {
