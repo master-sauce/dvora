@@ -190,6 +190,22 @@ object BookmarksManager {
         }
         if (changed) persist(context)
     }
+
+    /**
+     * Replace the entire bookmark collection with [newList] (used by the
+     * import/restore flow). Cancels any reminders for bookmarks that are no
+     * longer present, reschedules the rest, and persists the result.
+     */
+    fun replaceAll(context: Context, newList: List<Bookmark>) {
+        val oldIds = bookmarks.map { it.imdbId }.toSet()
+        val newIds = newList.map { it.imdbId }.toSet()
+        // Cancel reminders for removed bookmarks
+        oldIds.filter { it !in newIds }.forEach { ReminderHelper.cancel(context, it) }
+        bookmarks = newList
+        persist(context)
+        // Reschedule reminders for the kept/new bookmarks
+        rescheduleAllReminders(context)
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -462,8 +478,13 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                     actionIconContentColor = BeeColors.HoneyGold
                 ),
                 actions = {
-                    IconButton(onClick = onToggleDarkMode) {
-                        Icon(if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode, "Theme", tint = BeeColors.HoneyGold)
+                    IconButton(onClick = { showSubtitles = true; showSettings = false; showImdb = false; showBookmarks = false }) {
+                        Icon(Icons.Default.Subtitles, "Subtitles", tint = BeeColors.HoneyGold)
+                    }
+                    IconButton(onClick = { showImdb = true; showSubtitles = false; showSettings = false; showBookmarks = false }) {
+                        Box(Modifier.size(40.dp).padding(6.dp).background(Color(0xFFF5C518), RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) {
+                            Text("IMDb", fontSize = 7.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black)
+                        }
                     }
                     val hasReminders = BookmarksManager.bookmarks.any { it.reminderDate != null }
                     IconButton(onClick = { showBookmarks = true; showSubtitles = false; showSettings = false; showImdb = false }) {
@@ -477,14 +498,6 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                                         .background(BeeColors.DeepAmber, RoundedCornerShape(5.dp))
                                 )
                             }
-                        }
-                    }
-                    IconButton(onClick = { showSubtitles = true; showSettings = false; showImdb = false; showBookmarks = false }) {
-                        Icon(Icons.Default.Subtitles, "Subtitles", tint = BeeColors.HoneyGold)
-                    }
-                    IconButton(onClick = { showImdb = true; showSubtitles = false; showSettings = false; showBookmarks = false }) {
-                        Box(Modifier.size(40.dp).padding(6.dp).background(Color(0xFFF5C518), RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) {
-                            Text("IMDb", fontSize = 7.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black)
                         }
                     }
                     IconButton(onClick = { showSettings = true; showSubtitles = false; showImdb = false; showBookmarks = false }) {
@@ -1553,6 +1566,262 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: () -> Unit, onCl
     }
 }
 // ═══════════════════════════════════════════════════════════════════════════════
+// BACKUP / IMPORT / EXPORT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Container for everything that can be backed up or restored:
+ *  - shows / movies / manualChecks / apiSites / exclusions (source lists)
+ *  - bookmarks (saved shows & movies with reminders)
+ *  - customApiTypes (user-defined API search profiles)
+ */
+data class DvoraBackup(
+    val schemaVersion: Int = 1,
+    val exportedAt: Long = System.currentTimeMillis(),
+    val shows: List<String> = emptyList(),
+    val movies: List<String> = emptyList(),
+    val manualChecks: List<String> = emptyList(),
+    val apiSites: List<String> = emptyList(),
+    val exclusions: List<String> = emptyList(),
+    val bookmarks: List<Bookmark> = emptyList(),
+    val customApiTypes: List<CustomApiType> = emptyList()
+)
+
+@Composable
+fun BackupScreen(
+    shows: List<String>, movies: List<String>, manualChecks: List<String>,
+    apiSites: List<String>, exclusions: List<String>,
+    onUpdate: (SourceType, List<String>) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val scope   = rememberCoroutineScope()
+    val bgColor = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
+    val cardBg  = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
+    val textColor = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface)
+
+    var statusMsg by remember { mutableStateOf<String?>(null) }
+    var errorMsg  by remember { mutableStateOf<String?>(null) }
+    var isBusy    by remember { mutableStateOf(false) }
+
+    // ── Export: write a JSON file to the user's chosen location ──────────────
+    val createFileLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri == null) { isBusy = false; return@rememberLauncherForActivityResult }
+        scope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                try {
+                    val backup = DvoraBackup(
+                        shows = shows, movies = movies, manualChecks = manualChecks,
+                        apiSites = apiSites, exclusions = exclusions,
+                        bookmarks = BookmarksManager.bookmarks,
+                        customApiTypes = CustomApiTypeManager.customTypes
+                    )
+                    val json = Gson().toJson(backup)
+                    context.contentResolver.openOutputStream(uri)?.use { out ->
+                        out.write(json.toByteArray(Charsets.UTF_8))
+                    } ?: return@withContext "Could not open file for writing"
+                    val sourceCount = backup.shows.size + backup.movies.size +
+                        backup.apiSites.size + backup.manualChecks.size + backup.exclusions.size
+                    "Exported ${backup.bookmarks.size} bookmark(s) and $sourceCount source(s)."
+                } catch (e: Exception) {
+                    "Export failed: ${e.message ?: "unknown error"}"
+                }
+            }
+            isBusy = false
+            if (outcome.startsWith("Exported")) { statusMsg = outcome; errorMsg = null }
+            else { errorMsg = outcome; statusMsg = null }
+        }
+    }
+
+    // ── Import: read a JSON file chosen by the user ──────────────────────────
+    val openFileLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri == null) { isBusy = false; return@rememberLauncherForActivityResult }
+        scope.launch {
+            val outcome = withContext(Dispatchers.IO) {
+                try {
+                    val json = context.contentResolver.openInputStream(uri)?.use { ins ->
+                        ins.bufferedReader(Charsets.UTF_8).readText()
+                    } ?: return@withContext "Could not read file"
+                    val type = object : TypeToken<DvoraBackup>() {}.type
+                    val backup: DvoraBackup = Gson().fromJson(json, type)
+                        ?: return@withContext "File is not a valid Dvora backup"
+
+                    // Restore source lists
+                    if (backup.shows.isNotEmpty())        onUpdate(SourceType.SHOW, backup.shows)
+                    if (backup.movies.isNotEmpty())       onUpdate(SourceType.MOVIE, backup.movies)
+                    if (backup.manualChecks.isNotEmpty()) onUpdate(SourceType.MANUAL, backup.manualChecks)
+                    if (backup.apiSites.isNotEmpty())     onUpdate(SourceType.API, backup.apiSites)
+                    if (backup.exclusions.isNotEmpty())   onUpdate(SourceType.EXCLUSION, backup.exclusions)
+
+                    // Restore custom API types
+                    if (backup.customApiTypes.isNotEmpty()) {
+                        CustomApiTypeManager.save(context, backup.customApiTypes)
+                    }
+
+                    // Restore bookmarks (saved shows & movies)
+                    if (backup.bookmarks.isNotEmpty()) {
+                        BookmarksManager.replaceAll(context, backup.bookmarks)
+                    }
+
+                    val sourceCount = backup.shows.size + backup.movies.size +
+                        backup.apiSites.size + backup.manualChecks.size + backup.exclusions.size
+                    "Imported ${backup.bookmarks.size} bookmark(s), " +
+                        "${backup.customApiTypes.size} custom API type(s), and $sourceCount source(s)."
+                } catch (e: Exception) {
+                    "Import failed: ${e.message ?: "unknown error"}"
+                }
+            }
+            isBusy = false
+            if (outcome.startsWith("Imported")) { statusMsg = outcome; errorMsg = null }
+            else { errorMsg = outcome; statusMsg = null }
+        }
+    }
+
+    Column(modifier = modifier.fillMaxSize().background(bgColor).padding(16.dp).verticalScroll(rememberScrollState())) {
+        Text("📦 Backup & Restore", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold))
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Export everything (shows, movies, API sources, exclusions, saved bookmarks, and custom API types) to a single JSON file, or restore from a previously exported file.",
+            fontSize = 12.sp, color = textColor.copy(alpha = 0.7f)
+        )
+        Spacer(Modifier.height(16.dp))
+
+        // Export card
+        Card(
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = cardBg),
+            elevation = CardDefaults.cardElevation(2.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("📤", fontSize = 22.sp)
+                    Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Export", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = textColor)
+                        Text("Save a backup of all your data to a JSON file.", fontSize = 11.sp, color = textColor.copy(alpha = 0.65f))
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Button(
+                    onClick = {
+                        isBusy = true; statusMsg = null; errorMsg = null
+                        val fileName = "dvora_backup_${System.currentTimeMillis()}.json"
+                        createFileLauncher.launch(fileName)
+                    },
+                    enabled = !isBusy,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = BeeColors.HoneyGold),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Default.FileDownload, null, tint = BeeColors.BeeBlack)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Export to file", color = BeeColors.BeeBlack, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
+        // Import card
+        Card(
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = cardBg),
+            elevation = CardDefaults.cardElevation(2.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("📥", fontSize = 22.sp)
+                    Spacer(Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Import / Restore", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = textColor)
+                        Text("Restore from a previously exported backup file. Existing data for restored sections will be replaced.", fontSize = 11.sp, color = textColor.copy(alpha = 0.65f))
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Button(
+                    onClick = {
+                        isBusy = true; statusMsg = null; errorMsg = null
+                        openFileLauncher.launch("application/json")
+                    },
+                    enabled = !isBusy,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = BeeColors.DeepAmber),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Default.FileUpload, null, tint = Color.White)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Choose backup file", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+
+        if (isBusy) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(18.dp), BeeColors.DeepAmber, strokeWidth = 2.dp)
+                Spacer(Modifier.width(8.dp))
+                Text("Working...", fontSize = 12.sp, color = textColor.copy(alpha = 0.7f))
+            }
+        }
+
+        statusMsg?.let {
+            Spacer(Modifier.height(6.dp))
+            Card(
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(containerColor = beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark).copy(alpha = 0.15f)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark).copy(alpha = 0.5f))
+            ) {
+                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("✅", fontSize = 16.sp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(it, fontSize = 12.sp, color = beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark), fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+
+        errorMsg?.let {
+            Spacer(Modifier.height(6.dp))
+            Card(
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(containerColor = BeeColors.NotFoundRed.copy(alpha = 0.12f)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, BeeColors.NotFoundRed.copy(alpha = 0.5f))
+            ) {
+                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("⚠️", fontSize = 16.sp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(it, fontSize = 12.sp, color = BeeColors.NotFoundRed, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+
+        Spacer(Modifier.height(20.dp))
+        Text(
+            "What's included:",
+            fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BeeColors.DeepAmber
+        )
+        Spacer(Modifier.height(4.dp))
+        listOf(
+            "📺 Shows sources",
+            "🎬 Movies sources",
+            "🧪 API sources",
+            "🔍 Manual checks",
+            "🚫 Exclusions",
+            "🔖 Saved bookmarks & reminders",
+            "🧙 Custom API types"
+        ).forEach { line ->
+            Text("• $line", fontSize = 12.sp, color = textColor.copy(alpha = 0.75f), modifier = Modifier.padding(start = 8.dp, top = 1.dp, bottom = 1.dp))
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // SETTINGS SCREEN
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1565,7 +1834,7 @@ fun SettingsScreen(
 ) {
     BackHandler { onBack() }
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs     = listOf("Shows", "Movies", "APIs", "Manual", "Exclusions", "Logs")
+    val tabs     = listOf("Shows", "Movies", "APIs", "Manual", "Exclusions", "Backup", "Logs")
     val isDark   = LocalDarkMode.current.value
     val headerBg = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
     val bgColor  = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
@@ -1599,7 +1868,12 @@ fun SettingsScreen(
             2 -> ApiSourcesEditor(apiSites) { onUpdate(SourceType.API, it) }
             3 -> SourceEditor(manualChecks) { onUpdate(SourceType.MANUAL, it) }
             4 -> SourceEditor(exclusions) { onUpdate(SourceType.EXCLUSION, it) }
-            5 -> VerboseLogsScreen()
+            5 -> BackupScreen(
+                shows = shows, movies = movies, manualChecks = manualChecks,
+                apiSites = apiSites, exclusions = exclusions,
+                onUpdate = onUpdate
+            )
+            6 -> VerboseLogsScreen()
         }
     }
 }
