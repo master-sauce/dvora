@@ -729,6 +729,67 @@ fun beeTextFieldColors() = OutlinedTextFieldDefaults.colors(
     unfocusedTextColor = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface),
 )
 
+/**
+ * Reusable confirmation dialog shown before any destructive (delete / clear / remove)
+ * action. Pops up so the user can confirm they are sure before proceeding.
+ *
+ * @param title       Dialog title text.
+ * @param message     Body message explaining what will be removed.
+ * @param confirmText Label for the confirm button (e.g. "Delete", "Remove").
+ * @param onConfirm   Called only when the user taps the confirm button.
+ * @param onDismiss   Called when the user cancels or dismisses the dialog.
+ */
+@Composable
+fun ConfirmDeleteDialog(
+    title: String,
+    message: String,
+    confirmText: String = "Delete",
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb),
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("⚠️ ", fontSize = 20.sp)
+                Text(
+                    title,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 16.sp,
+                    color = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold)
+                )
+            }
+        },
+        text = {
+            Text(
+                message,
+                fontSize = 13.sp,
+                color = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface)
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onConfirm()
+                    onDismiss()
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = BeeColors.NotFoundRed),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Icon(Icons.Default.Delete, null, tint = Color.White, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(confirmText, color = Color.White, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel", color = BeeColors.DeepAmber, fontWeight = FontWeight.Bold)
+            }
+        }
+    )
+}
+
 @Composable
 fun BeeRadioOption(label: String, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val bg = if (selected) beeAdapt(BeeColors.BeeBlack, BeeColors.DarkStripe) else Color.Transparent
@@ -1442,6 +1503,8 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: () -> Unit, onCl
     val hasReminder = bm.reminderDate != null
     val hasPlayback = bm.season != null || bm.episode != null || !bm.timestamp.isNullOrBlank()
     var showPlaybackEditor by remember { mutableStateOf(false) }
+    var showConfirmClearReminder by remember { mutableStateOf(false) }
+    var showConfirmRemoveBookmark by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp).clickable { openUrl(context, bm.imdbUrl) },
@@ -1512,10 +1575,7 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: () -> Unit, onCl
                             }
                         }
                         Spacer(Modifier.width(6.dp))
-                        IconButton(onClick = {
-                            onClearReminder()
-                            Toast.makeText(context, "Reminder cancelled", Toast.LENGTH_SHORT).show()
-                        }, modifier = Modifier.size(32.dp)) {
+                        IconButton(onClick = { showConfirmClearReminder = true }, modifier = Modifier.size(32.dp)) {
                             Icon(Icons.Default.Close, "Cancel reminder", tint = BeeColors.DeepAmber.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
                         }
                     }
@@ -1601,9 +1661,7 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: () -> Unit, onCl
                         modifier = Modifier.size(20.dp)
                     )
                 }
-                IconButton(onClick = {
-                    BookmarksManager.toggle(context, ImdbResult(bm.imdbId, bm.title, bm.year, bm.mediaType, bm.posterUrl, bm.imdbUrl))
-                }, modifier = Modifier.size(36.dp)) {
+                IconButton(onClick = { showConfirmRemoveBookmark = true }, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Default.BookmarkRemove, "Remove", tint = BeeColors.HoneyGold, modifier = Modifier.size(20.dp))
                 }
             }
@@ -1621,6 +1679,30 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: () -> Unit, onCl
             }
         )
     }
+
+    if (showConfirmClearReminder) {
+        ConfirmDeleteDialog(
+            title = "Cancel Reminder",
+            message = "Are you sure you want to cancel the reminder for \"${bm.title}\"? The scheduled notification will be removed.",
+            confirmText = "Cancel Reminder",
+            onDismiss = { showConfirmClearReminder = false }
+        ) {
+            onClearReminder()
+            Toast.makeText(context, "Reminder cancelled", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    if (showConfirmRemoveBookmark) {
+        ConfirmDeleteDialog(
+            title = "Remove Bookmark",
+            message = "Are you sure you want to remove \"${bm.title}\" from your bookmarks? Any reminder for it will also be cancelled.",
+            confirmText = "Remove",
+            onDismiss = { showConfirmRemoveBookmark = false }
+        ) {
+            BookmarksManager.toggle(context, ImdbResult(bm.imdbId, bm.title, bm.year, bm.mediaType, bm.posterUrl, bm.imdbUrl))
+            Toast.makeText(context, "Bookmark removed", Toast.LENGTH_SHORT).show()
+        }
+    }
 }
 
 @Composable
@@ -1635,6 +1717,7 @@ fun PlaybackInfoDialog(
     var seasonStr    by remember { mutableStateOf(bookmark.season?.toString() ?: "") }
     var episodeStr   by remember { mutableStateOf(bookmark.episode?.toString() ?: "") }
     var timestampStr by remember { mutableStateOf(bookmark.timestamp ?: "") }
+    var showConfirmClear by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1685,9 +1768,7 @@ fun PlaybackInfoDialog(
         },
         confirmButton = {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = {
-                    onSave(null, null, null)
-                }) { Text("Clear", color = BeeColors.DeepAmber) }
+                TextButton(onClick = { showConfirmClear = true }) { Text("Clear", color = BeeColors.DeepAmber) }
                 Spacer(Modifier.width(4.dp))
                 Button(
                     onClick = {
@@ -1707,6 +1788,17 @@ fun PlaybackInfoDialog(
             TextButton(onClick = onDismiss) { Text("Cancel", color = textColor.copy(alpha = 0.6f)) }
         }
     )
+
+    if (showConfirmClear) {
+        ConfirmDeleteDialog(
+            title = "Clear Playback Info",
+            message = "Are you sure you want to clear the saved season / episode / timestamp for \"${bookmark.title}\"?",
+            confirmText = "Clear",
+            onDismiss = { showConfirmClear = false }
+        ) {
+            onSave(null, null, null)
+        }
+    }
 }
 // ═══════════════════════════════════════════════════════════════════════════════
 // BACKUP / IMPORT / EXPORT
@@ -2154,6 +2246,7 @@ fun ApiSourcesEditor(apiSites: List<String>, onUpdate: (List<String>) -> Unit) {
     var showTester    by remember { mutableStateOf(false) }
     var editingIndex  by remember { mutableIntStateOf(-1) }
     var editingEntry  by remember { mutableStateOf<ApiEntry?>(null) }
+    var pendingDeleteIndex by remember { mutableIntStateOf(-1) }
 
     val bgColor   = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
     val textColor = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface)
@@ -2258,15 +2351,29 @@ fun ApiSourcesEditor(apiSites: List<String>, onUpdate: (List<String>) -> Unit) {
                         IconButton(onClick = { editingIndex = index; editingEntry = entry; showWizard = true }) {
                             Icon(Icons.Default.Edit, null, tint = BeeColors.HoneyGold)
                         }
-                        IconButton(onClick = {
-                            onUpdate(apiSites.toMutableList().also { it.removeAt(index) })
-                        }) {
+                        IconButton(onClick = { pendingDeleteIndex = index }) {
                             Icon(Icons.Default.Delete, null, tint = BeeColors.DeepAmber.copy(alpha = 0.7f))
                         }
                     }
                 }
                 HorizontalDivider(color = BeeColors.HoneyGold.copy(alpha = 0.15f))
             }
+        }
+    }
+
+    if (pendingDeleteIndex >= 0) {
+        val targetEntry = apiSites.getOrNull(pendingDeleteIndex)?.let { parseApiEntry(it) }
+        ConfirmDeleteDialog(
+            title = "Delete API Source",
+            message = if (targetEntry != null)
+                "Are you sure you want to remove the ${targetEntry.displayType()} source for \"${extractDomain(targetEntry.apiUrl)}\"?"
+            else
+                "Are you sure you want to remove this API source?",
+            confirmText = "Delete",
+            onDismiss = { pendingDeleteIndex = -1 }
+        ) {
+            onUpdate(apiSites.toMutableList().also { it.removeAt(pendingDeleteIndex) })
+            pendingDeleteIndex = -1
         }
     }
 
@@ -2307,6 +2414,7 @@ fun ApiSourceWizardDialog(
     var apiUrl             by remember { mutableStateOf(initial?.apiUrl ?: "") }
     var landingUrl         by remember { mutableStateOf(initial?.landingUrl ?: "") }
     var selectedCustomTypeId by remember { mutableStateOf<String?>(null) }
+    var pendingDeleteCustom by remember { mutableStateOf<CustomApiType?>(null) }
 
     val bgColor   = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
     val textColor = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface)
@@ -2346,11 +2454,22 @@ fun ApiSourceWizardDialog(
                     0 -> {
                         Text("What type of API does this site use?", fontWeight = FontWeight.SemiBold, color = textColor, fontSize = 14.sp)
                         Spacer(Modifier.height(12.dp))
-                        // Built-in types
-                        listOf(
-                            "v1"      to ("V1 JSON API"    to "Sites with /searching?q= endpoint\ne.g. 123moviesfree, fmovies, yesmovies"),
-                            "stremio" to ("Stremio Addon"  to "Stremio catalog addons\ne.g. Cinemeta")
-                        ).forEach { (type, info) ->
+                        // Built-in types.
+                        // When adding a NEW source we hide the Stremio option because the
+                        // default Cinemeta Stremio source is already provided out of the box.
+                        // When EDITING an existing source we still show it so a Stremio entry
+                        // can be modified correctly.
+                        val builtInTypes = if (isEditing) {
+                            listOf(
+                                "v1"      to ("V1 JSON API"   to "Sites with /searching?q= endpoint\ne.g. 123moviesfree, fmovies, yesmovies"),
+                                "stremio" to ("Stremio Addon" to "Stremio catalog addons\ne.g. Cinemeta")
+                            )
+                        } else {
+                            listOf(
+                                "v1" to ("V1 JSON API" to "Sites with /searching?q= endpoint\ne.g. 123moviesfree, fmovies, yesmovies")
+                            )
+                        }
+                        builtInTypes.forEach { (type, info) ->
                             val (label, desc) = info
                             val selected = apiType == type
                             Card(
@@ -2409,10 +2528,7 @@ fun ApiSourceWizardDialog(
                                         Text("Custom API • ${custom.matchKeys.size} match key(s) • ${extractDomain(custom.apiUrl)}",
                                             fontSize = 11.sp, color = textColor.copy(alpha = 0.65f), maxLines = 1)
                                     }
-                                    IconButton(onClick = {
-                                        context.getSharedPreferences("dvora_custom_api_types", Context.MODE_PRIVATE)
-                                        CustomApiTypeManager.remove(context, custom.id)
-                                    }) {
+                                    IconButton(onClick = { pendingDeleteCustom = custom }) {
                                         Icon(Icons.Default.Delete, "Delete custom type", tint = BeeColors.DeepAmber.copy(alpha = 0.7f))
                                     }
                                 }
@@ -2596,6 +2712,23 @@ fun ApiSourceWizardDialog(
             }
         }
     )
+
+    pendingDeleteCustom?.let { custom ->
+        ConfirmDeleteDialog(
+            title = "Delete Custom API Type",
+            message = "Are you sure you want to delete the custom API type \"${custom.name}\"? API sources already using it will keep working, but it will no longer appear as an option when adding new sources.",
+            confirmText = "Delete",
+            onDismiss = { pendingDeleteCustom = null }
+        ) {
+            context.getSharedPreferences("dvora_custom_api_types", Context.MODE_PRIVATE)
+            CustomApiTypeManager.remove(context, custom.id)
+            if (selectedCustomTypeId == custom.id) {
+                selectedCustomTypeId = null
+                apiType = "v1"
+            }
+            pendingDeleteCustom = null
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -2916,6 +3049,7 @@ fun ApiEndpointTesterDialog(
 fun SourceEditor(list: List<String>, onUpdate: (List<String>) -> Unit) {
     var newItem      by remember { mutableStateOf("") }
     var editingIndex by remember { mutableIntStateOf(-1) }
+    var pendingDeleteItem by remember { mutableStateOf<String?>(null) }
     val context      = LocalContext.current
     val bgColor      = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
     val textColor    = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface)
@@ -2959,10 +3093,22 @@ fun SourceEditor(list: List<String>, onUpdate: (List<String>) -> Unit) {
                 ) {
                     Text("🔗 ", fontSize = 12.sp)
                     Text(item, modifier = Modifier.weight(1f).clickable { newItem = item; editingIndex = index }, fontSize = 13.sp, color = textColor)
-                    IconButton(onClick = { onUpdate(list - item) }) { Icon(Icons.Default.Delete, null, tint = BeeColors.DeepAmber.copy(alpha = 0.7f)) }
+                    IconButton(onClick = { pendingDeleteItem = item }) { Icon(Icons.Default.Delete, null, tint = BeeColors.DeepAmber.copy(alpha = 0.7f)) }
                 }
                 HorizontalDivider(color = BeeColors.HoneyGold.copy(alpha = 0.25f))
             }
+        }
+    }
+
+    pendingDeleteItem?.let { item ->
+        ConfirmDeleteDialog(
+            title = "Delete Item",
+            message = "Are you sure you want to delete this item?\n\n\"${item.take(120)}${if (item.length > 120) "…" else ""}\"",
+            confirmText = "Delete",
+            onDismiss = { pendingDeleteItem = null }
+        ) {
+            onUpdate(list - item)
+            pendingDeleteItem = null
         }
     }
 }
