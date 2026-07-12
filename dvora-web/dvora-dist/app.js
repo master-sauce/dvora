@@ -730,6 +730,16 @@ function removeApiEntry(idx){
   if(!ta)return;
   const lines=ta.value.split('\n').filter(l=>l.trim());
   if(idx<0||idx>=lines.length)return;
+  const target=lines[idx];
+  let desc=target;
+  try{
+    const e=deserializeApiEntry(target);
+    if(e){
+      const dom=extractDomain(e.apiUrl)||e.apiUrl;
+      desc=(apiEntryDisplayType(e))+' — '+dom;
+    }
+  }catch(_){}
+  if(!confirm('Remove this API source?\n\n'+desc+'\n\nThis cannot be undone.'))return;
   lines.splice(idx,1);
   ta.value=lines.join('\n');
   renderApiList();
@@ -893,7 +903,6 @@ function renderAddApiTypeChooser(){
   chooser.innerHTML='';
   const options=[
     {key:'v1',icon:'🟡',name:'V1 JSON API',desc:'Standard JSON API with data[].t / data[].y structure',mono:''},
-    {key:'stremio',icon:'🎬',name:'Stremio Addon',desc:'Stremio catalog endpoint (e.g. https://v3-cinemeta.strem.io)',mono:''},
   ];
   customApiTypes.forEach(t=>{
     options.push({key:'custom:'+t.id,icon:'✦',name:t.name,desc:'Custom API type',mono:t.apiUrl,customId:t.id});
@@ -935,9 +944,6 @@ function addApiNext(){
         document.getElementById('addApiUrl').value=t.apiUrl;
         document.getElementById('addApiLanding').value=t.landingUrl;
       }
-    }else if(addApiState.chosenType==='stremio'){
-      document.getElementById('addApiUrl').value='https://v3-cinemeta.strem.io';
-      document.getElementById('addApiLanding').value='';
     }else{
       // v1 — leave blank for user to fill
       document.getElementById('addApiUrl').value='';
@@ -961,8 +967,6 @@ function addApiNext(){
       matchKeys:t.matchKeys,
       customName:t.name,
     });
-  }else if(addApiState.chosenType==='stremio'){
-    entry=makeApiEntry({type:'stremio',apiUrl:apiUrl,landingUrl:null,matchKeys:[],customName:null});
   }else{
     entry=makeApiEntry({type:'v1',apiUrl:apiUrl,landingUrl:landingUrl,matchKeys:[],customName:null});
   }
