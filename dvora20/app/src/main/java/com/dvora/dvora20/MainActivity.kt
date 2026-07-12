@@ -74,7 +74,10 @@ data class Bookmark(
     val addedAt:            Long    = System.currentTimeMillis(),
     val reminderDate:       String? = null,   // "YYYY-MM-DD"
     val reminderTime:       String? = null,   // "HH:mm"
-    val reminderRecurrence: String? = null    // "ONCE", "DAILY", "WEEKLY", "MONTHLY"
+    val reminderRecurrence: String? = null,   // "ONCE", "DAILY", "WEEKLY", "MONTHLY"
+    val season:             Int?    = null,   // 1-based season number (shows)
+    val episode:            Int?    = null,   // 1-based episode number (shows)
+    val timestamp:          String? = null    // playback position, e.g. "00:42:17" or "12:35"
 )
 
 object BookmarksManager {
@@ -135,6 +138,20 @@ object BookmarksManager {
     fun clearReminderSilent(context: Context, imdbId: String) {
         bookmarks = bookmarks.map {
             if (it.imdbId == imdbId) it.copy(reminderDate = null, reminderTime = null, reminderRecurrence = null) else it
+        }
+        persist(context)
+    }
+
+    /**
+     * Update the season / episode / timestamp playback info for a bookmark.
+     * Pass null for any field you want to clear.
+     */
+    fun setPlaybackInfo(
+        context: Context, imdbId: String,
+        season: Int?, episode: Int?, timestamp: String?
+    ) {
+        bookmarks = bookmarks.map {
+            if (it.imdbId == imdbId) it.copy(season = season, episode = episode, timestamp = timestamp) else it
         }
         persist(context)
     }
@@ -1423,6 +1440,8 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: () -> Unit, onCl
     val textColor   = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
     val subColor    = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.7f))
     val hasReminder = bm.reminderDate != null
+    val hasPlayback = bm.season != null || bm.episode != null || !bm.timestamp.isNullOrBlank()
+    var showPlaybackEditor by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp).clickable { openUrl(context, bm.imdbUrl) },
@@ -1526,6 +1545,27 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: () -> Unit, onCl
                     }
                 }
 
+                // Playback badge (season / episode / timestamp)
+                if (hasPlayback) {
+                    Spacer(Modifier.height(5.dp))
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = BeeColors.HoneyGold.copy(alpha = 0.15f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BeeColors.HoneyGold.copy(alpha = 0.5f)),
+                        modifier = Modifier.clickable { showPlaybackEditor = true }
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                            Text("▶️", fontSize = 11.sp)
+                            Spacer(Modifier.width(4.dp))
+                            val parts = mutableListOf<String>()
+                            if (bm.season != null) parts += "S${bm.season}"
+                            if (bm.episode != null) parts += "E${bm.episode}"
+                            if (!bm.timestamp.isNullOrBlank()) parts += bm.timestamp
+                            Text(parts.joinToString("  ·  "), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BeeColors.HoneyGold)
+                        }
+                    }
+                }
+
                 Spacer(Modifier.height(4.dp))
                 // IMDb ID + copy
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1553,8 +1593,13 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: () -> Unit, onCl
                         modifier = Modifier.size(20.dp)
                     )
                 }
-                IconButton(onClick = { openUrl(context, bm.imdbUrl) }, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.OpenInNew, "Open IMDb", tint = BeeColors.DeepAmber, modifier = Modifier.size(20.dp))
+                IconButton(onClick = { showPlaybackEditor = true }, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        Icons.Default.Edit,
+                        "Edit season / episode / timestamp",
+                        tint = if (hasPlayback) BeeColors.HoneyGold else BeeColors.DeepAmber,
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
                 IconButton(onClick = {
                     BookmarksManager.toggle(context, ImdbResult(bm.imdbId, bm.title, bm.year, bm.mediaType, bm.posterUrl, bm.imdbUrl))
@@ -1564,6 +1609,104 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: () -> Unit, onCl
             }
         }
     }
+
+    if (showPlaybackEditor) {
+        PlaybackInfoDialog(
+            bookmark = bm,
+            onDismiss = { showPlaybackEditor = false },
+            onSave = { season, episode, timestamp ->
+                BookmarksManager.setPlaybackInfo(context, bm.imdbId, season, episode, timestamp)
+                Toast.makeText(context, "info saved", Toast.LENGTH_SHORT).show()
+                showPlaybackEditor = false
+            }
+        )
+    }
+}
+
+@Composable
+fun PlaybackInfoDialog(
+    bookmark: Bookmark,
+    onDismiss: () -> Unit,
+    onSave: (season: Int?, episode: Int?, timestamp: String?) -> Unit
+) {
+    val bgColor   = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
+    val textColor = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
+
+    var seasonStr    by remember { mutableStateOf(bookmark.season?.toString() ?: "") }
+    var episodeStr   by remember { mutableStateOf(bookmark.episode?.toString() ?: "") }
+    var timestampStr by remember { mutableStateOf(bookmark.timestamp ?: "") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor   = bgColor,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("▶️ ", fontSize = 20.sp)
+                Text("Playback Position", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp,
+                    color = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold))
+            }
+        },
+        text = {
+            Column {
+                Text(
+                    "Track where you are in \"${bookmark.title}\". Leave any field blank to clear it.",
+                    fontSize = 11.sp, color = textColor.copy(alpha = 0.65f)
+                )
+                Spacer(Modifier.height(12.dp))
+
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = seasonStr,
+                        onValueChange = { seasonStr = it.filter { c -> c.isDigit() }.take(4) },
+                        label = { Text("Season") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        colors = beeTextFieldColors()
+                    )
+                    OutlinedTextField(
+                        value = episodeStr,
+                        onValueChange = { episodeStr = it.filter { c -> c.isDigit() }.take(4) },
+                        label = { Text("Episode") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        colors = beeTextFieldColors()
+                    )
+                }
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = timestampStr,
+                    onValueChange = { timestampStr = it },
+                    label = { Text("Timestamp (e.g. 00:42:17 or 12:35)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    colors = beeTextFieldColors()
+                )
+            }
+        },
+        confirmButton = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = {
+                    onSave(null, null, null)
+                }) { Text("Clear", color = BeeColors.DeepAmber) }
+                Spacer(Modifier.width(4.dp))
+                Button(
+                    onClick = {
+                        val season = seasonStr.trim().toIntOrNull()
+                        val episode = episodeStr.trim().toIntOrNull()
+                        val ts = timestampStr.trim().ifBlank { null }
+                        onSave(season, episode, ts)
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = BeeColors.HoneyGold),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("💾 Save", color = BeeColors.BeeBlack, fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel", color = textColor.copy(alpha = 0.6f)) }
+        }
+    )
 }
 // ═══════════════════════════════════════════════════════════════════════════════
 // BACKUP / IMPORT / EXPORT
