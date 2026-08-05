@@ -1080,34 +1080,38 @@ fun SubtitlesScreen(scanner: DvoraScanner, onBack: () -> Unit, onToggleDark: () 
         isSearching = false
     }
 
-    Column(modifier = modifier.fillMaxSize().background(scaffoldBg).padding(16.dp)) {
+    Column(modifier = modifier.fillMaxSize().background(scaffoldBg)) {
+
+        // Header — full-width at the top edge, matching Bookmarks / IMDb / Settings screens
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().background(headerBg, RoundedCornerShape(12.dp)).padding(4.dp)
+            modifier = Modifier.fillMaxWidth().background(headerBg).padding(4.dp)
         ) {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = BeeColors.HoneyGold) }
             Text("🎞️  Hebrew Subtitles", style = MaterialTheme.typography.titleLarge, color = BeeColors.HoneyGold, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
             IconButton(onClick = onToggleDark) { Icon(if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode, "Theme", tint = BeeColors.HoneyGold) }
         }
-        Spacer(Modifier.height(16.dp))
-        OutlinedTextField(value = searchTerm, onValueChange = { searchTerm = it }, label = { Text("Movie or Show Name") }, modifier = Modifier.fillMaxWidth(), singleLine = true, colors = beeTextFieldColors())
-        Spacer(Modifier.height(12.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            BeeRadioOption("📺 Shows", searchType == SourceType.SHOW, { searchType = SourceType.SHOW }, Modifier.weight(1f))
-            Spacer(Modifier.width(8.dp))
-            BeeRadioOption("🎬 Movies", searchType == SourceType.MOVIE, { searchType = SourceType.MOVIE }, Modifier.weight(1f))
-        }
-        Spacer(Modifier.height(10.dp))
-        if (isSearching) {
-            LinearProgressIndicator(Modifier.fillMaxWidth(), BeeColors.DeepAmber, trackColor = BeeColors.DeepAmber.copy(alpha = 0.2f))
+
+        Column(modifier = Modifier.padding(16.dp)) {
+            OutlinedTextField(value = searchTerm, onValueChange = { searchTerm = it }, label = { Text("Movie or Show Name") }, modifier = Modifier.fillMaxWidth(), singleLine = true, colors = beeTextFieldColors())
             Spacer(Modifier.height(12.dp))
-        } else Spacer(Modifier.height(4.dp))
-        if (results.isEmpty() && !isSearching && searchTerm.isNotBlank()) {
-            Box(Modifier.fillMaxWidth().padding(top = 32.dp), contentAlignment = Alignment.Center) {
-                Text("No Hebrew subtitles found for \"$searchTerm\"", color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                BeeRadioOption("📺 Shows", searchType == SourceType.SHOW, { searchType = SourceType.SHOW }, Modifier.weight(1f))
+                Spacer(Modifier.width(8.dp))
+                BeeRadioOption("🎬 Movies", searchType == SourceType.MOVIE, { searchType = SourceType.MOVIE }, Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(10.dp))
+            if (isSearching) {
+                LinearProgressIndicator(Modifier.fillMaxWidth(), BeeColors.DeepAmber, trackColor = BeeColors.DeepAmber.copy(alpha = 0.2f))
+                Spacer(Modifier.height(12.dp))
+            } else Spacer(Modifier.height(4.dp))
+            if (results.isEmpty() && !isSearching && searchTerm.isNotBlank()) {
+                Box(Modifier.fillMaxWidth().padding(top = 32.dp), contentAlignment = Alignment.Center) {
+                    Text("No Hebrew subtitles found for \"$searchTerm\"", color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                }
             }
         }
-        LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(vertical = 4.dp)) {
+        LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
             items(results) { SubtitleResultCard(it) }
         }
     }
