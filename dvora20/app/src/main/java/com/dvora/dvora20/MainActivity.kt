@@ -1295,6 +1295,7 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
     val headerBg   = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
     val scaffoldBg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
     val bookmarks  = BookmarksManager.bookmarks
+    var bookmarkSearch by remember { mutableStateOf("") }
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (!granted) Toast.makeText(context, "Notification permission needed for reminders", Toast.LENGTH_SHORT).show()
@@ -1447,6 +1448,33 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
             IconButton(onClick = onToggleDark) { Icon(if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode, "Theme", tint = BeeColors.HoneyGold) }
         }
 
+        // Search bar — filter bookmarks by title / year / IMDb ID / mediaType
+        val searchFilter = bookmarkSearch.trim().lowercase()
+        fun matchesSearch(bm: Bookmark): Boolean {
+            if (searchFilter.isEmpty()) return true
+            return bm.title.lowercase().contains(searchFilter) ||
+                bm.imdbId.lowercase().contains(searchFilter) ||
+                (bm.year?.lowercase()?.contains(searchFilter) == true) ||
+                (bm.mediaType?.lowercase()?.contains(searchFilter) == true)
+        }
+        val filteredBookmarks = if (searchFilter.isEmpty()) bookmarks else bookmarks.filter(::matchesSearch)
+
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+            OutlinedTextField(
+                value = bookmarkSearch,
+                onValueChange = { bookmarkSearch = it },
+                label = { Text("🔎 Search your bookmarks") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                colors = beeTextFieldColors(),
+                trailingIcon = {
+                    if (bookmarkSearch.isNotEmpty()) IconButton(onClick = { bookmarkSearch = "" }) {
+                        Icon(Icons.Default.Close, "Clear", tint = BeeColors.DeepAmber)
+                    }
+                }
+            )
+        }
+
         if (bookmarks.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -1460,8 +1488,21 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
             return@Column
         }
 
-        val withReminder    = bookmarks.filter { it.reminderDate != null }.sortedBy { it.reminderDate }
-        val withoutReminder = bookmarks.filter { it.reminderDate == null }
+        if (filteredBookmarks.isEmpty() && searchFilter.isNotEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("🔍", fontSize = 44.sp)
+                    Spacer(Modifier.height(10.dp))
+                    Text("No bookmarks match \"$bookmarkSearch\"", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)))
+                    Spacer(Modifier.height(6.dp))
+                    Text("Try a different title, year, or IMDb ID.", fontSize = 12.sp, color = beeAdapt(Color(0xFFAA8800), BeeColors.HoneyGold.copy(alpha = 0.5f)), textAlign = TextAlign.Center)
+                }
+            }
+            return@Column
+        }
+
+        val withReminder    = filteredBookmarks.filter { it.reminderDate != null }.sortedBy { it.reminderDate }
+        val withoutReminder = filteredBookmarks.filter { it.reminderDate == null }
 
         LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
 
@@ -1485,7 +1526,7 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
                     Text("🔖", fontSize = 16.sp); Spacer(Modifier.width(6.dp))
-                    Text("ALL BOOKMARKS  (${bookmarks.size})", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp, color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)))
+                    Text("ALL BOOKMARKS  (${filteredBookmarks.size})", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp, color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)))
                 }
             }
             items(withoutReminder + withReminder) { bm ->
