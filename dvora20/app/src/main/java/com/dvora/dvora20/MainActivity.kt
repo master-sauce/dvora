@@ -2292,32 +2292,107 @@ fun ApiSourcesEditor(apiSites: List<String>, onUpdate: (List<String>) -> Unit) {
     var editingIndex  by remember { mutableIntStateOf(-1) }
     var editingEntry  by remember { mutableStateOf<ApiEntry?>(null) }
     var pendingDeleteIndex by remember { mutableIntStateOf(-1) }
+    var showTransferDialog by remember { mutableStateOf(false) }
+    val context       = LocalContext.current
 
     val bgColor   = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
     val textColor = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface)
     val cardBg    = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
 
+    val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        uri?.let {
+            try {
+                val lines = context.contentResolver.openInputStream(it)?.bufferedReader()?.use { r -> r.readLines() } ?: emptyList()
+                val clean = lines.map { l -> l.trim() }.filter { l -> l.isNotBlank() }
+                if (clean.isNotEmpty()) {
+                    onUpdate((apiSites + clean).distinct())
+                    Toast.makeText(context, "Imported ${clean.size} item(s)", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "File empty or unreadable", Toast.LENGTH_SHORT).show()
+                }
+            } catch (_: Exception) { Toast.makeText(context, "Import failed", Toast.LENGTH_SHORT).show() }
+        }
+    }
+
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        uri?.let {
+            try {
+                context.contentResolver.openOutputStream(it)?.bufferedWriter()?.use { w ->
+                    apiSites.forEach { item -> w.write(item); w.newLine() }
+                }
+                Toast.makeText(context, "Exported ${apiSites.size} item(s)", Toast.LENGTH_SHORT).show()
+            } catch (_: Exception) { Toast.makeText(context, "Export failed", Toast.LENGTH_SHORT).show() }
+        }
+    }
+
+    if (showTransferDialog) {
+        AlertDialog(
+            onDismissRequest = { showTransferDialog = false },
+            title = { Text("API Sources", fontWeight = FontWeight.Bold, color = textColor) },
+            text = { Text("Import list from a .txt file, or export current list to share with others.", color = textColor.copy(alpha = 0.75f), fontSize = 13.sp) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showTransferDialog = false
+                    filePickerLauncher.launch("text/plain")
+                }) {
+                    Icon(Icons.Default.FileUpload, null, tint = BeeColors.DeepAmber, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Import", color = BeeColors.DeepAmber, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showTransferDialog = false
+                    if (apiSites.isEmpty()) {
+                        Toast.makeText(context, "Nothing to export", Toast.LENGTH_SHORT).show()
+                    } else {
+                        exportLauncher.launch("dvora_api_sources.txt")
+                    }
+                }) {
+                    Icon(Icons.Default.FileDownload, null, tint = BeeColors.DeepAmber, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Export", color = BeeColors.DeepAmber, fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = bgColor
+        )
+    }
+
     Column(modifier = Modifier.padding(16.dp).background(bgColor)) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(
-                onClick = { editingIndex = -1; editingEntry = null; showWizard = true },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = BeeColors.DeepAmber),
-                shape = RoundedCornerShape(10.dp)
-            ) {
-                Icon(Icons.Default.Add, null, tint = Color.White)
-                Spacer(Modifier.width(6.dp))
-                Text("🧙 Add API Source", color = Color.White, fontWeight = FontWeight.Bold)
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { editingIndex = -1; editingEntry = null; showWizard = true },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = BeeColors.DeepAmber),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Default.Add, null, tint = Color.White)
+                    Spacer(Modifier.width(6.dp))
+                    Text("🧙 Add API Source", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+                Button(
+                    onClick = { showTester = true },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = BeeColors.HoneyGold),
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Icon(Icons.Default.Search, null, tint = BeeColors.BeeBlack)
+                    Spacer(Modifier.width(6.dp))
+                    Text("🧪 Add API Endpoint", color = BeeColors.BeeBlack, fontWeight = FontWeight.Bold)
+                }
             }
-            Button(
-                onClick = { showTester = true },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = BeeColors.HoneyGold),
-                shape = RoundedCornerShape(10.dp)
+            Spacer(Modifier.height(8.dp))
+            OutlinedButton(
+                onClick = { showTransferDialog = true },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = BeeColors.DeepAmber),
+                border = androidx.compose.foundation.BorderStroke(1.dp, BeeColors.DeepAmber.copy(alpha = 0.5f))
             ) {
-                Icon(Icons.Default.Search, null, tint = BeeColors.BeeBlack)
+                Icon(Icons.Default.FileUpload, null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("🧪 Add API Endpoint", color = BeeColors.BeeBlack, fontWeight = FontWeight.Bold)
+                Text("Import / Export Sources", fontWeight = FontWeight.Bold)
             }
         }
         Spacer(Modifier.height(12.dp))
@@ -3095,6 +3170,7 @@ fun SourceEditor(list: List<String>, onUpdate: (List<String>) -> Unit) {
     var newItem      by remember { mutableStateOf("") }
     var editingIndex by remember { mutableIntStateOf(-1) }
     var pendingDeleteItem by remember { mutableStateOf<String?>(null) }
+    var showTransferDialog by remember { mutableStateOf(false) }
     val context      = LocalContext.current
     val bgColor      = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
     val textColor    = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface)
@@ -3105,9 +3181,58 @@ fun SourceEditor(list: List<String>, onUpdate: (List<String>) -> Unit) {
             try {
                 val lines = context.contentResolver.openInputStream(it)?.bufferedReader()?.use { r -> r.readLines() } ?: emptyList()
                 val clean = lines.map { l -> l.trim() }.filter { l -> l.isNotBlank() }
-                if (clean.isNotEmpty()) onUpdate((list + clean).distinct())
+                if (clean.isNotEmpty()) {
+                    onUpdate((list + clean).distinct())
+                    Toast.makeText(context, "Imported ${clean.size} item(s)", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "File empty or unreadable", Toast.LENGTH_SHORT).show()
+                }
             } catch (_: Exception) { Toast.makeText(context, "Import failed", Toast.LENGTH_SHORT).show() }
         }
+    }
+
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+        uri?.let {
+            try {
+                context.contentResolver.openOutputStream(it)?.bufferedWriter()?.use { w ->
+                    list.forEach { item -> w.write(item); w.newLine() }
+                }
+                Toast.makeText(context, "Exported ${list.size} item(s)", Toast.LENGTH_SHORT).show()
+            } catch (_: Exception) { Toast.makeText(context, "Export failed", Toast.LENGTH_SHORT).show() }
+        }
+    }
+
+    if (showTransferDialog) {
+        AlertDialog(
+            onDismissRequest = { showTransferDialog = false },
+            title = { Text("Sources", fontWeight = FontWeight.Bold, color = textColor) },
+            text = { Text("Import list from a .txt file, or export current list to share with others.", color = textColor.copy(alpha = 0.75f), fontSize = 13.sp) },
+            confirmButton = {
+                TextButton(onClick = {
+                    showTransferDialog = false
+                    filePickerLauncher.launch("text/plain")
+                }) {
+                    Icon(Icons.Default.FileUpload, null, tint = BeeColors.DeepAmber, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Import", color = BeeColors.DeepAmber, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showTransferDialog = false
+                    if (list.isEmpty()) {
+                        Toast.makeText(context, "Nothing to export", Toast.LENGTH_SHORT).show()
+                    } else {
+                        exportLauncher.launch("dvora_sources.txt")
+                    }
+                }) {
+                    Icon(Icons.Default.FileDownload, null, tint = BeeColors.DeepAmber, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Export", color = BeeColors.DeepAmber, fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = bgColor
+        )
     }
 
     Column(modifier = Modifier.padding(16.dp).background(bgColor)) {
@@ -3124,7 +3249,7 @@ fun SourceEditor(list: List<String>, onUpdate: (List<String>) -> Unit) {
                     newItem = ""
                 }
             }) { Icon(if (editingIndex == -1) Icons.Default.Add else Icons.Default.Check, null, tint = BeeColors.DeepAmber) }
-            if (editingIndex == -1) IconButton(onClick = { filePickerLauncher.launch("text/plain") }) { Icon(Icons.Default.FileUpload, null, tint = BeeColors.DeepAmber) }
+            if (editingIndex == -1) IconButton(onClick = { showTransferDialog = true }) { Icon(Icons.Default.FileUpload, null, tint = BeeColors.DeepAmber) }
             else IconButton(onClick = { editingIndex = -1; newItem = "" }) { Icon(Icons.Default.Close, null, tint = BeeColors.DeepAmber) }
         }
         Spacer(Modifier.height(16.dp))
