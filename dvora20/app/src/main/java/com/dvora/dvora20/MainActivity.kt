@@ -77,7 +77,8 @@ data class Bookmark(
     val reminderRecurrence: String? = null,   // "ONCE", "DAILY", "WEEKLY", "MONTHLY"
     val season:             Int?    = null,   // 1-based season number (shows)
     val episode:            Int?    = null,   // 1-based episode number (shows)
-    val timestamp:          String? = null    // playback position, e.g. "00:42:17" or "12:35"
+    val timestamp:          String? = null,   // playback position, e.g. "00:42:17" or "12:35"
+    val note:               String? = null    // free-text note about the show / movie
 )
 
 object BookmarksManager {
@@ -143,15 +144,15 @@ object BookmarksManager {
     }
 
     /**
-     * Update the season / episode / timestamp playback info for a bookmark.
+     * Update the season / episode / timestamp / note playback info for a bookmark.
      * Pass null for any field you want to clear.
      */
     fun setPlaybackInfo(
         context: Context, imdbId: String,
-        season: Int?, episode: Int?, timestamp: String?
+        season: Int?, episode: Int?, timestamp: String?, note: String? = null
     ) {
         bookmarks = bookmarks.map {
-            if (it.imdbId == imdbId) it.copy(season = season, episode = episode, timestamp = timestamp) else it
+            if (it.imdbId == imdbId) it.copy(season = season, episode = episode, timestamp = timestamp, note = note) else it
         }
         persist(context)
     }
@@ -1671,6 +1672,28 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: () -> Unit, onCl
                     }
                 }
 
+                // Note preview (free-text note)
+                if (!bm.note.isNullOrBlank()) {
+                    Spacer(Modifier.height(5.dp))
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = BeeColors.DeepAmber.copy(alpha = 0.10f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BeeColors.DeepAmber.copy(alpha = 0.35f)),
+                        modifier = Modifier.clickable { showPlaybackEditor = true }
+                    ) {
+                        Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)) {
+                            Text("📝", fontSize = 11.sp)
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                bm.note!!,
+                                fontSize = 11.sp,
+                                color = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface),
+                                maxLines = 2
+                            )
+                        }
+                    }
+                }
+
                 Spacer(Modifier.height(4.dp))
                 // IMDb ID + copy
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1717,8 +1740,8 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: () -> Unit, onCl
         PlaybackInfoDialog(
             bookmark = bm,
             onDismiss = { showPlaybackEditor = false },
-            onSave = { season, episode, timestamp ->
-                BookmarksManager.setPlaybackInfo(context, bm.imdbId, season, episode, timestamp)
+            onSave = { season, episode, timestamp, note ->
+                BookmarksManager.setPlaybackInfo(context, bm.imdbId, season, episode, timestamp, note)
                 Toast.makeText(context, "info saved", Toast.LENGTH_SHORT).show()
                 showPlaybackEditor = false
             }
@@ -1754,7 +1777,7 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: () -> Unit, onCl
 fun PlaybackInfoDialog(
     bookmark: Bookmark,
     onDismiss: () -> Unit,
-    onSave: (season: Int?, episode: Int?, timestamp: String?) -> Unit
+    onSave: (season: Int?, episode: Int?, timestamp: String?, note: String?) -> Unit
 ) {
     val bgColor   = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
     val textColor = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
@@ -1762,6 +1785,7 @@ fun PlaybackInfoDialog(
     var seasonStr    by remember { mutableStateOf(bookmark.season?.toString() ?: "") }
     var episodeStr   by remember { mutableStateOf(bookmark.episode?.toString() ?: "") }
     var timestampStr by remember { mutableStateOf(bookmark.timestamp ?: "") }
+    var noteStr      by remember { mutableStateOf(bookmark.note ?: "") }
     var showConfirmClear by remember { mutableStateOf(false) }
 
     AlertDialog(
@@ -1809,6 +1833,16 @@ fun PlaybackInfoDialog(
                     singleLine = true,
                     colors = beeTextFieldColors()
                 )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = noteStr,
+                    onValueChange = { noteStr = it },
+                    label = { Text("Note (free text about this show / movie)") },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 90.dp),
+                    minLines = 3,
+                    maxLines = 5,
+                    colors = beeTextFieldColors()
+                )
             }
         },
         confirmButton = {
@@ -1820,7 +1854,8 @@ fun PlaybackInfoDialog(
                         val season = seasonStr.trim().toIntOrNull()
                         val episode = episodeStr.trim().toIntOrNull()
                         val ts = timestampStr.trim().ifBlank { null }
-                        onSave(season, episode, ts)
+                        val note = noteStr.trim().ifBlank { null }
+                        onSave(season, episode, ts, note)
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = BeeColors.HoneyGold),
                     shape = RoundedCornerShape(8.dp)
@@ -1841,7 +1876,7 @@ fun PlaybackInfoDialog(
             confirmText = "Clear",
             onDismiss = { showConfirmClear = false }
         ) {
-            onSave(null, null, null)
+            onSave(null, null, null, null)
         }
     }
 }
