@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -1326,7 +1328,24 @@ func appJSHandler(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, "app.js")
 }
 
+func openBrowser(url string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	case "darwin":
+		cmd = exec.Command("open", url)
+	default:
+		cmd = exec.Command("xdg-open", url)
+	}
+	_ = cmd.Start()
+}
+
 func main() {
+	if logFile, err := os.OpenFile("dvora.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644); err == nil {
+		log.SetOutput(logFile)
+		defer logFile.Close()
+	}
 	for _, f := range []string{"shows.txt", "movies.txt", "manual_checks.txt", "api_sites.txt"} {
 		if _, err := os.Stat(f); os.IsNotExist(err) {
 			os.WriteFile(f, []byte(""), 0644)
@@ -1350,6 +1369,14 @@ func main() {
 	http.HandleFunc("/config", configHandler)
 	http.HandleFunc("/proxy", proxyHandler)
 	port := "8080"
-	log.Printf("Dvora running at http://localhost:%s", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	url := "http://localhost:" + port
+
+	go func() {
+		log.Printf("Dvora server running at %s", url)
+		if err := http.ListenAndServe(":"+port, nil); err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	openUI(url)
 }
