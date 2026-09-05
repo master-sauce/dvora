@@ -144,10 +144,12 @@ async function captureM3U8(details) {
 
     const isMaster = text.includes('#EXT-X-STREAM-INF') || text.includes('#EXT-X-MEDIA');
     const title = await getPageTitle(details.tabId);
+    const pageUrl = await getPageUrl(details.tabId);
 
     const streamData = {
       id: 'stream_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
       url: details.url,
+      pageUrl,
       timestamp: Date.now(),
       tabId: details.tabId,
       type: 'HLS',
@@ -203,11 +205,13 @@ async function captureMPD(details) {
     }
 
     const title = await getPageTitle(details.tabId);
+    const pageUrl = await getPageUrl(details.tabId);
     const parsed = parseMPD(text, details.url);
 
     const streamData = {
       id: 'stream_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
       url: details.url,
+      pageUrl,
       timestamp: Date.now(),
       tabId: details.tabId,
       type: 'DASH',
@@ -286,11 +290,13 @@ async function captureDirectVideo(details) {
   seenUrls.add(normalizedUrl);
 
   const title = await getPageTitle(details.tabId);
+  const pageUrl = await getPageUrl(details.tabId);
   const ext   = details.url.match(/\.(mp4|webm|mkv|avi|mov|flv|wmv|ogv|m4v)/i)?.[1]?.toUpperCase() || 'VIDEO';
 
   const streamData = {
     id: 'stream_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
     url: details.url,
+    pageUrl,
     timestamp: Date.now(),
     tabId: details.tabId,
     type: ext,
@@ -318,10 +324,12 @@ async function captureYouTube(details) {
 
   console.log('Processing YouTube:', details.url);
   const title = await getPageTitle(details.tabId);
+  const pageUrl = details.url;
 
   const streamData = {
     id: 'stream_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
     url: details.url,
+    pageUrl,
     timestamp: Date.now(),
     tabId: details.tabId,
     type: 'YOUTUBE',
@@ -337,6 +345,35 @@ async function captureYouTube(details) {
   };
 
   console.log(`Stored YouTube: ${streamData.id}`);
+  storeStream(streamData);
+}
+
+// ── MediaSource / blob stream capture (undownloadable in-browser) ─────────────
+
+async function captureMediaSource(details) {
+  const title = await getPageTitle(details.tabId);
+  const pageUrl = details.pageUrl || await getPageUrl(details.tabId);
+
+  const streamData = {
+    id: 'stream_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+    url: pageUrl,
+    pageUrl,
+    timestamp: Date.now(),
+    tabId: details.tabId,
+    type: 'MEDIASOURCE',
+    isMaster: false,
+    isDirectVideo: false,
+    title,
+    playlistText: null,
+    segments: [],
+    variants: [],
+    segmentCount: 0,
+    totalDuration: 0,
+    encryption: { method: 'DRM' },
+    mime: details.mime || null
+  };
+
+  console.log(`Stored MediaSource stream: ${streamData.id} (mime: ${details.mime})`);
   storeStream(streamData);
 }
 
@@ -518,6 +555,13 @@ async function getPageTitle(tabId) {
   } catch { return 'Unknown Video'; }
 }
 
+async function getPageUrl(tabId) {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    return tab.url || tab.pendingUrl || null;
+  } catch { return null; }
+}
+
 function storeStream(streamData) {
   streamStore.set(streamData.id, streamData);
   chrome.runtime.sendMessage({
@@ -553,6 +597,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     } else if (isM3U8Url(url.toLowerCase()))             captureM3U8(details);
     else if (isMpdUrl(url.toLowerCase()))         captureMPD(details);
     else if (isDirectVideoUrl(url.toLowerCase())) captureDirectVideo(details);
+    return true;
+  }
+
+  if (request.action === 'mediaSourceDetected') {
+    const details = {
+      tabId: sender.tab?.id || -1,
+      pageUrl: request.pageUrl || sender.tab?.url || null,
+      mime: request.mime || null
+    };
+    captureMediaSource(details);
     return true;
   }
 

@@ -102,6 +102,7 @@ function streamTypeLabel(stream) {
     case 'HLS':  return 'HLS';
     case 'DASH': return 'DASH';
     case 'YOUTUBE': return 'YT';
+    case 'MEDIASOURCE': return 'MSE';
     case 'MP4': case 'WEBM': case 'MKV': case 'AVI': case 'MOV': case 'FLV': case 'WMV': return stream.type;
     default: return stream.type || 'VIDEO';
   }
@@ -116,58 +117,75 @@ function buildStreamCard(stream) {
   const typeLabel     = streamTypeLabel(stream);
   const isDirectVideo = stream.isDirectVideo;
   const isYouTube     = stream.type === 'YOUTUBE';
+  const isMediaSource = stream.type === 'MEDIASOURCE';
+  const needsYtDlp    = isYouTube || isDRM || isMediaSource;
 
   const card = document.createElement('div');
   card.className  = 'stream-card';
   card.dataset.id = stream.id;
 
   let encBadge = '';
-  if (isDRM)            encBadge = `<span class="badge badge-drm">🔐 DRM</span>`;
-  else if (isEncrypted) encBadge = `<span class="badge badge-encrypted">🔒 AES-128</span>`;
-  else                  encBadge = `<span class="badge badge-clear">🔓 CLEAR</span>`;
+  if (isDRM || isMediaSource) encBadge = `<span class="badge badge-drm">🔐 ${isMediaSource ? 'BLOB' : 'DRM'}</span>`;
+  else if (isEncrypted)       encBadge = `<span class="badge badge-encrypted">🔒 AES-128</span>`;
+  else                        encBadge = `<span class="badge badge-clear">🔓 CLEAR</span>`;
 
   let downloadBtn;
-  if (isYouTube) {
-    downloadBtn = `<button class="btn btn-primary js-ytdlp" data-id="${stream.id}">📋 Copy Youtube Command</button>`;
-  } else if (isDRM) {
-    downloadBtn = `<button class="btn btn-primary js-download disabled-drm" data-id="${stream.id}" disabled title="DRM-protected — cannot download">🔐 DRM Protected</button>`;
+  if (needsYtDlp) {
+    const label = isYouTube ? '📋 Copy Youtube Command'
+                : isMediaSource ? '📋 Copy yt-dlp Command'
+                : '📋 Copy yt-dlp Command';
+    const hint  = isMediaSource ? 'Blob/MediaSource stream — yt-dlp can fetch from page URL'
+                : 'DRM-protected — yt-dlp can often bypass';
+    downloadBtn = `<button class="btn btn-primary js-ytdlp" data-id="${stream.id}" title="${hint}">${label}</button>`;
   } else {
     downloadBtn = `<button class="btn btn-primary js-download" data-id="${stream.id}">↓ Download MP4</button>`;
   }
 
+  const metaSummary = isDirectVideo
+    ? 'Direct file'
+    : `${segCount > 0 ? segCount + ' segs' : hasVariants ? stream.variants.length + ' qualities' : 'live'}`;
+
   card.innerHTML = `
-    <div class="stream-card-body">
-      <div class="stream-top">
-        <div class="stream-title" title="${escapeHtml(stream.title || '')}">${escapeHtml(stream.title || 'Unknown Video')}</div>
-        <div style="display:flex;gap:4px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end">
+    <div class="stream-card-header" data-id="${stream.id}">
+      <div class="stream-card-chevron">▸</div>
+      <div class="stream-card-head-info">
+        <div class="stream-card-head-title" title="${escapeHtml(stream.title || '')}">${escapeHtml(stream.title || 'Unknown Video')}</div>
+        <div class="stream-card-head-meta">
           <span class="badge badge-type">${typeLabel}</span>
           ${hasVariants ? `<span class="badge badge-master">MASTER</span>` : ''}
           ${encBadge}
+          <span class="meta-item">${metaSummary}</span>
+          ${totalDuration ? `<span class="meta-item">${formatDuration(totalDuration)}</span>` : ''}
+          <span class="meta-item">${formatAge(stream.timestamp)}</span>
         </div>
       </div>
-      <div class="stream-meta">
-        ${isDirectVideo
-          ? `<span class="meta-item">Direct file</span>`
-          : `<span class="meta-item">${segCount > 0 ? segCount + ' segs' : hasVariants ? stream.variants.length + ' qualities' : 'live'}</span>`}
-        ${totalDuration ? `<span class="meta-item">${formatDuration(totalDuration)}</span>` : ''}
-        <span class="meta-item">${formatAge(stream.timestamp)}</span>
-      </div>
+    </div>
+    <div class="stream-card-body">
       <div class="segment-track"><div class="segment-track-fill"></div></div>
-      ${hasVariants && !isDRM && !isYouTube ? buildQualitySelector(stream) : ''}
-      ${isDRM ? `<div class="drm-notice">This stream is protected by DRM (Widevine/PlayReady). It cannot be downloaded.</div>` : ''}
+      ${hasVariants && !isDRM && !isYouTube && !isMediaSource ? buildQualitySelector(stream) : ''}
+      ${(isDRM || isMediaSource) ? `<div class="drm-notice">In-browser download unavailable. Use yt-dlp on the page URL — it can often extract the underlying stream.</div>` : ''}
       <div class="stream-actions">
         <button class="btn btn-ghost btn-sm js-copy" data-id="${stream.id}">Copy URL</button>
         ${downloadBtn}
       </div>
     </div>`;
 
-  card.querySelector('.js-copy').addEventListener('click', (e) => handleCopy(e, stream));
-  
-  if (isYouTube) {
-    card.querySelector('.js-ytdlp')?.addEventListener('click', (e) => handleYtDlp(e, stream));
-  } else if (!isDRM) {
-    card.querySelector('.js-ffmpeg-cmd')?.addEventListener('click', (e) => handleFfmpegCmd(e, stream));
-    card.querySelector('.js-download')?.addEventListener('click', () => handleDownload(stream.id));
+  // ── Collapse/expand toggle ──
+  const header = card.querySelector('.stream-card-header');
+  header.addEventListener('click', (e) => {
+    if (e.target.closest('button')) return;
+    card.classList.toggle('expanded');
+    const chev = card.querySelector('.stream-card-chevron');
+    chev.textContent = card.classList.contains('expanded') ? '▾' : '▸';
+  });
+
+  card.querySelector('.js-copy').addEventListener('click', (e) => { e.stopPropagation(); handleCopy(e, stream); });
+
+  if (needsYtDlp) {
+    card.querySelector('.js-ytdlp')?.addEventListener('click', (e) => { e.stopPropagation(); handleYtDlp(e, stream); });
+  } else {
+    card.querySelector('.js-ffmpeg-cmd')?.addEventListener('click', (e) => { e.stopPropagation(); handleFfmpegCmd(e, stream); });
+    card.querySelector('.js-download')?.addEventListener('click', (e) => { e.stopPropagation(); handleDownload(stream.id); });
   }
 
   return card;
@@ -199,7 +217,17 @@ async function handleYtDlp(e, stream) {
   const btn = e.currentTarget;
   const original = btn.textContent;
   const dlPath = targetOS === 'windows' ? '%USERPROFILE%\\Downloads' : '~/Downloads';
-  const cmd = `yt-dlp -f "bv*+ba/b" --merge-output-format mp4 -o "${dlPath}/%(title)s [%(id)s].%(ext)s" "${stream.url}"`;
+
+  // yt-dlp targets the extracted stream URL (same as "Copy URL")
+  const targetUrl = stream.url;
+  const isYouTube = stream.type === 'YOUTUBE';
+
+  // YouTube: standard best format. Otherwise: generic extractor, prefer mp4 merge
+  const formatArgs = isYouTube
+    ? `-f "bv*+ba/b"`
+    : `-f "bv*+ba/b" --merge-output-format mp4`;
+
+  const cmd = `yt-dlp ${formatArgs} -o "${dlPath}/%(title)s [%(id)s].%(ext)s" "${targetUrl}"`;
   try {
     await navigator.clipboard.writeText(cmd);
     btn.textContent = '✓ Copied!';

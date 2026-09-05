@@ -148,14 +148,20 @@
           action: 'videoDetected',
           url,
           method: event.data.method,
-          initiator: window.location.origin
+          initiator: window.location.origin,
+          pageUrl: window.location.href
         }).catch(() => {});
       }
     }
 
     if (event.data?.type === '__HLS_MEDIASOURCE__') {
-      // MediaSource blob stream detected — log but can't capture URL
+      // MediaSource blob stream — undownloadable in-browser, but yt-dlp can handle page URL
       console.log('[HLS Downloader] MediaSource stream detected, mime:', event.data.mime);
+      chrome.runtime.sendMessage({
+        action: 'mediaSourceDetected',
+        pageUrl: window.location.href,
+        mime: event.data.mime
+      }).catch(() => {});
     }
   });
 
@@ -169,7 +175,15 @@
           action: 'videoDetected',
           url: src,
           method: 'dom-scan',
-          initiator: window.location.origin
+          initiator: window.location.origin,
+          pageUrl: window.location.href
+        }).catch(() => {});
+      } else if (src && /^blob:/.test(src)) {
+        // blob: URL → MediaSource stream, undownloadable in-browser
+        chrome.runtime.sendMessage({
+          action: 'mediaSourceDetected',
+          pageUrl: window.location.href,
+          mime: 'video/*'
         }).catch(() => {});
       }
     });
@@ -181,7 +195,8 @@
         if (val && looksLikeVideo(val)) {
           chrome.runtime.sendMessage({
             action: 'videoDetected', url: val, method: 'data-attr',
-            initiator: window.location.origin
+            initiator: window.location.origin,
+            pageUrl: window.location.href
           }).catch(() => {});
         }
       });
@@ -203,7 +218,14 @@
         if (src && looksLikeVideo(src)) {
           chrome.runtime.sendMessage({
             action: 'videoDetected', url: src, method: 'attr-mutation',
-            initiator: window.location.origin
+            initiator: window.location.origin,
+            pageUrl: window.location.href
+          }).catch(() => {});
+        } else if (src && /^blob:/.test(src)) {
+          chrome.runtime.sendMessage({
+            action: 'mediaSourceDetected',
+            pageUrl: window.location.href,
+            mime: 'video/*'
           }).catch(() => {});
         }
       }
@@ -214,7 +236,8 @@
           if (src && looksLikeVideo(src)) {
             chrome.runtime.sendMessage({
               action: 'videoDetected', url: src, method: 'node-added',
-              initiator: window.location.origin
+              initiator: window.location.origin,
+              pageUrl: window.location.href
             }).catch(() => {});
           }
         });
@@ -253,7 +276,8 @@
         action: 'videoDetected',
         url: href,
         type: 'YOUTUBE',
-        initiator: window.location.origin
+        initiator: window.location.origin,
+        pageUrl: href
       }).catch(() => {});
     }
   }

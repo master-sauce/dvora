@@ -1342,10 +1342,6 @@ func openBrowser(url string) {
 }
 
 func main() {
-	if logFile, err := os.OpenFile("dvora.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644); err == nil {
-		log.SetOutput(logFile)
-		defer logFile.Close()
-	}
 	for _, f := range []string{"shows.txt", "movies.txt", "manual_checks.txt", "api_sites.txt"} {
 		if _, err := os.Stat(f); os.IsNotExist(err) {
 			os.WriteFile(f, []byte(""), 0644)
