@@ -79,7 +79,7 @@ One site per line. A symbol at the start controls how spaces in your title are h
 | Window won't open (Windows) | Make sure Windows is up to date — DVORA uses the built-in WebView2 component. |
 | Browser didn't open (Mac/Linux) | Open http://localhost:8080 yourself. |
 | Mac says "unidentified developer" | Right-click the file → Open → Open. One-time only. |
-| Nothing happens at all | Open `dvora.log` in this folder — it records what went wrong. |
+| Nothing happens at all | Run from a terminal — it prints errors to the console. |
 | Port already in use | Another copy of DVORA is already running. Close it first. |
 
 ---
