@@ -1557,15 +1557,20 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
     var showConfirmRemoveBookmark by remember { mutableStateOf(false) }
     // 📡 "find upcoming date" state: last-discovered date/label + busy flag
     var nextDate by remember { mutableStateOf<java.time.LocalDate?>(null) }
+    // discovered date awaiting user's "remind me?" answer
+    var askDate by remember { mutableStateOf<java.time.LocalDate?>(null) }
     var nextLabel by remember { mutableStateOf<String?>(null) }
     var nextBusy by remember { mutableStateOf(false) }
     val lookupScanner = remember { DvoraScanner() }
     val lookupScope = rememberCoroutineScope()
 
+    // IMDb stores mediaType as "feature" for movies, "TV Movie"/"Video Movie" variants also possible
+    val isMovie = bm.mediaType?.let { it.equals("feature", true) || it.contains("movie", ignoreCase = true) } == true
+
     fun autoLookup() {
         if (nextBusy) return
         // movies: episode lookup makes no sense — inform only
-        if (bm.mediaType?.contains("movie", ignoreCase = true) == true) {
+        if (isMovie) {
             Toast.makeText(context, "🎬 This is a movie", Toast.LENGTH_LONG).show()
             return
         }
@@ -1583,8 +1588,7 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
             if (date != null && date.isAfter(java.time.LocalDate.now())) {
                 nextDate  = date
                 nextLabel = message
-                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-                onSetReminder(date)   // open picker prefilled with the discovered date
+                askDate   = date   // popup: ask user whether to remind on this date
             } else {
                 Toast.makeText(context, message, Toast.LENGTH_LONG).show()
             }
@@ -1732,23 +1736,6 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
                         }
                     }
                 }
-
-                // Auto-discovered upcoming date badge
-                if (nextDate != null) {
-                    Spacer(Modifier.height(5.dp))
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = Color(0xFF26A69A).copy(alpha = 0.15f),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF26A69A).copy(alpha = 0.5f))
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                            Text("📡", fontSize = 11.sp)
-                            Spacer(Modifier.width(4.dp))
-                            Text(nextLabel ?: "", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = beeAdapt(Color(0xFF00695C), Color(0xFF4DB6AC)))
-                        }
-                    }
-                }
-
                 Spacer(Modifier.height(4.dp))
                 // IMDb ID + copy
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1768,22 +1755,20 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
 
             // Actions
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                IconButton(onClick = { if (!nextBusy) onSetReminder(nextDate) }, modifier = Modifier.size(36.dp)) {
-                    Icon(
-                        if (hasReminder) Icons.Default.NotificationsActive else Icons.Default.NotificationAdd,
-                        if (hasReminder) "Change reminder" else "Set reminder",
-                        tint = if (hasReminder) BeeColors.DeepAmber else BeeColors.HoneyGold,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                IconButton(onClick = { autoLookup() }, modifier = Modifier.size(36.dp)) {
-                    if (nextBusy) CircularProgressIndicator(Modifier.size(18.dp), Color(0xFF26A69A), strokeWidth = 2.dp)
-                    else Icon(
-                        Icons.Default.Radar,
-                        "Find next episode air date",
-                        tint = if (nextDate != null) Color(0xFF26A69A) else BeeColors.PollenOrange,
-                        modifier = Modifier.size(20.dp)
-                    )
+                // hidden while reminder active — badge already offers cancel/change
+                if (!hasReminder) {
+                    IconButton(onClick = { onSetReminder(nextDate) }, modifier = Modifier.size(36.dp)) {
+                        Icon(Icons.Default.NotificationAdd, "Set reminder", tint = BeeColors.HoneyGold, modifier = Modifier.size(20.dp))
+                    }
+                    IconButton(onClick = { autoLookup() }, modifier = Modifier.size(36.dp)) {
+                        if (nextBusy) CircularProgressIndicator(Modifier.size(18.dp), Color(0xFF26A69A), strokeWidth = 2.dp)
+                        else Icon(
+                            Icons.Default.Radar,
+                            "Find next episode air date",
+                            tint = if (nextDate != null) Color(0xFF26A69A) else BeeColors.PollenOrange,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
                 IconButton(onClick = { showPlaybackEditor = true }, modifier = Modifier.size(36.dp)) {
                     Icon(
@@ -1822,6 +1807,29 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
             onClearReminder()
             Toast.makeText(context, "Reminder cancelled", Toast.LENGTH_SHORT).show()
         }
+    }
+
+    if (askDate != null) {
+        AlertDialog(
+            title = { Text("📡 Next Episode") },
+            text  = {
+                val nice = try {
+                    askDate!!.format(java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy", java.util.Locale.ENGLISH))
+                } catch (_: Exception) { askDate!!.toString() }
+                Text("The next episode of \"${bm.title}\" airs on $nice.\n\nWould you like to set a reminder for that date?")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val d = askDate
+                    askDate = null
+                    if (d != null) onSetReminder(d)   // open picker prefilled with the discovered date
+                }) { Text("⏰  Remind Me") }
+            },
+            dismissButton = {
+                TextButton(onClick = { askDate = null }) { Text("Not Now") }
+            },
+            onDismissRequest = { askDate = null }
+        )
     }
 
     if (showConfirmRemoveBookmark) {
