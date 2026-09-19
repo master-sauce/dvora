@@ -1421,7 +1421,11 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
         )
     }
 
-    fun requestReminder(imdbId: String) {
+    fun requestReminder(imdbId: String, prefill: java.time.LocalDate? = null) {
+        if (prefill != null) {
+            // Open the date picker already positioned on the auto-discovered date.
+            datePickerState.selectedDateMillis = prefill.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
@@ -1519,7 +1523,7 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
                     }
                 }
                 items(withReminder) { bm ->
-                    BookmarkCard(bm = bm, context = context, onSetReminder = { requestReminder(bm.imdbId) }, onClearReminder = { BookmarksManager.clearReminder(context, bm.imdbId) })
+                    BookmarkCard(bm = bm, context = context, onSetReminder = { pref -> requestReminder(bm.imdbId, pref) }, onClearReminder = { BookmarksManager.clearReminder(context, bm.imdbId) })
                 }
                 item {
                     Spacer(Modifier.height(12.dp))
@@ -1535,14 +1539,14 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
                 }
             }
             items(withoutReminder + withReminder) { bm ->
-                BookmarkCard(bm = bm, context = context, onSetReminder = { requestReminder(bm.imdbId) }, onClearReminder = { BookmarksManager.clearReminder(context, bm.imdbId) })
+                BookmarkCard(bm = bm, context = context, onSetReminder = { pref -> requestReminder(bm.imdbId, pref) }, onClearReminder = { BookmarksManager.clearReminder(context, bm.imdbId) })
             }
         }
     }
 }
 
 @Composable
-fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: () -> Unit, onClearReminder: () -> Unit) {
+fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.LocalDate?) -> Unit, onClearReminder: () -> Unit) {
     val cardBg      = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
     val textColor   = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
     val subColor    = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.7f))
@@ -1551,6 +1555,41 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: () -> Unit, onCl
     var showPlaybackEditor by remember { mutableStateOf(false) }
     var showConfirmClearReminder by remember { mutableStateOf(false) }
     var showConfirmRemoveBookmark by remember { mutableStateOf(false) }
+    // 📡 "find upcoming date" state: last-discovered date/label + busy flag
+    var nextDate by remember { mutableStateOf<java.time.LocalDate?>(null) }
+    var nextLabel by remember { mutableStateOf<String?>(null) }
+    var nextBusy by remember { mutableStateOf(false) }
+    val lookupScanner = remember { DvoraScanner() }
+    val lookupScope = rememberCoroutineScope()
+
+    fun autoLookup() {
+        if (nextBusy) return
+        // movies: episode lookup makes no sense — inform only
+        if (bm.mediaType?.contains("movie", ignoreCase = true) == true) {
+            Toast.makeText(context, "🎬 This is a movie", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (!bm.imdbId.startsWith("tt")) { Toast.makeText(context, "Missing IMDb ID", Toast.LENGTH_SHORT).show(); return }
+        nextBusy = true; nextDate = null; nextLabel = null
+        lookupScope.launch {
+            var date: java.time.LocalDate? = null
+            val message: String
+            date = lookupScanner.lookupNextEpisode(bm.title, bm.imdbId)?.date
+            message = when {
+                date == null -> "📺 No upcoming episode date found yet"
+                else -> "📺 Next episode: ${date.format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.ENGLISH))}"
+            }
+            nextBusy = false
+            if (date != null && date.isAfter(java.time.LocalDate.now())) {
+                nextDate  = date
+                nextLabel = message
+                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                onSetReminder(date)   // open picker prefilled with the discovered date
+            } else {
+                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp).clickable { openUrl(context, bm.imdbUrl) },
@@ -1694,6 +1733,22 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: () -> Unit, onCl
                     }
                 }
 
+                // Auto-discovered upcoming date badge
+                if (nextDate != null) {
+                    Spacer(Modifier.height(5.dp))
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color(0xFF26A69A).copy(alpha = 0.15f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF26A69A).copy(alpha = 0.5f))
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                            Text("📡", fontSize = 11.sp)
+                            Spacer(Modifier.width(4.dp))
+                            Text(nextLabel ?: "", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = beeAdapt(Color(0xFF00695C), Color(0xFF4DB6AC)))
+                        }
+                    }
+                }
+
                 Spacer(Modifier.height(4.dp))
                 // IMDb ID + copy
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1713,11 +1768,20 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: () -> Unit, onCl
 
             // Actions
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                IconButton(onClick = onSetReminder, modifier = Modifier.size(36.dp)) {
+                IconButton(onClick = { if (!nextBusy) onSetReminder(nextDate) }, modifier = Modifier.size(36.dp)) {
                     Icon(
                         if (hasReminder) Icons.Default.NotificationsActive else Icons.Default.NotificationAdd,
                         if (hasReminder) "Change reminder" else "Set reminder",
                         tint = if (hasReminder) BeeColors.DeepAmber else BeeColors.HoneyGold,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                IconButton(onClick = { autoLookup() }, modifier = Modifier.size(36.dp)) {
+                    if (nextBusy) CircularProgressIndicator(Modifier.size(18.dp), Color(0xFF26A69A), strokeWidth = 2.dp)
+                    else Icon(
+                        Icons.Default.Radar,
+                        "Find next episode air date",
+                        tint = if (nextDate != null) Color(0xFF26A69A) else BeeColors.PollenOrange,
                         modifier = Modifier.size(20.dp)
                     )
                 }

@@ -580,6 +580,61 @@ class DvoraScanner {
         return null
     }
 
+    /** A discovered "next episode" / "release date" fact. */
+    data class NextInfo(val date: java.time.LocalDate, val label: String)
+
+    /**
+     * Look up the next upcoming episode air date of a TV series on TVmaze
+     * (free, keyless) — searches by title and filters by IMDb external ID.
+     * Returns null when the title isn't found or no future episode is known yet.
+     */
+    suspend fun lookupNextEpisode(title: String, imdbId: String): NextInfo? = withContext(Dispatchers.IO) {
+        try {
+            val q = java.net.URLEncoder.encode(title.trim(), "UTF-8")
+            val searchUrl = "https://api.tvmaze.com/search/shows?q=$q&externalId=$imdbId&type=series"
+            client.newCall(Request.Builder().url(searchUrl).header("User-Agent", userAgent).header("Accept", "application/json").build())
+                .execute().use { resp ->
+                    if (!resp.isSuccessful) return@withContext null
+                    val results = com.google.gson.JsonParser.parseString(resp.body!!.string()).asJsonArray
+                    if (results.size() == 0) return@withContext null
+                    // pick the candidate whose externals.imdb == imdbId, else top hit
+                    var show: com.google.gson.JsonObject? = null
+                    for (r in results) {
+                        val cand = r.asJsonObject.getAsJsonObject("show") ?: continue
+                        val ext  = cand.getAsJsonObject("externals")?.get("imdb")?.asString
+                        if (ext == imdbId) { show = cand; break }
+                        if (show == null) show = cand
+                    }
+                    val showId = show?.get("id")?.asInt ?: return@withContext null
+                    // Fetch the show with all episodes embedded
+                    client.newCall(Request.Builder().url("https://api.tvmaze.com/shows/$showId?embed=episodes").header("User-Agent", userAgent).header("Accept", "application/json").build())
+                        .execute().use { epResp ->
+                            if (!epResp.isSuccessful) return@withContext null
+                            val epObj = com.google.gson.JsonParser.parseString(epResp.body!!.string()).asJsonObject
+                            val eps = epObj.getAsJsonObject("_embedded")?.get("episodes") ?: return@withContext null
+                            val today = java.time.LocalDate.now()
+                            var best: java.time.LocalDate? = null
+                            fun consider(epEl: com.google.gson.JsonElement) {
+                                try {
+                                    val airdate = epEl.asJsonObject.get("airdate")?.asString ?: return
+                                    val d = java.time.LocalDate.parse(airdate)
+                                    if (d.isAfter(today) && (best == null || d.isBefore(best))) best = d
+                                } catch (_: Exception) {}
+                            }
+                            // API returns episodes as ARRAY for big shows, keyed OBJECT for small ones
+                            if (eps.isJsonArray) {
+                                for (el in eps.asJsonArray) if (el.isJsonObject) consider(el)
+                            } else if (eps.isJsonObject) {
+                                for ((_, el) in eps.asJsonObject.entrySet()) if (el.isJsonObject) consider(el)
+                            }
+                            if (best != null) {
+                                return@withContext NextInfo(best, "upcoming episode")
+                            }
+                        }
+                }
+        } catch (_: Exception) {}
+        return@withContext null
+    }
     suspend fun searchImdb(searchTerm: String): List<ImdbResult> = withContext(Dispatchers.IO) {
         val query     = searchTerm.trim().lowercase().replace(" ", "_")
         val firstChar = query.firstOrNull { it.isLetter() } ?: 'a'
