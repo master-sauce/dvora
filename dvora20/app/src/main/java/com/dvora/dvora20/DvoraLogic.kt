@@ -580,8 +580,14 @@ class DvoraScanner {
         return null
     }
 
-    /** A discovered "next episode" / "release date" fact. */
-    data class NextInfo(val date: java.time.LocalDate, val label: String)
+    /** A discovered "next episode" fact + the show's status. */
+    data class NextInfo(val date: java.time.LocalDate?, val label: String, val status: String?) {
+        val isEnded: Boolean
+            get() = status?.equals("ended", true) == true ||
+                    status?.equals("cancelled", true) == true ||
+                    status?.equals("canceled", true) == true ||
+                    status?.equals("poofed", true) == true
+    }
 
     /**
      * Look up the next upcoming episode air date of a TV series on TVmaze
@@ -606,6 +612,8 @@ class DvoraScanner {
                         if (show == null) show = cand
                     }
                     val showId = show?.get("id")?.asInt ?: return@withContext null
+                    val status = show?.get("status")?.asString // "Running" | "Ended" | "Canceled" | "Poofed"
+                    // note: a dated episode outranks any status — scan always runs, status only reported when no date
                     // Fetch the show with all episodes embedded
                     client.newCall(Request.Builder().url("https://api.tvmaze.com/shows/$showId?embed=episodes").header("User-Agent", userAgent).header("Accept", "application/json").build())
                         .execute().use { epResp ->
@@ -628,8 +636,10 @@ class DvoraScanner {
                                 for ((_, el) in eps.asJsonObject.entrySet()) if (el.isJsonObject) consider(el)
                             }
                             if (best != null) {
-                                return@withContext NextInfo(best, "upcoming episode")
+                                return@withContext NextInfo(best, "upcoming episode", status)
                             }
+                            // still airing but no future episode date scheduled yet
+                            return@withContext NextInfo(null, "", status)
                         }
                 }
         } catch (_: Exception) {}

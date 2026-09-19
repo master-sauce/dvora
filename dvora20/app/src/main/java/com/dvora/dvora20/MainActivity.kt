@@ -1555,11 +1555,8 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
     var showPlaybackEditor by remember { mutableStateOf(false) }
     var showConfirmClearReminder by remember { mutableStateOf(false) }
     var showConfirmRemoveBookmark by remember { mutableStateOf(false) }
-    // 📡 "find upcoming date" state: last-discovered date/label + busy flag
-    var nextDate by remember { mutableStateOf<java.time.LocalDate?>(null) }
-    // discovered date awaiting user's "remind me?" answer
+    // 📡 "find upcoming date" state: discovered date awaiting "remind me?" answer + busy flag
     var askDate by remember { mutableStateOf<java.time.LocalDate?>(null) }
-    var nextLabel by remember { mutableStateOf<String?>(null) }
     var nextBusy by remember { mutableStateOf(false) }
     val lookupScanner = remember { DvoraScanner() }
     val lookupScope = rememberCoroutineScope()
@@ -1575,22 +1572,24 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
             return
         }
         if (!bm.imdbId.startsWith("tt")) { Toast.makeText(context, "Missing IMDb ID", Toast.LENGTH_SHORT).show(); return }
-        nextBusy = true; nextDate = null; nextLabel = null
+        nextBusy = true; askDate = null
         lookupScope.launch {
-            var date: java.time.LocalDate? = null
-            val message: String
-            date = lookupScanner.lookupNextEpisode(bm.title, bm.imdbId)?.date
-            message = when {
-                date == null -> "📺 No upcoming episodes"
-                else -> "📺 Next episode: ${date.format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.ENGLISH))}"
-            }
+            val info = lookupScanner.lookupNextEpisode(bm.title, bm.imdbId)
+            val date = info?.date
             nextBusy = false
-            if (date != null && date.isAfter(java.time.LocalDate.now())) {
-                nextDate  = date
-                nextLabel = message
-                askDate   = date   // popup: ask user whether to remind on this date
-            } else {
-                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            when {
+                info == null ->
+                    Toast.makeText(context, "📺 Not found in the database", Toast.LENGTH_LONG).show()
+                // date wins over status — only report show state when no next date exists
+                date != null && date.isAfter(java.time.LocalDate.now()) -> {
+                    askDate = date   // popup: ask user whether to remind on this date
+                }
+                info.isEnded -> {
+                    Toast.makeText(context, "📺 \"${bm.title}\" Has ENDED", Toast.LENGTH_LONG).show()
+                }
+                else -> {
+                    Toast.makeText(context, "📺 \"${bm.title}\" Has no upcoming episodes", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
@@ -1757,7 +1756,7 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 // hidden while reminder active — badge already offers cancel/change
                 if (!hasReminder) {
-                    IconButton(onClick = { onSetReminder(nextDate) }, modifier = Modifier.size(36.dp)) {
+                    IconButton(onClick = { onSetReminder(askDate) }, modifier = Modifier.size(36.dp)) {
                         Icon(Icons.Default.NotificationAdd, "Set reminder", tint = BeeColors.HoneyGold, modifier = Modifier.size(20.dp))
                     }
                     IconButton(onClick = { autoLookup() }, modifier = Modifier.size(36.dp)) {
@@ -1765,7 +1764,7 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
                         else Icon(
                             Icons.Default.Radar,
                             "Find next episode air date",
-                            tint = if (nextDate != null) Color(0xFF26A69A) else BeeColors.PollenOrange,
+                            tint = if (askDate != null) Color(0xFF26A69A) else BeeColors.PollenOrange,
                             modifier = Modifier.size(20.dp)
                         )
                     }
