@@ -1581,7 +1581,7 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
             val message: String
             date = lookupScanner.lookupNextEpisode(bm.title, bm.imdbId)?.date
             message = when {
-                date == null -> "📺 No upcoming episode date found yet"
+                date == null -> "📺 No upcoming episodes"
                 else -> "📺 Next episode: ${date.format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.ENGLISH))}"
             }
             nextBusy = false
