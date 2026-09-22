@@ -30,11 +30,12 @@ data class ImdbResult(
 data class ImdbSuggestionResponse(val d: List<ImdbSuggestionItem>?)
 data class ImdbSuggestionItem(
     val id: String?,
-    val l:  String?,
-    val y:  Int?,
-    val q:  String?,
-    val i:  ImdbImage?
+    val l: String?,
+    val y: Int?,
+    val q: String?,
+    val i: ImdbImage?
 )
+
 data class ImdbImage(
     val imageUrl: String?,
     val height: Int?,
@@ -53,27 +54,27 @@ data class WizdomResult(
 )
 
 data class WizdomRelease(
-    val imdb:         String?,
-    val title:        String?,
-    val title_en:     String?,
-    val year:         Int?,
-    val rating:       String?,
-    val genres:       String?,
+    val imdb: String?,
+    val title: String?,
+    val title_en: String?,
+    val year: Int?,
+    val rating: String?,
+    val genres: String?,
     val poster_small: String?,
-    val type:         String?,
-    val subs:         List<Any>?
+    val type: String?,
+    val subs: List<Any>?
 )
 
 data class SubtitleResult(
-    val url:       String,
-    val imdbId:    String,
-    val title:     String,
-    val titleHe:   String?,
-    val year:      Int?,
-    val rating:    String?,
-    val genres:    String?,
+    val url: String,
+    val imdbId: String,
+    val title: String,
+    val titleHe: String?,
+    val year: Int?,
+    val rating: String?,
+    val genres: String?,
     val posterUrl: String?,
-    val type:      String?,
+    val type: String?,
     val subsCount: Int
 )
 
@@ -103,205 +104,232 @@ class DvoraScanner {
         .followSslRedirects(false)
         .build()
 
-    private val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    private val userAgent =
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 
-    suspend fun scanSite(baseUrl: String, searchTerm: String, exclusions: List<String> = emptyList()): SearchResult = withContext(Dispatchers.IO) {
-        var formattedInput: String
-        var cleanBaseUrl: String
+    suspend fun scanSite(baseUrl: String, searchTerm: String, exclusions: List<String> = emptyList()): SearchResult =
+        withContext(Dispatchers.IO) {
+            var formattedInput: String
+            var cleanBaseUrl: String
 
-        when {
-            baseUrl.startsWith("+") -> {
-                formattedInput = searchTerm.replace(" ", "+")
-                cleanBaseUrl = baseUrl.substring(1)
-            }
-            baseUrl.startsWith("-") -> {
-                formattedInput = searchTerm.replace(" ", "-")
-                cleanBaseUrl = baseUrl.substring(1)
-            }
-            else -> {
-                formattedInput = searchTerm
-                cleanBaseUrl = baseUrl
-            }
-        }
-
-        val fullUrl = cleanBaseUrl + formattedInput
-
-        try {
-            val request = Request.Builder()
-                .url(fullUrl)
-                .header("User-Agent", userAgent)
-                .build()
-
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@withContext SearchResult(fullUrl, false, errorMessage = "HTTP ${response.code}")
-
-                val body = response.body?.string() ?: return@withContext SearchResult(fullUrl, false, errorMessage = "Empty body")
-                val doc = Jsoup.parse(body, fullUrl)
-                val links = doc.select("a[href]")
-
-                val searchWords = searchTerm.split(" ").filter { it.isNotBlank() }
-                if (searchWords.isEmpty()) return@withContext SearchResult(fullUrl, false)
-
-                val patternBuilder = StringBuilder()
-                searchWords.forEachIndexed { index, word ->
-                    if (index > 0) patternBuilder.append("[\\s\\-\\+\\.\\/]+")
-                    patternBuilder.append(Pattern.quote(word))
+            when {
+                baseUrl.startsWith("+") -> {
+                    formattedInput = searchTerm.replace(" ", "+")
+                    cleanBaseUrl = baseUrl.substring(1)
                 }
-                val searchPattern = Pattern.compile(patternBuilder.toString(), Pattern.CASE_INSENSITIVE)
 
-                val ignoredPatterns = exclusions.ifEmpty {
-                    listOf(
-                        "addtoany.com", "facebook.com", "twitter.com", "reddit.com",
-                        "pinterest.com", "whatsapp.com", "t.me", "mailto:",
-                        "/login", "/register", "/signup", "/feed", "#", "/filter", "/search", "/browser", "/?s="
+                baseUrl.startsWith("-") -> {
+                    formattedInput = searchTerm.replace(" ", "-")
+                    cleanBaseUrl = baseUrl.substring(1)
+                }
+
+                else -> {
+                    formattedInput = searchTerm
+                    cleanBaseUrl = baseUrl
+                }
+            }
+
+            // DVORA placeholder (same convention as API URLs): the search query is
+            // spliced exactly where it sits instead of being appended to the URL end.
+            val fullUrl = if (cleanBaseUrl.contains("DVORA"))
+                cleanBaseUrl.replace("DVORA", formattedInput)
+            else
+                cleanBaseUrl + formattedInput
+
+            try {
+                val request = Request.Builder()
+                    .url(fullUrl)
+                    .header("User-Agent", userAgent)
+                    .build()
+
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@withContext SearchResult(
+                        fullUrl,
+                        false,
+                        errorMessage = "HTTP ${response.code}"
                     )
-                }
 
-                val matchedLinks = mutableListOf<String>()
-                val skipCounts = mutableMapOf<String, Int>()
+                    val body = response.body?.string() ?: return@withContext SearchResult(
+                        fullUrl,
+                        false,
+                        errorMessage = "Empty body"
+                    )
+                    val doc = Jsoup.parse(body, fullUrl)
+                    val links = doc.select("a[href]")
 
-                for (linkObj in links) {
-                    val href = linkObj.attr("abs:href")
-                    if (href.isBlank()) continue
+                    val searchWords = searchTerm.split(" ").filter { it.isNotBlank() }
+                    if (searchWords.isEmpty()) return@withContext SearchResult(fullUrl, false)
 
-                    val linkLower = href.lowercase()
-                    val textLower = linkObj.text().lowercase()
+                    val patternBuilder = StringBuilder()
+                    searchWords.forEachIndexed { index, word ->
+                        if (index > 0) patternBuilder.append("[\\s\\-\\+\\.\\/]+")
+                        patternBuilder.append(Pattern.quote(word))
+                    }
+                    val searchPattern = Pattern.compile(patternBuilder.toString(), Pattern.CASE_INSENSITIVE)
 
-                    var ignored = false
-                    for (pattern in ignoredPatterns) {
-                        if (linkLower.contains(pattern)) {
-                            skipCounts[pattern] = (skipCounts[pattern] ?: 0) + 1
-                            ignored = true
-                            break
+                    val ignoredPatterns = exclusions.ifEmpty {
+                        listOf(
+                            "addtoany.com", "facebook.com", "twitter.com", "reddit.com",
+                            "pinterest.com", "whatsapp.com", "t.me", "mailto:",
+                            "/login", "/register", "/signup", "/feed", "#", "/filter", "/search", "/browser", "/?s="
+                        )
+                    }
+
+                    val matchedLinks = mutableListOf<String>()
+                    val skipCounts = mutableMapOf<String, Int>()
+
+                    for (linkObj in links) {
+                        val href = linkObj.attr("abs:href")
+                        if (href.isBlank()) continue
+
+                        val linkLower = href.lowercase()
+                        val textLower = linkObj.text().lowercase()
+
+                        var ignored = false
+                        for (pattern in ignoredPatterns) {
+                            if (linkLower.contains(pattern)) {
+                                skipCounts[pattern] = (skipCounts[pattern] ?: 0) + 1
+                                ignored = true
+                                break
+                            }
+                        }
+                        if (ignored) continue
+
+                        if (linkLower.contains("/search/") || linkLower.contains("search/") || linkLower.contains("/search?")) {
+                            skipCounts["search/pagination"] = (skipCounts["search/pagination"] ?: 0) + 1
+                            continue
+                        }
+
+                        if (searchPattern.matcher(linkLower).find() || searchPattern.matcher(textLower).find()) {
+                            if (!matchedLinks.contains(href)) matchedLinks.add(href)
                         }
                     }
-                    if (ignored) continue
 
-                    if (linkLower.contains("/search/") || linkLower.contains("search/") || linkLower.contains("/search?")) {
-                        skipCounts["search/pagination"] = (skipCounts["search/pagination"] ?: 0) + 1
-                        continue
+                    val logBuilder = StringBuilder()
+                    logBuilder.append("Matches found: ${matchedLinks.size}\n")
+                    if (matchedLinks.isNotEmpty()) {
+                        logBuilder.append("Matching links (up to 10):\n")
+                        matchedLinks.take(10).forEach { logBuilder.append("- $it\n") }
+                    }
+                    logBuilder.append("\nSkip statistics (Blocked Patterns):\n")
+                    if (skipCounts.isEmpty()) {
+                        logBuilder.append("No links were skipped.\n")
+                    } else {
+                        skipCounts.forEach { (pattern, count) ->
+                            logBuilder.append("- Blocked '$pattern': $count times\n")
+                        }
+                    }
+                    val verbose = logBuilder.toString()
+
+                    if (matchedLinks.isNotEmpty()) {
+                        return@withContext SearchResult(
+                            url = fullUrl,
+                            found = true,
+                            foundDetails = "Matches found: ${matchedLinks.size}",
+                            verboseLogs = verbose
+                        )
                     }
 
-                    if (searchPattern.matcher(linkLower).find() || searchPattern.matcher(textLower).find()) {
-                        if (!matchedLinks.contains(href)) matchedLinks.add(href)
-                    }
-                }
-
-                val logBuilder = StringBuilder()
-                logBuilder.append("Matches found: ${matchedLinks.size}\n")
-                if (matchedLinks.isNotEmpty()) {
-                    logBuilder.append("Matching links (up to 10):\n")
-                    matchedLinks.take(10).forEach { logBuilder.append("- $it\n") }
-                }
-                logBuilder.append("\nSkip statistics (Blocked Patterns):\n")
-                if (skipCounts.isEmpty()) {
-                    logBuilder.append("No links were skipped.\n")
-                } else {
-                    skipCounts.forEach { (pattern, count) ->
-                        logBuilder.append("- Blocked '$pattern': $count times\n")
-                    }
-                }
-                val verbose = logBuilder.toString()
-
-                if (matchedLinks.isNotEmpty()) {
+                    val pageContent = doc.text().lowercase()
+                    val noResultsIndicators = listOf(
+                        "no result found.", "no result found", "no results found",
+                        "no results", "nothing found", "not found", "no matches",
+                        "0 results", "could not find", "couldn't find",
+                        "search returned no results", "sorry, no results",
+                        "no items found", "your search did not match",
+                        "did not match any", "no search results"
+                    )
+                    val detectedIndicator = noResultsIndicators.find { pageContent.contains(it) }
                     return@withContext SearchResult(
                         url = fullUrl,
-                        found = true,
-                        foundDetails = "Matches found: ${matchedLinks.size}",
+                        found = false,
+                        foundDetails = if (detectedIndicator != null) "Detected: $detectedIndicator" else "No matches found",
                         verboseLogs = verbose
                     )
                 }
-
-                val pageContent = doc.text().lowercase()
-                val noResultsIndicators = listOf(
-                    "no result found.", "no result found", "no results found",
-                    "no results", "nothing found", "not found", "no matches",
-                    "0 results", "could not find", "couldn't find",
-                    "search returned no results", "sorry, no results",
-                    "no items found", "your search did not match",
-                    "did not match any", "no search results"
-                )
-                val detectedIndicator = noResultsIndicators.find { pageContent.contains(it) }
-                return@withContext SearchResult(
-                    url = fullUrl,
-                    found = false,
-                    foundDetails = if (detectedIndicator != null) "Detected: $detectedIndicator" else "No matches found",
-                    verboseLogs = verbose
-                )
+            } catch (e: Exception) {
+                SearchResult(fullUrl, false, errorMessage = e.message)
             }
-        } catch (e: Exception) {
-            SearchResult(fullUrl, false, errorMessage = e.message)
         }
-    }
 
-    suspend fun scanSubtitles(searchTerm: String, searchType: SourceType): List<SubtitleResult> = withContext(Dispatchers.IO) {
-        val typePath     = if (searchType == SourceType.SHOW) "tv" else "movie"
-        val query        = searchTerm.replace(" ", "+")
-        val apiSearchUrl = "https://wizdom.xyz/api/search?search=$query&page=0"
+    suspend fun scanSubtitles(searchTerm: String, searchType: SourceType): List<SubtitleResult> =
+        withContext(Dispatchers.IO) {
+            val typePath = if (searchType == SourceType.SHOW) "tv" else "movie"
+            val query = searchTerm.replace(" ", "+")
+            val apiSearchUrl = "https://wizdom.xyz/api/search?search=$query&page=0"
 
-        val wizdomMap = mutableMapOf<String, String>()
+            val wizdomMap = mutableMapOf<String, String>()
 
-        try {
-            val req = Request.Builder().url(apiSearchUrl).header("User-Agent", userAgent).build()
-            client.newCall(req).execute().use { resp ->
-                if (resp.isSuccessful) {
-                    val body = resp.body?.string()
-                    if (body != null) {
-                        val listType = object : TypeToken<List<WizdomResult>>() {}.type
-                        val items: List<WizdomResult> = Gson().fromJson(body, listType)
-                        items.filter {
-                            it.imdb != null && (
-                                    it.title_en?.contains(searchTerm, ignoreCase = true) == true ||
-                                            it.title?.contains(searchTerm, ignoreCase = true) == true
-                                    )
-                        }.forEach { match ->
-                            wizdomMap[match.imdb!!] = match.title_en ?: match.title ?: "Unknown"
+            try {
+                val req = Request.Builder().url(apiSearchUrl).header("User-Agent", userAgent).build()
+                client.newCall(req).execute().use { resp ->
+                    if (resp.isSuccessful) {
+                        val body = resp.body?.string()
+                        if (body != null) {
+                            val listType = object : TypeToken<List<WizdomResult>>() {}.type
+                            val items: List<WizdomResult> = Gson().fromJson(body, listType)
+                            items.filter {
+                                it.imdb != null && (
+                                        it.title_en?.contains(searchTerm, ignoreCase = true) == true ||
+                                                it.title?.contains(searchTerm, ignoreCase = true) == true
+                                        )
+                            }.forEach { match ->
+                                wizdomMap[match.imdb!!] = match.title_en ?: match.title ?: "Unknown"
+                            }
                         }
                     }
                 }
+            } catch (_: Exception) {
             }
-        } catch (_: Exception) {}
 
-        try {
-            searchImdb(searchTerm).forEach { imdbResult ->
-                if (!wizdomMap.containsKey(imdbResult.imdbId))
-                    wizdomMap[imdbResult.imdbId] = imdbResult.title
-            }
-        } catch (_: Exception) {}
-
-        if (wizdomMap.isEmpty()) return@withContext emptyList()
-
-        val results = wizdomMap.keys.mapNotNull { imdbId ->
-            val relUrl   = "https://wizdom.xyz/api/releases/$imdbId"
-            val finalUrl = "https://wizdom.xyz/$typePath/$imdbId"
             try {
-                val req = Request.Builder().url(relUrl).header("User-Agent", userAgent).header("Accept", "application/json").build()
-                relClient.newCall(req).execute().use { resp ->
-                    if (resp.code >= 400) return@mapNotNull null
-                    val body = resp.body?.string()?.trim() ?: return@mapNotNull null
-                    if (body.isEmpty() || body == "null" || body == "[]" || body == "{}") return@mapNotNull null
-
-                    val release = try { Gson().fromJson(body, WizdomRelease::class.java) } catch (_: Exception) { null }
-                    val displayTitle = wizdomMap[imdbId] ?: "Unknown"
-                    val title = release?.title_en ?: release?.title ?: displayTitle
-
-                    SubtitleResult(
-                        url       = finalUrl,
-                        imdbId    = imdbId,
-                        title     = title,
-                        titleHe   = release?.title?.takeIf { it != title },
-                        year      = release?.year,
-                        rating    = release?.rating,
-                        genres    = release?.genres,
-                        posterUrl = release?.poster_small,
-                        type      = typePath,
-                        subsCount = release?.subs?.size ?: 0
-                    )
+                searchImdb(searchTerm).forEach { imdbResult ->
+                    if (!wizdomMap.containsKey(imdbResult.imdbId))
+                        wizdomMap[imdbResult.imdbId] = imdbResult.title
                 }
-            } catch (_: Exception) { null }
+            } catch (_: Exception) {
+            }
+
+            if (wizdomMap.isEmpty()) return@withContext emptyList()
+
+            val results = wizdomMap.keys.mapNotNull { imdbId ->
+                val relUrl = "https://wizdom.xyz/api/releases/$imdbId"
+                val finalUrl = "https://wizdom.xyz/$typePath/$imdbId"
+                try {
+                    val req = Request.Builder().url(relUrl).header("User-Agent", userAgent)
+                        .header("Accept", "application/json").build()
+                    relClient.newCall(req).execute().use { resp ->
+                        if (resp.code >= 400) return@mapNotNull null
+                        val body = resp.body?.string()?.trim() ?: return@mapNotNull null
+                        if (body.isEmpty() || body == "null" || body == "[]" || body == "{}") return@mapNotNull null
+
+                        val release = try {
+                            Gson().fromJson(body, WizdomRelease::class.java)
+                        } catch (_: Exception) {
+                            null
+                        }
+                        val displayTitle = wizdomMap[imdbId] ?: "Unknown"
+                        val title = release?.title_en ?: release?.title ?: displayTitle
+
+                        SubtitleResult(
+                            url = finalUrl,
+                            imdbId = imdbId,
+                            title = title,
+                            titleHe = release?.title?.takeIf { it != title },
+                            year = release?.year,
+                            rating = release?.rating,
+                            genres = release?.genres,
+                            posterUrl = release?.poster_small,
+                            type = typePath,
+                            subsCount = release?.subs?.size ?: 0
+                        )
+                    }
+                } catch (_: Exception) {
+                    null
+                }
+            }
+            return@withContext results
         }
-        return@withContext results
-    }
 
     private fun titleMatches(title: String, searchTerm: String): Boolean {
         val seps = listOf(" ", "-", "+")
@@ -316,40 +344,54 @@ class DvoraScanner {
         return false
     }
 
-    suspend fun scanStremio(baseUrl: String, searchTerm: String, searchType: SourceType): List<SearchResult> = withContext(Dispatchers.IO) {
-        val mediaType = if (searchType == SourceType.SHOW) "series" else "movie"
-        val variants = listOf(" " to "space", "-" to "dash", "+" to "plus")
-        val seenNames = mutableSetOf<String>()
-        val allMatches = mutableListOf<SearchResult>()
+    suspend fun scanStremio(baseUrl: String, searchTerm: String, searchType: SourceType): List<SearchResult> =
+        withContext(Dispatchers.IO) {
+            val mediaType = if (searchType == SourceType.SHOW) "series" else "movie"
+            val variants = listOf(" " to "space", "-" to "dash", "+" to "plus")
+            val seenNames = mutableSetOf<String>()
+            val allMatches = mutableListOf<SearchResult>()
 
-        for ((sep, _) in variants) {
-            val query = searchTerm.replace(" ", sep)
-            val apiURL = "$baseUrl/catalog/$mediaType/top/search=$query.json"
-            try {
-                val request = Request.Builder().url(apiURL).header("User-Agent", userAgent).build()
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) return@use
-                    val body = response.body?.string() ?: return@use
-                    val stremioResponse = Gson().fromJson(body, StremioResponse::class.java)
-                    stremioResponse.metas?.forEach { item ->
-                        if (allMatches.size >= 10) return@forEach
-                        val key = item.name.lowercase()
-                        if (key in seenNames) return@forEach
-                        if (titleMatches(item.name, searchTerm)) {
-                            seenNames.add(key)
-                            val id = item.imdb_id ?: item.id
-                            val stremioUrl = "https://web.stremio.com/#/detail/${item.type}/$id/$id"
-                            allMatches.add(SearchResult(stremioUrl, true, foundDetails = "Match: ${item.name} (${item.releaseInfo ?: ""})"))
+            for ((sep, _) in variants) {
+                val query = searchTerm.replace(" ", sep)
+                val apiURL = "$baseUrl/catalog/$mediaType/top/search=$query.json"
+                try {
+                    val request = Request.Builder().url(apiURL).header("User-Agent", userAgent).build()
+                    client.newCall(request).execute().use { response ->
+                        if (!response.isSuccessful) return@use
+                        val body = response.body?.string() ?: return@use
+                        val stremioResponse = Gson().fromJson(body, StremioResponse::class.java)
+                        stremioResponse.metas?.forEach { item ->
+                            if (allMatches.size >= 10) return@forEach
+                            val key = item.name.lowercase()
+                            if (key in seenNames) return@forEach
+                            if (titleMatches(item.name, searchTerm)) {
+                                seenNames.add(key)
+                                val id = item.imdb_id ?: item.id
+                                val stremioUrl = "https://web.stremio.com/#/detail/${item.type}/$id/$id"
+                                allMatches.add(
+                                    SearchResult(
+                                        stremioUrl,
+                                        true,
+                                        foundDetails = "Match: ${item.name} (${item.releaseInfo ?: ""})"
+                                    )
+                                )
+                            }
                         }
                     }
+                } catch (_: Exception) {
                 }
-            } catch (_: Exception) {}
-        }
+            }
 
-        if (allMatches.isNotEmpty()) return@withContext allMatches
-        val fallbackUrl = "$baseUrl/catalog/$mediaType/top/search=${searchTerm.replace(" ", "+")}.json"
-        return@withContext listOf(SearchResult(fallbackUrl, false, foundDetails = "No Stremio matches for '$searchTerm'"))
-    }
+            if (allMatches.isNotEmpty()) return@withContext allMatches
+            val fallbackUrl = "$baseUrl/catalog/$mediaType/top/search=${searchTerm.replace(" ", "+")}.json"
+            return@withContext listOf(
+                SearchResult(
+                    fallbackUrl,
+                    false,
+                    foundDetails = "No Stremio matches for '$searchTerm'"
+                )
+            )
+        }
 
     /**
      * Scan a V1 JSON API site using full URL templates.
@@ -363,17 +405,17 @@ class DvoraScanner {
      *                        dynamically reads these fields instead of the hardcoded V1 shape.
      */
     suspend fun scanV1(
-        apiUrlTemplate:     String,
-        searchTerm:         String,
+        apiUrlTemplate: String,
+        searchTerm: String,
         landingUrlTemplate: String? = null,
-        matchKeys:          List<String> = emptyList()
+        matchKeys: List<String> = emptyList()
     ): List<SearchResult> = withContext(Dispatchers.IO) {
-        val hasApiPlaceholder     = apiUrlTemplate.contains("DVORA")
+        val hasApiPlaceholder = apiUrlTemplate.contains("DVORA")
         val hasLandingPlaceholder = landingUrlTemplate?.contains("DVORA") == true
-        val useDynamicKeys        = matchKeys.isNotEmpty()
+        val useDynamicKeys = matchKeys.isNotEmpty()
 
         val separators = listOf("+", "-", " ")
-        val seenNames  = mutableSetOf<String>()
+        val seenNames = mutableSetOf<String>()
         val allMatches = mutableListOf<SearchResult>()
 
         for (sep in separators) {
@@ -401,10 +443,10 @@ class DvoraScanner {
                             if (titleMatches(title, searchTerm)) {
                                 seenNames.add(key)
                                 val finalUrl = when {
-                                    hasLandingPlaceholder  -> landingUrlTemplate!!.replace("DVORA", query)
+                                    hasLandingPlaceholder -> landingUrlTemplate!!.replace("DVORA", query)
                                     landingUrlTemplate != null -> "$landingUrlTemplate/search/?q=$query"
-                                    hasApiPlaceholder      -> apiUrlTemplate.replace("DVORA", query)
-                                    else                   -> "$apiUrlTemplate/search/?q=$query"
+                                    hasApiPlaceholder -> apiUrlTemplate.replace("DVORA", query)
+                                    else -> "$apiUrlTemplate/search/?q=$query"
                                 }
                                 allMatches.add(SearchResult(finalUrl, true, foundDetails = "Match: $title ($year)"))
                             }
@@ -419,17 +461,27 @@ class DvoraScanner {
                             if (titleMatches(item.t, searchTerm)) {
                                 seenNames.add(key)
                                 val finalUrl = when {
-                                    hasLandingPlaceholder  -> landingUrlTemplate!!.replace("DVORA", query)
+                                    hasLandingPlaceholder -> landingUrlTemplate!!.replace("DVORA", query)
                                     landingUrlTemplate != null -> "$landingUrlTemplate/search/?q=$query"  // legacy
-                                    hasApiPlaceholder      -> apiUrlTemplate.replace("DVORA", query)      // reuse api template
-                                    else                   -> "$apiUrlTemplate/search/?q=$query"          // legacy
+                                    hasApiPlaceholder -> apiUrlTemplate.replace(
+                                        "DVORA",
+                                        query
+                                    )      // reuse api template
+                                    else -> "$apiUrlTemplate/search/?q=$query"          // legacy
                                 }
-                                allMatches.add(SearchResult(finalUrl, true, foundDetails = "Match: ${item.t} (${item.y ?: ""})"))
+                                allMatches.add(
+                                    SearchResult(
+                                        finalUrl,
+                                        true,
+                                        foundDetails = "Match: ${item.t} (${item.y ?: ""})"
+                                    )
+                                )
                             }
                         }
                     }
                 }
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            }
         }
 
         if (allMatches.isNotEmpty()) return@withContext allMatches
@@ -437,10 +489,10 @@ class DvoraScanner {
         // No matches — point at the landing URL so user can check manually
         val fbQuery = searchTerm.replace(" ", "+")
         val fallbackUrl = when {
-            hasLandingPlaceholder  -> landingUrlTemplate!!.replace("DVORA", fbQuery)
+            hasLandingPlaceholder -> landingUrlTemplate!!.replace("DVORA", fbQuery)
             landingUrlTemplate != null -> "$landingUrlTemplate/search/?q=$fbQuery"
-            hasApiPlaceholder      -> apiUrlTemplate.replace("DVORA", fbQuery)
-            else                   -> "$apiUrlTemplate/searching?q=$fbQuery&limit=40&offset=0"
+            hasApiPlaceholder -> apiUrlTemplate.replace("DVORA", fbQuery)
+            else -> "$apiUrlTemplate/searching?q=$fbQuery&limit=40&offset=0"
         }
         return@withContext listOf(SearchResult(fallbackUrl, false, foundDetails = "No v1 matches for '$searchTerm'"))
     }
@@ -467,7 +519,8 @@ class DvoraScanner {
                     results.add(title to (year ?: ""))
                 }
             }
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
         return results
     }
 
@@ -488,6 +541,7 @@ class DvoraScanner {
                         }
                     }
                 }
+
                 is PathToken.Index -> {
                     current.forEach { el ->
                         if (el.isJsonArray && token.idx < el.asJsonArray.size()) {
@@ -495,6 +549,7 @@ class DvoraScanner {
                         }
                     }
                 }
+
                 is PathToken.AllItems -> {
                     current.forEach { el ->
                         if (el.isJsonArray) {
@@ -558,7 +613,11 @@ class DvoraScanner {
     /**
      * Best-effort: look for a sibling "year" or "y" field next to the title key.
      */
-    private fun guessYearForKey(root: com.google.gson.JsonElement, titlePath: String, titleEl: com.google.gson.JsonElement): String? {
+    private fun guessYearForKey(
+        root: com.google.gson.JsonElement,
+        titlePath: String,
+        titleEl: com.google.gson.JsonElement
+    ): String? {
         // Replace the last key segment with "year" / "y" and try to resolve
         val lastDot = titlePath.lastIndexOf(".")
         if (lastDot == -1) return null
@@ -598,7 +657,10 @@ class DvoraScanner {
         try {
             val q = java.net.URLEncoder.encode(title.trim(), "UTF-8")
             val searchUrl = "https://api.tvmaze.com/search/shows?q=$q&externalId=$imdbId&type=series"
-            client.newCall(Request.Builder().url(searchUrl).header("User-Agent", userAgent).header("Accept", "application/json").build())
+            client.newCall(
+                Request.Builder().url(searchUrl).header("User-Agent", userAgent).header("Accept", "application/json")
+                    .build()
+            )
                 .execute().use { resp ->
                     if (!resp.isSuccessful) return@withContext null
                     val results = com.google.gson.JsonParser.parseString(resp.body!!.string()).asJsonArray
@@ -607,15 +669,20 @@ class DvoraScanner {
                     var show: com.google.gson.JsonObject? = null
                     for (r in results) {
                         val cand = r.asJsonObject.getAsJsonObject("show") ?: continue
-                        val ext  = cand.getAsJsonObject("externals")?.get("imdb")?.asString
-                        if (ext == imdbId) { show = cand; break }
+                        val ext = cand.getAsJsonObject("externals")?.get("imdb")?.asString
+                        if (ext == imdbId) {
+                            show = cand; break
+                        }
                         if (show == null) show = cand
                     }
                     val showId = show?.get("id")?.asInt ?: return@withContext null
                     val status = show?.get("status")?.asString // "Running" | "Ended" | "Canceled" | "Poofed"
                     // note: a dated episode outranks any status — scan always runs, status only reported when no date
                     // Fetch the show with all episodes embedded
-                    client.newCall(Request.Builder().url("https://api.tvmaze.com/shows/$showId?embed=episodes").header("User-Agent", userAgent).header("Accept", "application/json").build())
+                    client.newCall(
+                        Request.Builder().url("https://api.tvmaze.com/shows/$showId?embed=episodes")
+                            .header("User-Agent", userAgent).header("Accept", "application/json").build()
+                    )
                         .execute().use { epResp ->
                             if (!epResp.isSuccessful) return@withContext null
                             val epObj = com.google.gson.JsonParser.parseString(epResp.body!!.string()).asJsonObject
@@ -627,7 +694,8 @@ class DvoraScanner {
                                     val airdate = epEl.asJsonObject.get("airdate")?.asString ?: return
                                     val d = java.time.LocalDate.parse(airdate)
                                     if (d.isAfter(today) && (best == null || d.isBefore(best))) best = d
-                                } catch (_: Exception) {}
+                                } catch (_: Exception) {
+                                }
                             }
                             // API returns episodes as ARRAY for big shows, keyed OBJECT for small ones
                             if (eps.isJsonArray) {
@@ -642,38 +710,43 @@ class DvoraScanner {
                             return@withContext NextInfo(null, "", status)
                         }
                 }
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
         return@withContext null
     }
+
     suspend fun searchImdb(searchTerm: String): List<ImdbResult> = withContext(Dispatchers.IO) {
-        val query     = searchTerm.trim().lowercase().replace(" ", "_")
+        val query = searchTerm.trim().lowercase().replace(" ", "_")
         val firstChar = query.firstOrNull { it.isLetter() } ?: 'a'
-        val url       = "https://v3.sg.media-imdb.com/suggestion/$firstChar/$query.json"
+        val url = "https://v3.sg.media-imdb.com/suggestion/$firstChar/$query.json"
 
         return@withContext try {
-            val request = Request.Builder().url(url).header("User-Agent", userAgent).header("Accept", "application/json").build()
+            val request =
+                Request.Builder().url(url).header("User-Agent", userAgent).header("Accept", "application/json").build()
             client.newCall(request).execute().use { response ->
                 if (!response.isSuccessful) return@use emptyList()
                 val body = response.body?.string() ?: return@use emptyList()
                 val parsed = Gson().fromJson(body, ImdbSuggestionResponse::class.java)
-                val items  = parsed.d ?: return@use emptyList()
+                val items = parsed.d ?: return@use emptyList()
 
                 items.filter { it.id?.startsWith("tt") == true }
                     .take(10)
                     .mapNotNull { item ->
                         val imdbId = item.id ?: return@mapNotNull null
-                        val title  = item.l  ?: return@mapNotNull null
+                        val title = item.l ?: return@mapNotNull null
                         ImdbResult(
-                            imdbId    = imdbId,
-                            title     = title,
-                            year      = item.y?.toString(),
+                            imdbId = imdbId,
+                            title = title,
+                            year = item.y?.toString(),
                             mediaType = item.q,
                             posterUrl = item.i?.imageUrl,
-                            imdbUrl   = "https://www.imdb.com/title/$imdbId/"
+                            imdbUrl = "https://www.imdb.com/title/$imdbId/"
                         )
                     }
             }
-        } catch (_: Exception) { emptyList() }
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     fun getManualCheck(baseUrl: String): String {

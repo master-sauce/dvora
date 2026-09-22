@@ -65,34 +65,38 @@ import androidx.compose.foundation.verticalScroll
 // ═══════════════════════════════════════════════════════════════════════════════
 
 data class Bookmark(
-    val imdbId:             String,
-    val title:              String,
-    val year:               String?,
-    val mediaType:          String?,
-    val posterUrl:          String?,
-    val imdbUrl:            String,
-    val addedAt:            Long    = System.currentTimeMillis(),
-    val reminderDate:       String? = null,   // "YYYY-MM-DD"
-    val reminderTime:       String? = null,   // "HH:mm"
+    val imdbId: String,
+    val title: String,
+    val year: String?,
+    val mediaType: String?,
+    val posterUrl: String?,
+    val imdbUrl: String,
+    val addedAt: Long = System.currentTimeMillis(),
+    val reminderDate: String? = null,   // "YYYY-MM-DD"
+    val reminderTime: String? = null,   // "HH:mm"
     val reminderRecurrence: String? = null,   // "ONCE", "DAILY", "WEEKLY", "MONTHLY"
-    val season:             Int?    = null,   // 1-based season number (shows)
-    val episode:            Int?    = null,   // 1-based episode number (shows)
-    val timestamp:          String? = null,   // playback position, e.g. "00:42:17" or "12:35"
-    val note:               String? = null    // free-text note about the show / movie
+    val season: Int? = null,   // 1-based season number (shows)
+    val episode: Int? = null,   // 1-based episode number (shows)
+    val timestamp: String? = null,   // playback position, e.g. "00:42:17" or "12:35"
+    val note: String? = null    // free-text note about the show / movie
 )
 
 object BookmarksManager {
     private const val PREFS_KEY = "dvora_bookmarks"
-    private const val JSON_KEY  = "bookmarks_json"
+    private const val JSON_KEY = "bookmarks_json"
 
     var bookmarks by mutableStateOf<List<Bookmark>>(emptyList())
         private set
 
     fun load(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_KEY, Context.MODE_PRIVATE)
-        val json  = prefs.getString(JSON_KEY, null) ?: run { bookmarks = emptyList(); return }
-        val type  = object : TypeToken<List<Bookmark>>() {}.type
-        bookmarks = try { Gson().fromJson(json, type) ?: emptyList() } catch (_: Exception) { emptyList() }
+        val json = prefs.getString(JSON_KEY, null) ?: run { bookmarks = emptyList(); return }
+        val type = object : TypeToken<List<Bookmark>>() {}.type
+        bookmarks = try {
+            Gson().fromJson(json, type) ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     private fun persist(context: Context) {
@@ -108,12 +112,12 @@ object BookmarksManager {
             bookmarks = bookmarks.filter { it.imdbId != item.imdbId }
         } else {
             bookmarks = bookmarks + Bookmark(
-                imdbId    = item.imdbId,
-                title     = item.title,
-                year      = item.year,
+                imdbId = item.imdbId,
+                title = item.title,
+                year = item.year,
                 mediaType = item.mediaType,
                 posterUrl = item.posterUrl,
-                imdbUrl   = item.imdbUrl
+                imdbUrl = item.imdbUrl
             )
         }
         persist(context)
@@ -130,7 +134,11 @@ object BookmarksManager {
 
     fun clearReminder(context: Context, imdbId: String) {
         bookmarks = bookmarks.map {
-            if (it.imdbId == imdbId) it.copy(reminderDate = null, reminderTime = null, reminderRecurrence = null) else it
+            if (it.imdbId == imdbId) it.copy(
+                reminderDate = null,
+                reminderTime = null,
+                reminderRecurrence = null
+            ) else it
         }
         persist(context)
         ReminderHelper.cancel(context, imdbId)
@@ -138,7 +146,11 @@ object BookmarksManager {
 
     fun clearReminderSilent(context: Context, imdbId: String) {
         bookmarks = bookmarks.map {
-            if (it.imdbId == imdbId) it.copy(reminderDate = null, reminderTime = null, reminderRecurrence = null) else it
+            if (it.imdbId == imdbId) it.copy(
+                reminderDate = null,
+                reminderTime = null,
+                reminderRecurrence = null
+            ) else it
         }
         persist(context)
     }
@@ -152,7 +164,12 @@ object BookmarksManager {
         season: Int?, episode: Int?, timestamp: String?, note: String? = null
     ) {
         bookmarks = bookmarks.map {
-            if (it.imdbId == imdbId) it.copy(season = season, episode = episode, timestamp = timestamp, note = note) else it
+            if (it.imdbId == imdbId) it.copy(
+                season = season,
+                episode = episode,
+                timestamp = timestamp,
+                note = note
+            ) else it
         }
         persist(context)
     }
@@ -160,15 +177,15 @@ object BookmarksManager {
     fun advanceRecurringReminder(context: Context, imdbId: String) {
         val bm = bookmarks.find { it.imdbId == imdbId } ?: return
         val currentDate = bm.reminderDate ?: return
-        val timeStr     = bm.reminderTime ?: "09:00"
-        val recurrence  = bm.reminderRecurrence ?: return
+        val timeStr = bm.reminderTime ?: "09:00"
+        val recurrence = bm.reminderRecurrence ?: return
 
-        var nextDate  = ReminderHelper.computeNextDate(currentDate, recurrence)
+        var nextDate = ReminderHelper.computeNextDate(currentDate, recurrence)
         var triggerAt = ReminderHelper.datetimeToMillis(nextDate.toString(), timeStr)
-        val now       = System.currentTimeMillis()
+        val now = System.currentTimeMillis()
 
         while (triggerAt <= now) {
-            nextDate  = ReminderHelper.computeNextDate(nextDate.toString(), recurrence)
+            nextDate = ReminderHelper.computeNextDate(nextDate.toString(), recurrence)
             triggerAt = ReminderHelper.datetimeToMillis(nextDate.toString(), timeStr)
         }
 
@@ -194,7 +211,7 @@ object BookmarksManager {
                 }
                 var nextDate = java.time.LocalDate.parse(dateStr)
                 while (triggerAt <= now) {
-                    nextDate  = ReminderHelper.computeNextDate(nextDate.toString(), recurrence)
+                    nextDate = ReminderHelper.computeNextDate(nextDate.toString(), recurrence)
                     triggerAt = ReminderHelper.datetimeToMillis(nextDate.toString(), timeStr)
                 }
                 changed = true
@@ -231,20 +248,20 @@ object BookmarksManager {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 object BeeColors {
-    val HoneyGold       = Color(0xFFFFC107)
-    val DeepAmber       = Color(0xFFFF8F00)
-    val PollenOrange    = Color(0xFFFF6D00)
-    val FoundGreen      = Color(0xFF558B2F)
-    val FoundGreenDark  = Color(0xFF8BC34A)
-    val NotFoundRed     = Color(0xFFB71C1C)
-    val NotFoundAmber   = Color(0xFFFF8F00)
-    val WaxWhite        = Color(0xFFFFFDE7)
+    val HoneyGold = Color(0xFFFFC107)
+    val DeepAmber = Color(0xFFFF8F00)
+    val PollenOrange = Color(0xFFFF6D00)
+    val FoundGreen = Color(0xFF558B2F)
+    val FoundGreenDark = Color(0xFF8BC34A)
+    val NotFoundRed = Color(0xFFB71C1C)
+    val NotFoundAmber = Color(0xFFFF8F00)
+    val WaxWhite = Color(0xFFFFFDE7)
     val HoneycombYellow = Color(0xFFFFECB3)
-    val BeeBlack        = Color(0xFF1A1200)
-    val DarkComb        = Color(0xFF1C1500)
-    val DarkCell        = Color(0xFF2A1F00)
-    val DarkStripe      = Color(0xFF3A2B00)
-    val DarkOnSurface   = Color(0xFFFFE082)
+    val BeeBlack = Color(0xFF1A1200)
+    val DarkComb = Color(0xFF1C1500)
+    val DarkCell = Color(0xFF2A1F00)
+    val DarkStripe = Color(0xFF3A2B00)
+    val DarkOnSurface = Color(0xFFFFE082)
 }
 
 private val BeeLightScheme = lightColorScheme(
@@ -387,7 +404,7 @@ fun openUrl(context: Context, url: String) {
             val match = regex.find(cleanUrl)
             if (match != null) {
                 val type = match.groupValues[1]
-                val id   = match.groupValues[2]
+                val id = match.groupValues[2]
                 val deepLink = "stremio:///detail/$type/$id"
                 try {
                     context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(deepLink)))
@@ -419,17 +436,17 @@ fun openUrl(context: Context, url: String) {
 @Composable
 fun DvoraApp(onToggleDarkMode: () -> Unit) {
     val context = LocalContext.current
-    val scope   = rememberCoroutineScope()
+    val scope = rememberCoroutineScope()
     val scanner = remember { DvoraScanner() }
-    val isDark  = LocalDarkMode.current.value
+    val isDark = LocalDarkMode.current.value
 
-    var searchTerm   by remember { mutableStateOf("") }
-    var searchType   by remember { mutableStateOf(SourceType.SHOW) }
-    var results      by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
-    var apiResults   by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
-    var imdbResults  by remember { mutableStateOf<List<ImdbResult>>(emptyList()) }
-    var manualLinks  by remember { mutableStateOf<List<String>>(emptyList()) }
-    var isSearching  by remember { mutableStateOf(false) }
+    var searchTerm by remember { mutableStateOf("") }
+    var searchType by remember { mutableStateOf(SourceType.SHOW) }
+    var results by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
+    var apiResults by remember { mutableStateOf<List<SearchResult>>(emptyList()) }
+    var imdbResults by remember { mutableStateOf<List<ImdbResult>>(emptyList()) }
+    var manualLinks by remember { mutableStateOf<List<String>>(emptyList()) }
+    var isSearching by remember { mutableStateOf(false) }
     var domainFilter by remember { mutableStateOf("") }
     var imdbSuggestions by remember { mutableStateOf<List<ImdbResult>>(emptyList()) }
     var showImdbDropdown by remember { mutableStateOf(false) }
@@ -458,21 +475,21 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
         showImdbDropdown = suggestions.isNotEmpty()
     }
 
-    var shows        by remember { mutableStateOf(loadSources(context, "shows")) }
-    var movies       by remember { mutableStateOf(loadSources(context, "movies")) }
+    var shows by remember { mutableStateOf(loadSources(context, "shows")) }
+    var movies by remember { mutableStateOf(loadSources(context, "movies")) }
     var manualChecks by remember { mutableStateOf(loadSources(context, "manual_checks")) }
-    var apiSites     by remember { mutableStateOf(loadSources(context, "api_sites")) }
-    var exclusions   by remember { mutableStateOf(loadSources(context, "exclusions")) }
+    var apiSites by remember { mutableStateOf(loadSources(context, "api_sites")) }
+    var exclusions by remember { mutableStateOf(loadSources(context, "exclusions")) }
 
     // Load user-defined custom API types (v2, v3, etc.)
     LaunchedEffect(Unit) { CustomApiTypeManager.load(context) }
 
-    var showSettings  by remember { mutableStateOf(false) }
+    var showSettings by remember { mutableStateOf(false) }
     var showSubtitles by remember { mutableStateOf(false) }
-    var showImdb      by remember { mutableStateOf(false) }
+    var showImdb by remember { mutableStateOf(false) }
     var showBookmarks by remember { mutableStateOf(false) }
 
-    val headerBg   = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
+    val headerBg = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
     val scaffoldBg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
 
     Scaffold(
@@ -496,16 +513,25 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                     actionIconContentColor = BeeColors.HoneyGold
                 ),
                 actions = {
-                    IconButton(onClick = { showSubtitles = true; showSettings = false; showImdb = false; showBookmarks = false }) {
+                    IconButton(onClick = {
+                        showSubtitles = true; showSettings = false; showImdb = false; showBookmarks = false
+                    }) {
                         Icon(Icons.Default.Subtitles, "Subtitles", tint = BeeColors.HoneyGold)
                     }
-                    IconButton(onClick = { showImdb = true; showSubtitles = false; showSettings = false; showBookmarks = false }) {
-                        Box(Modifier.size(40.dp).padding(6.dp).background(Color(0xFFF5C518), RoundedCornerShape(4.dp)), contentAlignment = Alignment.Center) {
+                    IconButton(onClick = {
+                        showImdb = true; showSubtitles = false; showSettings = false; showBookmarks = false
+                    }) {
+                        Box(
+                            Modifier.size(40.dp).padding(6.dp).background(Color(0xFFF5C518), RoundedCornerShape(4.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
                             Text("IMDb", fontSize = 7.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black)
                         }
                     }
                     val hasReminders = BookmarksManager.bookmarks.any { it.reminderDate != null }
-                    IconButton(onClick = { showBookmarks = true; showSubtitles = false; showSettings = false; showImdb = false }) {
+                    IconButton(onClick = {
+                        showBookmarks = true; showSubtitles = false; showSettings = false; showImdb = false
+                    }) {
                         Box {
                             Icon(Icons.Default.Bookmarks, "Bookmarks", tint = BeeColors.HoneyGold)
                             if (hasReminders) {
@@ -518,7 +544,9 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                             }
                         }
                     }
-                    IconButton(onClick = { showSettings = true; showSubtitles = false; showImdb = false; showBookmarks = false }) {
+                    IconButton(onClick = {
+                        showSettings = true; showSubtitles = false; showImdb = false; showBookmarks = false
+                    }) {
                         Icon(Icons.Default.Settings, "Settings", tint = BeeColors.HoneyGold)
                     }
                 }
@@ -533,34 +561,52 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                 onToggleDark = onToggleDarkMode,
                 modifier = Modifier.padding(innerPadding)
             )
+
             showSettings -> SettingsScreen(
                 shows = shows, movies = movies, manualChecks = manualChecks,
                 apiSites = apiSites, exclusions = exclusions,
                 onUpdate = { type, newList ->
                     when (type) {
-                        SourceType.SHOW      -> { shows = newList; saveSources(context, "shows", newList) }
-                        SourceType.MOVIE     -> { movies = newList; saveSources(context, "movies", newList) }
-                        SourceType.MANUAL    -> { manualChecks = newList; saveSources(context, "manual_checks", newList) }
-                        SourceType.API       -> { apiSites = newList; saveSources(context, "api_sites", newList) }
-                        SourceType.EXCLUSION -> { exclusions = newList; saveSources(context, "exclusions", newList) }
+                        SourceType.SHOW -> {
+                            shows = newList; saveSources(context, "shows", newList)
+                        }
+
+                        SourceType.MOVIE -> {
+                            movies = newList; saveSources(context, "movies", newList)
+                        }
+
+                        SourceType.MANUAL -> {
+                            manualChecks = newList; saveSources(context, "manual_checks", newList)
+                        }
+
+                        SourceType.API -> {
+                            apiSites = newList; saveSources(context, "api_sites", newList)
+                        }
+
+                        SourceType.EXCLUSION -> {
+                            exclusions = newList; saveSources(context, "exclusions", newList)
+                        }
                     }
                 },
                 onBack = { showSettings = false },
                 onToggleDark = onToggleDarkMode,
                 modifier = Modifier.padding(innerPadding)
             )
+
             showSubtitles -> SubtitlesScreen(
                 scanner = scanner,
                 onBack = { showSubtitles = false },
                 onToggleDark = onToggleDarkMode,
                 modifier = Modifier.padding(innerPadding)
             )
+
             showImdb -> ImdbScreen(
                 scanner = scanner,
                 onBack = { showImdb = false },
                 onToggleDark = onToggleDarkMode,
                 modifier = Modifier.padding(innerPadding)
             )
+
             else -> {
                 val cardBg = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
                 Column(modifier = Modifier.padding(innerPadding).padding(16.dp).fillMaxSize()) {
@@ -579,8 +625,7 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .focusRequester(searchFieldFocusRequester),
-                                    singleLine = true
-                                    , colors = beeTextFieldColors()
+                                    singleLine = true, colors = beeTextFieldColors()
                                 )
 
                                 // IMDb suggestions dropdown
@@ -593,12 +638,26 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                                     ) {
                                         Column {
                                             Row(
-                                                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                                                modifier = Modifier.fillMaxWidth()
+                                                    .padding(horizontal = 12.dp, vertical = 4.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Text("Suggestions", fontSize = 11.sp, color = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface), modifier = Modifier.weight(1f))
-                                                IconButton(onClick = { dismissedForTerm = searchTerm }, modifier = Modifier.size(28.dp)) {
-                                                    Icon(Icons.Default.Close, "Dismiss", tint = BeeColors.DeepAmber, modifier = Modifier.size(16.dp))
+                                                Text(
+                                                    "Suggestions",
+                                                    fontSize = 11.sp,
+                                                    color = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface),
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                                IconButton(
+                                                    onClick = { dismissedForTerm = searchTerm },
+                                                    modifier = Modifier.size(28.dp)
+                                                ) {
+                                                    Icon(
+                                                        Icons.Default.Close,
+                                                        "Dismiss",
+                                                        tint = BeeColors.DeepAmber,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
                                                 }
                                             }
                                             LazyColumn(
@@ -622,9 +681,19 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                             }
                             Spacer(Modifier.height(12.dp))
                             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                BeeRadioOption("📺 Shows", searchType == SourceType.SHOW, { searchType = SourceType.SHOW }, Modifier.weight(1f))
+                                BeeRadioOption(
+                                    "📺 Shows",
+                                    searchType == SourceType.SHOW,
+                                    { searchType = SourceType.SHOW },
+                                    Modifier.weight(1f)
+                                )
                                 Spacer(Modifier.width(8.dp))
-                                BeeRadioOption("🎬 Movies", searchType == SourceType.MOVIE, { searchType = SourceType.MOVIE }, Modifier.weight(1f))
+                                BeeRadioOption(
+                                    "🎬 Movies",
+                                    searchType == SourceType.MOVIE,
+                                    { searchType = SourceType.MOVIE },
+                                    Modifier.weight(1f)
+                                )
                             }
                         }
                     }
@@ -632,15 +701,23 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                     Button(
                         onClick = {
                             if (searchTerm.isBlank()) return@Button
-                            isSearching = true; results = emptyList(); apiResults = emptyList(); imdbResults = emptyList(); domainFilter = ""
+                            isSearching = true; results = emptyList(); apiResults = emptyList(); imdbResults =
+                            emptyList(); domainFilter = ""
                             scope.launch {
                                 val activeSources = if (searchType == SourceType.SHOW) shows else movies
-                                activeSources.forEach { source -> results = results + scanner.scanSite(source, searchTerm, exclusions) }
+                                activeSources.forEach { source ->
+                                    results = results + scanner.scanSite(source, searchTerm, exclusions)
+                                }
                                 apiSites.forEach { site ->
                                     val entry = parseApiEntry(site)
                                     val newResults = when (entry.type) {
                                         "stremio" -> scanner.scanStremio(entry.apiUrl, searchTerm, searchType)
-                                        else      -> scanner.scanV1(entry.apiUrl, searchTerm, entry.landingUrl, entry.matchKeys)
+                                        else -> scanner.scanV1(
+                                            entry.apiUrl,
+                                            searchTerm,
+                                            entry.landingUrl,
+                                            entry.matchKeys
+                                        )
                                     }
                                     apiResults = apiResults + newResults
                                 }
@@ -655,15 +732,29 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                         colors = ButtonDefaults.buttonColors(
                             containerColor = if (isDark) BeeColors.HoneyGold else headerBg,
                             contentColor = if (isDark) Color.Black else BeeColors.HoneyGold,
-                            disabledContainerColor = if (isDark) BeeColors.HoneyGold.copy(alpha = 0.3f) else Color(0xFF4A3B00),
-                            disabledContentColor = if (isDark) Color.Black.copy(alpha = 0.4f) else BeeColors.HoneyGold.copy(alpha = 0.4f)
+                            disabledContainerColor = if (isDark) BeeColors.HoneyGold.copy(alpha = 0.3f) else Color(
+                                0xFF4A3B00
+                            ),
+                            disabledContentColor = if (isDark) Color.Black.copy(alpha = 0.4f) else BeeColors.HoneyGold.copy(
+                                alpha = 0.4f
+                            )
                         )
                     ) {
-                        if (isSearching) CircularProgressIndicator(Modifier.size(24.dp), BeeColors.HoneyGold, strokeWidth = 2.dp)
-                        else Text("🐝  BUZZ & SEARCH", fontWeight = FontWeight.Bold, letterSpacing = 2.sp, color = if (isDark) Color.Black else BeeColors.HoneyGold)
+                        if (isSearching) CircularProgressIndicator(
+                            Modifier.size(24.dp),
+                            BeeColors.HoneyGold,
+                            strokeWidth = 2.dp
+                        )
+                        else Text(
+                            "🐝  BUZZ & SEARCH",
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 2.sp,
+                            color = if (isDark) Color.Black else BeeColors.HoneyGold
+                        )
                     }
                     Spacer(Modifier.height(16.dp))
-                    val hasAnyResults = results.isNotEmpty() || apiResults.isNotEmpty() || manualLinks.isNotEmpty() || imdbResults.isNotEmpty()
+                    val hasAnyResults =
+                        results.isNotEmpty() || apiResults.isNotEmpty() || manualLinks.isNotEmpty() || imdbResults.isNotEmpty()
                     if (hasAnyResults) {
                         OutlinedTextField(
                             value = domainFilter, onValueChange = { domainFilter = it },
@@ -679,9 +770,14 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                     }
                     LazyColumn(modifier = Modifier.weight(1f)) {
                         val filter = domainFilter.trim().lowercase()
-                        val fr = if (filter.isEmpty()) results else results.filter { it.url.lowercase().contains(filter) }
-                        val fa = if (filter.isEmpty()) apiResults else apiResults.filter { it.url.lowercase().contains(filter) }
-                        val fm = if (filter.isEmpty()) manualLinks else manualLinks.filter { it.lowercase().contains(filter) }
+                        val fr =
+                            if (filter.isEmpty()) results else results.filter { it.url.lowercase().contains(filter) }
+                        val fa = if (filter.isEmpty()) apiResults else apiResults.filter {
+                            it.url.lowercase().contains(filter)
+                        }
+                        val fm = if (filter.isEmpty()) manualLinks else manualLinks.filter {
+                            it.lowercase().contains(filter)
+                        }
                         val fi = if (filter.isEmpty()) imdbResults else imdbResults.filter {
                             it.title.lowercase().contains(filter) ||
                                     it.imdbId.lowercase().contains(filter)
@@ -699,14 +795,22 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                             item { Spacer(Modifier.height(16.dp)); BeesSectionHeader("🔍 Manual Checks") }
                             items(fm) { link ->
                                 Card(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { openUrl(context, link) },
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                        .clickable { openUrl(context, link) },
                                     colors = CardDefaults.cardColors(containerColor = cardBg),
                                     shape = RoundedCornerShape(10.dp)
                                 ) {
-                                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(10.dp)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(10.dp)
+                                    ) {
                                         Text("↗", fontSize = 16.sp, color = BeeColors.DeepAmber)
                                         Spacer(Modifier.width(8.dp))
-                                        Text(link, fontSize = 12.sp, color = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface))
+                                        Text(
+                                            link,
+                                            fontSize = 12.sp,
+                                            color = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface)
+                                        )
                                     }
                                 }
                             }
@@ -797,10 +901,18 @@ fun BeeRadioOption(label: String, selected: Boolean, onClick: () -> Unit, modifi
     val textColor = if (selected) BeeColors.HoneyGold else beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold)
     Surface(
         modifier = modifier.clickable(onClick = onClick), shape = RoundedCornerShape(8.dp), color = bg,
-        border = androidx.compose.foundation.BorderStroke(1.5.dp, if (selected) beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold) else BeeColors.DeepAmber)
+        border = androidx.compose.foundation.BorderStroke(
+            1.5.dp,
+            if (selected) beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold) else BeeColors.DeepAmber
+        )
     ) {
         Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp)) {
-            Text(label, color = textColor, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal, fontSize = 13.sp)
+            Text(
+                label,
+                color = textColor,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                fontSize = 13.sp
+            )
         }
     }
 }
@@ -809,7 +921,14 @@ fun BeeRadioOption(label: String, selected: Boolean, onClick: () -> Unit, modifi
 fun BeesSectionHeader(title: String) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         Box(Modifier.weight(1f).height(2.dp).background(BeeColors.HoneyGold))
-        Text(title, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold), letterSpacing = 1.5.sp, modifier = Modifier.padding(horizontal = 10.dp))
+        Text(
+            title,
+            fontWeight = FontWeight.ExtraBold,
+            fontSize = 14.sp,
+            color = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold),
+            letterSpacing = 1.5.sp,
+            modifier = Modifier.padding(horizontal = 10.dp)
+        )
         Box(Modifier.weight(1f).height(2.dp).background(BeeColors.HoneyGold))
     }
 }
@@ -820,25 +939,43 @@ fun ResultItem(result: SearchResult, showDetails: Boolean = false) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { openUrl(context, result.url) },
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = if (result.found) beeAdapt(Color(0xFFF1F8E9), Color(0xFF1B2A10)) else beeAdapt(Color(0xFFFFF8E1), BeeColors.DarkCell)),
+        colors = CardDefaults.cardColors(
+            containerColor = if (result.found) beeAdapt(
+                Color(0xFFF1F8E9),
+                Color(0xFF1B2A10)
+            ) else beeAdapt(Color(0xFFFFF8E1), BeeColors.DarkCell)
+        ),
         elevation = CardDefaults.cardElevation(2.dp)
     ) {
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.width(5.dp).height(72.dp).background(if (result.found) BeeColors.FoundGreen else BeeColors.DeepAmber, RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp)))
+            Box(
+                Modifier.width(5.dp).height(72.dp).background(
+                    if (result.found) BeeColors.FoundGreen else BeeColors.DeepAmber,
+                    RoundedCornerShape(topStart = 12.dp, bottomStart = 12.dp)
+                )
+            )
             Column(modifier = Modifier.weight(1f).padding(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(if (result.found) "✅" else "🟡", fontSize = 18.sp)
                     Spacer(Modifier.width(8.dp))
                     Text(
                         if (result.found) "Found!" else "Not Found", fontWeight = FontWeight.Bold,
-                        color = if (result.found) beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark) else beeAdapt(Color(0xFF8D5A00), BeeColors.NotFoundAmber)
+                        color = if (result.found) beeAdapt(
+                            BeeColors.FoundGreen,
+                            BeeColors.FoundGreenDark
+                        ) else beeAdapt(Color(0xFF8D5A00), BeeColors.NotFoundAmber)
                     )
                 }
                 Spacer(Modifier.height(4.dp))
                 Text(result.url, fontSize = 11.sp, color = beeAdapt(Color(0xFF795548), Color(0xFFBCAAA4)))
                 if (showDetails && result.foundDetails != null) {
                     Spacer(Modifier.height(2.dp))
-                    Text(result.foundDetails, fontSize = 12.sp, color = beeAdapt(Color(0xFF4E342E), BeeColors.DarkOnSurface), fontWeight = FontWeight.Medium)
+                    Text(
+                        result.foundDetails,
+                        fontSize = 12.sp,
+                        color = beeAdapt(Color(0xFF4E342E), BeeColors.DarkOnSurface),
+                        fontWeight = FontWeight.Medium
+                    )
                 }
                 if (result.errorMessage != null)
                     Text("⚠️ ${result.errorMessage}", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
@@ -1062,20 +1199,27 @@ fun ImdbSuggestionItem(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 @Composable
-fun SubtitlesScreen(scanner: DvoraScanner, onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modifier = Modifier) {
-    val isDark     = LocalDarkMode.current.value
-    val headerBg   = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
+fun SubtitlesScreen(
+    scanner: DvoraScanner,
+    onBack: () -> Unit,
+    onToggleDark: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val isDark = LocalDarkMode.current.value
+    val headerBg = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
     val scaffoldBg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
 
-    var searchTerm  by remember { mutableStateOf("") }
-    var searchType  by remember { mutableStateOf(SourceType.SHOW) }
-    var results     by remember { mutableStateOf<List<SubtitleResult>>(emptyList()) }
+    var searchTerm by remember { mutableStateOf("") }
+    var searchType by remember { mutableStateOf(SourceType.SHOW) }
+    var results by remember { mutableStateOf<List<SubtitleResult>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
 
     BackHandler { onBack() }
 
     LaunchedEffect(searchTerm, searchType) {
-        if (searchTerm.isBlank()) { results = emptyList(); return@LaunchedEffect }
+        if (searchTerm.isBlank()) {
+            results = emptyList(); return@LaunchedEffect
+        }
         delay(400); isSearching = true
         results = scanner.scanSubtitles(searchTerm, searchType)
         isSearching = false
@@ -1088,31 +1232,78 @@ fun SubtitlesScreen(scanner: DvoraScanner, onBack: () -> Unit, onToggleDark: () 
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().background(headerBg).padding(4.dp)
         ) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = BeeColors.HoneyGold) }
-            Text("🎞️  Hebrew Subtitles", style = MaterialTheme.typography.titleLarge, color = BeeColors.HoneyGold, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            IconButton(onClick = onToggleDark) { Icon(if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode, "Theme", tint = BeeColors.HoneyGold) }
+            IconButton(onClick = onBack) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    "Back",
+                    tint = BeeColors.HoneyGold
+                )
+            }
+            Text(
+                "🎞️  Hebrew Subtitles",
+                style = MaterialTheme.typography.titleLarge,
+                color = BeeColors.HoneyGold,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onToggleDark) {
+                Icon(
+                    if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode,
+                    "Theme",
+                    tint = BeeColors.HoneyGold
+                )
+            }
         }
 
         Column(modifier = Modifier.padding(16.dp)) {
-            OutlinedTextField(value = searchTerm, onValueChange = { searchTerm = it }, label = { Text("Movie or Show Name") }, modifier = Modifier.fillMaxWidth(), singleLine = true, colors = beeTextFieldColors())
+            OutlinedTextField(
+                value = searchTerm,
+                onValueChange = { searchTerm = it },
+                label = { Text("Movie or Show Name") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                colors = beeTextFieldColors()
+            )
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                BeeRadioOption("📺 Shows", searchType == SourceType.SHOW, { searchType = SourceType.SHOW }, Modifier.weight(1f))
+                BeeRadioOption(
+                    "📺 Shows",
+                    searchType == SourceType.SHOW,
+                    { searchType = SourceType.SHOW },
+                    Modifier.weight(1f)
+                )
                 Spacer(Modifier.width(8.dp))
-                BeeRadioOption("🎬 Movies", searchType == SourceType.MOVIE, { searchType = SourceType.MOVIE }, Modifier.weight(1f))
+                BeeRadioOption(
+                    "🎬 Movies",
+                    searchType == SourceType.MOVIE,
+                    { searchType = SourceType.MOVIE },
+                    Modifier.weight(1f)
+                )
             }
             Spacer(Modifier.height(10.dp))
             if (isSearching) {
-                LinearProgressIndicator(Modifier.fillMaxWidth(), BeeColors.DeepAmber, trackColor = BeeColors.DeepAmber.copy(alpha = 0.2f))
+                LinearProgressIndicator(
+                    Modifier.fillMaxWidth(),
+                    BeeColors.DeepAmber,
+                    trackColor = BeeColors.DeepAmber.copy(alpha = 0.2f)
+                )
                 Spacer(Modifier.height(12.dp))
             } else Spacer(Modifier.height(4.dp))
             if (results.isEmpty() && !isSearching && searchTerm.isNotBlank()) {
                 Box(Modifier.fillMaxWidth().padding(top = 32.dp), contentAlignment = Alignment.Center) {
-                    Text("No Hebrew subtitles found for \"$searchTerm\"", color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)), fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                    Text(
+                        "No Hebrew subtitles found for \"$searchTerm\"",
+                        color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
+                    )
                 }
             }
         }
-        LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
+        ) {
             items(results) { SubtitleResultCard(it) }
         }
     }
@@ -1120,10 +1311,10 @@ fun SubtitlesScreen(scanner: DvoraScanner, onBack: () -> Unit, onToggleDark: () 
 
 @Composable
 fun SubtitleResultCard(item: SubtitleResult) {
-    val context   = LocalContext.current
-    val cardBg    = beeAdapt(Color(0xFFF1F8E9), Color(0xFF1B2A10))
+    val context = LocalContext.current
+    val cardBg = beeAdapt(Color(0xFFF1F8E9), Color(0xFF1B2A10))
     val textColor = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
-    val subColor  = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.7f))
+    val subColor = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.7f))
 
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp).clickable { openUrl(context, item.url) },
@@ -1146,32 +1337,93 @@ fun SubtitleResultCard(item: SubtitleResult) {
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(item.title, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = textColor, maxLines = 2, modifier = Modifier.weight(1f))
+                    Text(
+                        item.title,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 15.sp,
+                        color = textColor,
+                        maxLines = 2,
+                        modifier = Modifier.weight(1f)
+                    )
                     Spacer(Modifier.width(6.dp))
-                    Surface(shape = RoundedCornerShape(6.dp), color = BeeColors.FoundGreen.copy(alpha = 0.15f), border = androidx.compose.foundation.BorderStroke(1.dp, BeeColors.FoundGreen.copy(alpha = 0.5f))) {
-                        Text("✓ SUBS", fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark), modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp))
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = BeeColors.FoundGreen.copy(alpha = 0.15f),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, BeeColors.FoundGreen.copy(alpha = 0.5f))
+                    ) {
+                        Text(
+                            "✓ SUBS",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                        )
                     }
                 }
-                if (item.titleHe != null) Text(item.titleHe, fontSize = 12.sp, color = subColor, modifier = Modifier.padding(top = 1.dp))
+                if (item.titleHe != null) Text(
+                    item.titleHe,
+                    fontSize = 12.sp,
+                    color = subColor,
+                    modifier = Modifier.padding(top = 1.dp)
+                )
                 Spacer(Modifier.height(5.dp))
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    if (item.year != null) Text(item.year.toString(), fontSize = 12.sp, color = BeeColors.HoneyGold, fontWeight = FontWeight.Bold)
-                    if (item.rating != null) Text("⭐ ${"%.1f".format(item.rating.toFloatOrNull() ?: 0f)}", fontSize = 12.sp, color = BeeColors.HoneyGold, fontWeight = FontWeight.SemiBold)
-                    if (item.type != null) Surface(shape = RoundedCornerShape(4.dp), color = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe)) {
-                        Text(if (item.type == "movie") "Movie" else "TV", fontSize = 10.sp, color = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold), fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    if (item.year != null) Text(
+                        item.year.toString(),
+                        fontSize = 12.sp,
+                        color = BeeColors.HoneyGold,
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (item.rating != null) Text(
+                        "⭐ ${"%.1f".format(item.rating.toFloatOrNull() ?: 0f)}",
+                        fontSize = 12.sp,
+                        color = BeeColors.HoneyGold,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    if (item.type != null) Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe)
+                    ) {
+                        Text(
+                            if (item.type == "movie") "Movie" else "TV",
+                            fontSize = 10.sp,
+                            color = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold),
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                        )
                     }
                 }
-                if (item.genres != null) { Spacer(Modifier.height(3.dp)); Text(item.genres, fontSize = 11.sp, color = subColor, maxLines = 1) }
+                if (item.genres != null) {
+                    Spacer(Modifier.height(3.dp)); Text(item.genres, fontSize = 11.sp, color = subColor, maxLines = 1)
+                }
                 Spacer(Modifier.height(3.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.background(Color(0xFFF5C518), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)) { Text("IMDb", fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black) }
+                    Box(
+                        Modifier.background(Color(0xFFF5C518), RoundedCornerShape(3.dp))
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                    ) { Text("IMDb", fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black) }
                     Spacer(Modifier.width(5.dp))
                     Text(item.imdbId, fontSize = 10.sp, color = subColor)
                 }
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                IconButton(onClick = { openUrl(context, item.url) }) { Icon(Icons.Default.OpenInNew, "Open", tint = BeeColors.FoundGreenDark) }
-                IconButton(onClick = { copyToClipboard(context, item.url) }) { Icon(Icons.Default.ContentCopy, "Copy", tint = BeeColors.DeepAmber) }
+                IconButton(onClick = { openUrl(context, item.url) }) {
+                    Icon(
+                        Icons.Default.OpenInNew,
+                        "Open",
+                        tint = BeeColors.FoundGreenDark
+                    )
+                }
+                IconButton(onClick = { copyToClipboard(context, item.url) }) {
+                    Icon(
+                        Icons.Default.ContentCopy,
+                        "Copy",
+                        tint = BeeColors.DeepAmber
+                    )
+                }
             }
         }
     }
@@ -1183,20 +1435,22 @@ fun SubtitleResultCard(item: SubtitleResult) {
 
 @Composable
 fun ImdbScreen(scanner: DvoraScanner, onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modifier = Modifier) {
-    val context    = LocalContext.current
-    val isDark     = LocalDarkMode.current.value
-    val headerBg   = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
+    val context = LocalContext.current
+    val isDark = LocalDarkMode.current.value
+    val headerBg = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
     val scaffoldBg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
 
-    var searchTerm  by remember { mutableStateOf("") }
-    var results     by remember { mutableStateOf<List<ImdbResult>>(emptyList()) }
+    var searchTerm by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<ImdbResult>>(emptyList()) }
     var isSearching by remember { mutableStateOf(false) }
-    var errorMsg    by remember { mutableStateOf<String?>(null) }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
 
     BackHandler { onBack() }
 
     LaunchedEffect(searchTerm) {
-        if (searchTerm.isBlank()) { results = emptyList(); errorMsg = null; return@LaunchedEffect }
+        if (searchTerm.isBlank()) {
+            results = emptyList(); errorMsg = null; return@LaunchedEffect
+        }
         delay(350); isSearching = true; errorMsg = null
         val found = scanner.searchImdb(searchTerm); results = found
         errorMsg = if (found.isEmpty()) "No results found for \"$searchTerm\"" else null
@@ -1204,22 +1458,62 @@ fun ImdbScreen(scanner: DvoraScanner, onBack: () -> Unit, onToggleDark: () -> Un
     }
 
     Column(modifier = modifier.fillMaxSize().background(scaffoldBg)) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().background(headerBg).padding(4.dp)) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = BeeColors.HoneyGold) }
-            Box(Modifier.padding(horizontal = 4.dp).background(Color(0xFFF5C518), RoundedCornerShape(4.dp)).padding(horizontal = 6.dp, vertical = 3.dp), contentAlignment = Alignment.Center) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().background(headerBg).padding(4.dp)
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    "Back",
+                    tint = BeeColors.HoneyGold
+                )
+            }
+            Box(
+                Modifier.padding(horizontal = 4.dp).background(Color(0xFFF5C518), RoundedCornerShape(4.dp))
+                    .padding(horizontal = 6.dp, vertical = 3.dp), contentAlignment = Alignment.Center
+            ) {
                 Text("IMDb", fontSize = 13.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black)
             }
-            Text("  Search", style = MaterialTheme.typography.titleLarge, color = BeeColors.HoneyGold, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            IconButton(onClick = onToggleDark) { Icon(if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode, "Theme", tint = BeeColors.HoneyGold) }
+            Text(
+                "  Search",
+                style = MaterialTheme.typography.titleLarge,
+                color = BeeColors.HoneyGold,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onToggleDark) {
+                Icon(
+                    if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode,
+                    "Theme",
+                    tint = BeeColors.HoneyGold
+                )
+            }
         }
         Column(modifier = Modifier.padding(16.dp)) {
-            OutlinedTextField(value = searchTerm, onValueChange = { searchTerm = it }, label = { Text("Movie or Show Name") }, modifier = Modifier.fillMaxWidth(), singleLine = true, colors = beeTextFieldColors())
-            if (isSearching) { Spacer(Modifier.height(8.dp)); LinearProgressIndicator(Modifier.fillMaxWidth(), Color(0xFFF5C518), trackColor = Color(0xFFF5C518).copy(alpha = 0.2f)) }
+            OutlinedTextField(
+                value = searchTerm,
+                onValueChange = { searchTerm = it },
+                label = { Text("Movie or Show Name") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                colors = beeTextFieldColors()
+            )
+            if (isSearching) {
+                Spacer(Modifier.height(8.dp)); LinearProgressIndicator(
+                    Modifier.fillMaxWidth(),
+                    Color(0xFFF5C518),
+                    trackColor = Color(0xFFF5C518).copy(alpha = 0.2f)
+                )
+            }
         }
         if (errorMsg != null) Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
             Text(errorMsg!!, color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)))
         }
-        LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)) {
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
+        ) {
             items(results) { ImdbResultCard(it) }
         }
     }
@@ -1227,19 +1521,24 @@ fun ImdbScreen(scanner: DvoraScanner, onBack: () -> Unit, onToggleDark: () -> Un
 
 @Composable
 fun ImdbResultCard(item: ImdbResult) {
-    val context      = LocalContext.current
-    val cardBg       = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
-    val textColor    = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
-    val subColor     = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.7f))
+    val context = LocalContext.current
+    val cardBg = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
+    val textColor = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
+    val subColor = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.7f))
     val isBookmarked = BookmarksManager.isBookmarked(item.imdbId)
 
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp).clickable { openUrl(context, item.imdbUrl) },
-        shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = cardBg), elevation = CardDefaults.cardElevation(3.dp)
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = cardBg),
+        elevation = CardDefaults.cardElevation(3.dp)
     ) {
         Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.Top) {
             if (item.posterUrl != null) {
-                Box(Modifier.width(70.dp).height(100.dp).background(beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe), RoundedCornerShape(8.dp))) {
+                Box(
+                    Modifier.width(70.dp).height(100.dp)
+                        .background(beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe), RoundedCornerShape(8.dp))
+                ) {
                     AsyncImage(
                         model = ImageRequest.Builder(context).data(item.posterUrl).crossfade(true).build(),
                         contentDescription = item.title, contentScale = ContentScale.Crop,
@@ -1247,42 +1546,95 @@ fun ImdbResultCard(item: ImdbResult) {
                     )
                 }
             } else {
-                Box(Modifier.width(70.dp).height(100.dp).background(beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe), RoundedCornerShape(8.dp)), contentAlignment = Alignment.Center) { Text("🎬", fontSize = 26.sp) }
+                Box(
+                    Modifier.width(70.dp).height(100.dp).background(
+                        beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe),
+                        RoundedCornerShape(8.dp)
+                    ),
+                    contentAlignment = Alignment.Center
+                ) { Text("🎬", fontSize = 26.sp) }
             }
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(item.title, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = textColor, maxLines = 2, modifier = Modifier.weight(1f))
+                    Text(
+                        item.title,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = textColor,
+                        maxLines = 2,
+                        modifier = Modifier.weight(1f)
+                    )
                     IconButton(onClick = { copyToClipboard(context, item.title) }, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Default.ContentCopy, "Copy title", tint = BeeColors.DeepAmber, modifier = Modifier.size(15.dp))
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            "Copy title",
+                            tint = BeeColors.DeepAmber,
+                            modifier = Modifier.size(15.dp)
+                        )
                     }
                 }
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (item.year != null) Text(item.year, fontSize = 12.sp, color = BeeColors.HoneyGold, fontWeight = FontWeight.SemiBold)
+                    if (item.year != null) Text(
+                        item.year,
+                        fontSize = 12.sp,
+                        color = BeeColors.HoneyGold,
+                        fontWeight = FontWeight.SemiBold
+                    )
                     if (item.mediaType != null) {
                         Spacer(Modifier.width(8.dp))
                         Surface(shape = RoundedCornerShape(4.dp), color = Color(0xFFF5C518)) {
-                            Text(item.mediaType, fontSize = 10.sp, color = Color.Black, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
+                            Text(
+                                item.mediaType,
+                                fontSize = 10.sp,
+                                color = Color.Black,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
                         }
                     }
                 }
                 Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.background(Color(0xFFF5C518), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)) { Text("IMDb", fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black) }
+                    Box(
+                        Modifier.background(Color(0xFFF5C518), RoundedCornerShape(3.dp))
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                    ) { Text("IMDb", fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black) }
                     Spacer(Modifier.width(5.dp))
                     Text(item.imdbId, fontSize = 11.sp, color = subColor, modifier = Modifier.weight(1f))
                     IconButton(onClick = { copyToClipboard(context, item.imdbId) }, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Default.ContentCopy, "Copy ID", tint = Color(0xFFF5C518), modifier = Modifier.size(15.dp))
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            "Copy ID",
+                            tint = Color(0xFFF5C518),
+                            modifier = Modifier.size(15.dp)
+                        )
                     }
                 }
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 IconButton(onClick = {
                     BookmarksManager.toggle(context, item)
-                    Toast.makeText(context, if (BookmarksManager.isBookmarked(item.imdbId)) "Bookmarked!" else "Removed", Toast.LENGTH_SHORT).show()
-                }) { Icon(if (isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder, "Bookmark", tint = if (isBookmarked) BeeColors.HoneyGold else BeeColors.DeepAmber) }
-                IconButton(onClick = { copyToClipboard(context, item.imdbUrl) }) { Icon(Icons.Default.ContentCopy, "Copy link", tint = BeeColors.DeepAmber) }
+                    Toast.makeText(
+                        context,
+                        if (BookmarksManager.isBookmarked(item.imdbId)) "Bookmarked!" else "Removed",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }) {
+                    Icon(
+                        if (isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                        "Bookmark",
+                        tint = if (isBookmarked) BeeColors.HoneyGold else BeeColors.DeepAmber
+                    )
+                }
+                IconButton(onClick = { copyToClipboard(context, item.imdbUrl) }) {
+                    Icon(
+                        Icons.Default.ContentCopy,
+                        "Copy link",
+                        tint = BeeColors.DeepAmber
+                    )
+                }
             }
         }
     }
@@ -1295,11 +1647,11 @@ fun ImdbResultCard(item: ImdbResult) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modifier = Modifier) {
-    val context    = LocalContext.current
-    val isDark     = LocalDarkMode.current.value
-    val headerBg   = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
+    val context = LocalContext.current
+    val isDark = LocalDarkMode.current.value
+    val headerBg = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
     val scaffoldBg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
-    val bookmarks  = BookmarksManager.bookmarks
+    val bookmarks = BookmarksManager.bookmarks
     var bookmarkSearch by remember { mutableStateOf("") }
 
     val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -1308,7 +1660,7 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
 
     var datePickerTargetId by remember { mutableStateOf<String?>(null) }
     var timePickerTargetId by remember { mutableStateOf<String?>(null) }
-    var selectedDateStr    by remember { mutableStateOf("") }
+    var selectedDateStr by remember { mutableStateOf("") }
     var selectedRecurrence by remember { mutableStateOf("ONCE") }
 
     val datePickerState = rememberDatePickerState(initialSelectedDateMillis = System.currentTimeMillis() + 86_400_000L)
@@ -1328,7 +1680,7 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
                         if (selectedDate.isBefore(today)) {
                             Toast.makeText(context, "Please select today or a future date", Toast.LENGTH_SHORT).show()
                         } else {
-                            selectedDateStr    = selectedDate.toString()
+                            selectedDateStr = selectedDate.toString()
                             timePickerTargetId = datePickerTargetId
                             datePickerTargetId = null
                         }
@@ -1351,7 +1703,12 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
             onDismissRequest = { timePickerTargetId = null },
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                    Text("⏰ Pick Reminder Time", fontWeight = FontWeight.Bold, color = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold), modifier = Modifier.weight(1f))
+                    Text(
+                        "⏰ Pick Reminder Time",
+                        fontWeight = FontWeight.Bold,
+                        color = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold),
+                        modifier = Modifier.weight(1f)
+                    )
                     IconButton(onClick = { useKeyboard = !useKeyboard }) {
                         Icon(
                             if (useKeyboard) Icons.Default.Schedule else Icons.Default.Keyboard,
@@ -1367,22 +1724,41 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
                     else TimePicker(state = timePickerState)
 
                     Spacer(Modifier.height(16.dp))
-                    Text("🔁  Repeat", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold))
+                    Text(
+                        "🔁  Repeat",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.sp,
+                        color = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold)
+                    )
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
-                        listOf("ONCE" to "Once", "DAILY" to "Daily", "WEEKLY" to "Weekly", "MONTHLY" to "Monthly").forEach { (value, label) ->
+                        listOf(
+                            "ONCE" to "Once",
+                            "DAILY" to "Daily",
+                            "WEEKLY" to "Weekly",
+                            "MONTHLY" to "Monthly"
+                        ).forEach { (value, label) ->
                             val isSelected = selectedRecurrence == value
                             Surface(
                                 modifier = Modifier.weight(1f).clickable { selectedRecurrence = value },
                                 shape = RoundedCornerShape(8.dp),
-                                color = if (isSelected) beeAdapt(BeeColors.BeeBlack, BeeColors.DarkStripe) else Color.Transparent,
-                                border = androidx.compose.foundation.BorderStroke(1.5.dp, if (isSelected) BeeColors.DeepAmber else BeeColors.HoneyGold.copy(alpha = 0.5f))
+                                color = if (isSelected) beeAdapt(
+                                    BeeColors.BeeBlack,
+                                    BeeColors.DarkStripe
+                                ) else Color.Transparent,
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.5.dp,
+                                    if (isSelected) BeeColors.DeepAmber else BeeColors.HoneyGold.copy(alpha = 0.5f)
+                                )
                             ) {
                                 Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp)) {
                                     Text(
                                         label, fontSize = 11.sp,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isSelected) BeeColors.HoneyGold else beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold.copy(alpha = 0.7f))
+                                        color = if (isSelected) BeeColors.HoneyGold else beeAdapt(
+                                            BeeColors.BeeBlack,
+                                            BeeColors.HoneyGold.copy(alpha = 0.7f)
+                                        )
                                     )
                                 }
                             }
@@ -1392,11 +1768,12 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val timeStr  = "%02d:%02d".format(timePickerState.hour, timePickerState.minute)
+                    val timeStr = "%02d:%02d".format(timePickerState.hour, timePickerState.minute)
                     val targetId = timePickerTargetId!!
 
-                    val now        = java.time.LocalDateTime.now()
-                    val selectedDT = java.time.LocalDate.parse(selectedDateStr).atTime(timePickerState.hour, timePickerState.minute)
+                    val now = java.time.LocalDateTime.now()
+                    val selectedDT =
+                        java.time.LocalDate.parse(selectedDateStr).atTime(timePickerState.hour, timePickerState.minute)
                     if (!selectedDT.isAfter(now)) {
                         Toast.makeText(context, "Please select a future time", Toast.LENGTH_SHORT).show()
                         return@TextButton
@@ -1406,10 +1783,10 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
                     val formatted = java.time.LocalDate.parse(selectedDateStr)
                         .format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.ENGLISH))
                     val recLabel = when (selectedRecurrence) {
-                        "DAILY"   -> " · Repeats daily"
-                        "WEEKLY"  -> " · Repeats weekly"
+                        "DAILY" -> " · Repeats daily"
+                        "WEEKLY" -> " · Repeats weekly"
                         "MONTHLY" -> " · Repeats monthly"
-                        else      -> ""
+                        else -> ""
                     }
                     Toast.makeText(context, "⏰ Reminder: $formatted at $timeStr $recLabel", Toast.LENGTH_LONG).show()
                     timePickerTargetId = null
@@ -1424,7 +1801,8 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
     fun requestReminder(imdbId: String, prefill: java.time.LocalDate? = null) {
         if (prefill != null) {
             // Open the date picker already positioned on the auto-discovered date.
-            datePickerState.selectedDateMillis = prefill.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
+            datePickerState.selectedDateMillis =
+                prefill.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -1449,12 +1827,39 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
     Column(modifier = modifier.fillMaxSize().background(scaffoldBg)) {
 
         // Header
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().background(headerBg).padding(4.dp)) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = BeeColors.HoneyGold) }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().background(headerBg).padding(4.dp)
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    "Back",
+                    tint = BeeColors.HoneyGold
+                )
+            }
             Icon(Icons.Default.Bookmarks, null, tint = BeeColors.HoneyGold, modifier = Modifier.size(22.dp))
-            Text("  Bookmarks", style = MaterialTheme.typography.titleLarge, color = BeeColors.HoneyGold, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            Text("${bookmarks.size}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BeeColors.HoneyGold.copy(alpha = 0.7f), modifier = Modifier.padding(end = 4.dp))
-            IconButton(onClick = onToggleDark) { Icon(if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode, "Theme", tint = BeeColors.HoneyGold) }
+            Text(
+                "  Bookmarks",
+                style = MaterialTheme.typography.titleLarge,
+                color = BeeColors.HoneyGold,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                "${bookmarks.size}",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = BeeColors.HoneyGold.copy(alpha = 0.7f),
+                modifier = Modifier.padding(end = 4.dp)
+            )
+            IconButton(onClick = onToggleDark) {
+                Icon(
+                    if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode,
+                    "Theme",
+                    tint = BeeColors.HoneyGold
+                )
+            }
         }
 
         // Search bar — filter bookmarks by title / year / IMDb ID / mediaType
@@ -1462,10 +1867,11 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
         fun matchesSearch(bm: Bookmark): Boolean {
             if (searchFilter.isEmpty()) return true
             return bm.title.lowercase().contains(searchFilter) ||
-                bm.imdbId.lowercase().contains(searchFilter) ||
-                (bm.year?.lowercase()?.contains(searchFilter) == true) ||
-                (bm.mediaType?.lowercase()?.contains(searchFilter) == true)
+                    bm.imdbId.lowercase().contains(searchFilter) ||
+                    (bm.year?.lowercase()?.contains(searchFilter) == true) ||
+                    (bm.mediaType?.lowercase()?.contains(searchFilter) == true)
         }
+
         val filteredBookmarks = if (searchFilter.isEmpty()) bookmarks else bookmarks.filter(::matchesSearch)
 
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
@@ -1489,9 +1895,19 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("🔖", fontSize = 52.sp)
                     Spacer(Modifier.height(12.dp))
-                    Text("No bookmarks yet.", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)))
+                    Text(
+                        "No bookmarks yet.",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f))
+                    )
                     Spacer(Modifier.height(6.dp))
-                    Text("Tap ⭐ on any IMDb result to bookmark it.", fontSize = 13.sp, color = beeAdapt(Color(0xFFAA8800), BeeColors.HoneyGold.copy(alpha = 0.5f)), textAlign = TextAlign.Center)
+                    Text(
+                        "Tap ⭐ on any IMDb result to bookmark it.",
+                        fontSize = 13.sp,
+                        color = beeAdapt(Color(0xFFAA8800), BeeColors.HoneyGold.copy(alpha = 0.5f)),
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
             return@Column
@@ -1502,28 +1918,54 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("🔍", fontSize = 44.sp)
                     Spacer(Modifier.height(10.dp))
-                    Text("No bookmarks match \"$bookmarkSearch\"", fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)))
+                    Text(
+                        "No bookmarks match \"$bookmarkSearch\"",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f))
+                    )
                     Spacer(Modifier.height(6.dp))
-                    Text("Try a different title, year, or IMDb ID.", fontSize = 12.sp, color = beeAdapt(Color(0xFFAA8800), BeeColors.HoneyGold.copy(alpha = 0.5f)), textAlign = TextAlign.Center)
+                    Text(
+                        "Try a different title, year, or IMDb ID.",
+                        fontSize = 12.sp,
+                        color = beeAdapt(Color(0xFFAA8800), BeeColors.HoneyGold.copy(alpha = 0.5f)),
+                        textAlign = TextAlign.Center
+                    )
                 }
             }
             return@Column
         }
 
-        val withReminder    = filteredBookmarks.filter { it.reminderDate != null }.sortedBy { it.reminderDate }
+        val withReminder = filteredBookmarks.filter { it.reminderDate != null }.sortedBy { it.reminderDate }
         val withoutReminder = filteredBookmarks.filter { it.reminderDate == null }
 
-        LazyColumn(modifier = Modifier.weight(1f), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)) {
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+        ) {
 
             if (withReminder.isNotEmpty()) {
                 item {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp, top = 2.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(bottom = 4.dp, top = 2.dp)
+                    ) {
                         Text("⏰", fontSize = 16.sp); Spacer(Modifier.width(6.dp))
-                        Text("UPCOMING REMINDERS", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp, color = BeeColors.DeepAmber)
+                        Text(
+                            "UPCOMING REMINDERS",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = 2.sp,
+                            color = BeeColors.DeepAmber
+                        )
                     }
                 }
                 items(withReminder) { bm ->
-                    BookmarkCard(bm = bm, context = context, onSetReminder = { pref -> requestReminder(bm.imdbId, pref) }, onClearReminder = { BookmarksManager.clearReminder(context, bm.imdbId) })
+                    BookmarkCard(
+                        bm = bm,
+                        context = context,
+                        onSetReminder = { pref -> requestReminder(bm.imdbId, pref) },
+                        onClearReminder = { BookmarksManager.clearReminder(context, bm.imdbId) })
                 }
                 item {
                     Spacer(Modifier.height(12.dp))
@@ -1535,21 +1977,36 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
                     Text("🔖", fontSize = 16.sp); Spacer(Modifier.width(6.dp))
-                    Text("ALL BOOKMARKS  (${filteredBookmarks.size})", fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, letterSpacing = 2.sp, color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)))
+                    Text(
+                        "ALL BOOKMARKS  (${filteredBookmarks.size})",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 2.sp,
+                        color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f))
+                    )
                 }
             }
             items(withoutReminder + withReminder) { bm ->
-                BookmarkCard(bm = bm, context = context, onSetReminder = { pref -> requestReminder(bm.imdbId, pref) }, onClearReminder = { BookmarksManager.clearReminder(context, bm.imdbId) })
+                BookmarkCard(
+                    bm = bm,
+                    context = context,
+                    onSetReminder = { pref -> requestReminder(bm.imdbId, pref) },
+                    onClearReminder = { BookmarksManager.clearReminder(context, bm.imdbId) })
             }
         }
     }
 }
 
 @Composable
-fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.LocalDate?) -> Unit, onClearReminder: () -> Unit) {
-    val cardBg      = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
-    val textColor   = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
-    val subColor    = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.7f))
+fun BookmarkCard(
+    bm: Bookmark,
+    context: Context,
+    onSetReminder: (java.time.LocalDate?) -> Unit,
+    onClearReminder: () -> Unit
+) {
+    val cardBg = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
+    val textColor = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
+    val subColor = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.7f))
     val hasReminder = bm.reminderDate != null
     val hasPlayback = bm.season != null || bm.episode != null || !bm.timestamp.isNullOrBlank()
     var showPlaybackEditor by remember { mutableStateOf(false) }
@@ -1571,7 +2028,9 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
             Toast.makeText(context, "🎬 This is a movie", Toast.LENGTH_LONG).show()
             return
         }
-        if (!bm.imdbId.startsWith("tt")) { Toast.makeText(context, "Missing IMDb ID", Toast.LENGTH_SHORT).show(); return }
+        if (!bm.imdbId.startsWith("tt")) {
+            Toast.makeText(context, "Missing IMDb ID", Toast.LENGTH_SHORT).show(); return
+        }
         nextBusy = true; askDate = null
         lookupScope.launch {
             val info = lookupScanner.lookupNextEpisode(bm.title, bm.imdbId)
@@ -1584,9 +2043,11 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
                 date != null && date.isAfter(java.time.LocalDate.now()) -> {
                     askDate = date   // popup: ask user whether to remind on this date
                 }
+
                 info.isEnded -> {
                     Toast.makeText(context, "📺 \"${bm.title}\" Has ENDED", Toast.LENGTH_LONG).show()
                 }
+
                 else -> {
                     Toast.makeText(context, "📺 \"${bm.title}\" Has no upcoming episodes", Toast.LENGTH_LONG).show()
                 }
@@ -1598,7 +2059,10 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
         modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp).clickable { openUrl(context, bm.imdbUrl) },
         shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = cardBg),
         elevation = CardDefaults.cardElevation(2.dp),
-        border = if (hasReminder) androidx.compose.foundation.BorderStroke(1.5.dp, BeeColors.DeepAmber.copy(alpha = 0.5f)) else null
+        border = if (hasReminder) androidx.compose.foundation.BorderStroke(
+            1.5.dp,
+            BeeColors.DeepAmber.copy(alpha = 0.5f)
+        ) else null
     ) {
         Row(modifier = Modifier.padding(10.dp), verticalAlignment = Alignment.Top) {
 
@@ -1612,7 +2076,10 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
                 if (bm.posterUrl != null) AsyncImage(
                     model = ImageRequest.Builder(context).data(bm.posterUrl).crossfade(true).build(),
                     contentDescription = bm.title, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()
-                ) else Text(if (bm.mediaType?.contains("movie", ignoreCase = true) == true) "🎬" else "📺", fontSize = 22.sp)
+                ) else Text(
+                    if (bm.mediaType?.contains("movie", ignoreCase = true) == true) "🎬" else "📺",
+                    fontSize = 22.sp
+                )
             }
 
             Spacer(Modifier.width(12.dp))
@@ -1620,21 +2087,47 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
             Column(modifier = Modifier.weight(1f)) {
                 // Title + copy
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(bm.title, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = textColor, maxLines = 2, modifier = Modifier.weight(1f))
+                    Text(
+                        bm.title,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = textColor,
+                        maxLines = 2,
+                        modifier = Modifier.weight(1f)
+                    )
                     IconButton(onClick = {
                         copyToClipboard(context, bm.title)
                         Toast.makeText(context, "Title copied", Toast.LENGTH_SHORT).show()
                     }, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Default.ContentCopy, "Copy title", tint = BeeColors.DeepAmber, modifier = Modifier.size(15.dp))
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            "Copy title",
+                            tint = BeeColors.DeepAmber,
+                            modifier = Modifier.size(15.dp)
+                        )
                     }
                 }
                 Spacer(Modifier.height(4.dp))
 
                 // Chips
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (bm.year != null) Text(bm.year, fontSize = 12.sp, color = BeeColors.HoneyGold, fontWeight = FontWeight.SemiBold)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (bm.year != null) Text(
+                        bm.year,
+                        fontSize = 12.sp,
+                        color = BeeColors.HoneyGold,
+                        fontWeight = FontWeight.SemiBold
+                    )
                     if (bm.mediaType != null) Surface(shape = RoundedCornerShape(4.dp), color = Color(0xFFF5C518)) {
-                        Text(bm.mediaType, fontSize = 9.sp, color = Color.Black, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                        Text(
+                            bm.mediaType,
+                            fontSize = 9.sp,
+                            color = Color.Black,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                        )
                     }
                 }
 
@@ -1644,7 +2137,9 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
                     val formattedDate = try {
                         val d = java.time.LocalDate.parse(bm.reminderDate)
                         d.format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.ENGLISH))
-                    } catch (_: Exception) { bm.reminderDate ?: "" }
+                    } catch (_: Exception) {
+                        bm.reminderDate ?: ""
+                    }
                     val timeLabel = bm.reminderTime ?: "09:00"
                     val isRecurring = bm.reminderRecurrence != null && bm.reminderRecurrence != "ONCE"
 
@@ -1653,18 +2148,34 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
                         Surface(
                             shape = RoundedCornerShape(6.dp),
                             color = BeeColors.DeepAmber.copy(alpha = 0.15f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, BeeColors.DeepAmber.copy(alpha = 0.5f)),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                BeeColors.DeepAmber.copy(alpha = 0.5f)
+                            ),
                             modifier = Modifier.weight(1f, fill = false)
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
                                 Text("⏰", fontSize = 11.sp)
                                 Spacer(Modifier.width(4.dp))
-                                Text("$formattedDate  $timeLabel", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BeeColors.DeepAmber)
+                                Text(
+                                    "$formattedDate  $timeLabel",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = BeeColors.DeepAmber
+                                )
                             }
                         }
                         Spacer(Modifier.width(6.dp))
                         IconButton(onClick = { showConfirmClearReminder = true }, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Default.Close, "Cancel reminder", tint = BeeColors.DeepAmber.copy(alpha = 0.7f), modifier = Modifier.size(18.dp))
+                            Icon(
+                                Icons.Default.Close,
+                                "Cancel reminder",
+                                tint = BeeColors.DeepAmber.copy(alpha = 0.7f),
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
                     }
 
@@ -1674,13 +2185,16 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
                         Surface(
                             shape = RoundedCornerShape(5.dp),
                             color = BeeColors.DeepAmber.copy(alpha = 0.1f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, BeeColors.DeepAmber.copy(alpha = 0.35f))
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                BeeColors.DeepAmber.copy(alpha = 0.35f)
+                            )
                         ) {
                             val recText = when (bm.reminderRecurrence) {
-                                "DAILY"   -> "🔁 Repeats Daily"
-                                "WEEKLY"  -> "🔁 Repeats Weekly"
+                                "DAILY" -> "🔁 Repeats Daily"
+                                "WEEKLY" -> "🔁 Repeats Weekly"
                                 "MONTHLY" -> "🔁 Repeats Monthly"
-                                else      -> ""
+                                else -> ""
                             }
                             Text(
                                 recText,
@@ -1702,14 +2216,22 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
                         border = androidx.compose.foundation.BorderStroke(1.dp, BeeColors.HoneyGold.copy(alpha = 0.5f)),
                         modifier = Modifier.clickable { showPlaybackEditor = true }
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
                             Text("▶️", fontSize = 11.sp)
                             Spacer(Modifier.width(4.dp))
                             val parts = mutableListOf<String>()
                             if (bm.season != null) parts += "S${bm.season}"
                             if (bm.episode != null) parts += "E${bm.episode}"
                             if (!bm.timestamp.isNullOrBlank()) parts += bm.timestamp
-                            Text(parts.joinToString("  ·  "), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BeeColors.HoneyGold)
+                            Text(
+                                parts.joinToString("  ·  "),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = BeeColors.HoneyGold
+                            )
                         }
                     }
                 }
@@ -1720,7 +2242,10 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
                     Surface(
                         shape = RoundedCornerShape(6.dp),
                         color = BeeColors.DeepAmber.copy(alpha = 0.10f),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, BeeColors.DeepAmber.copy(alpha = 0.35f)),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            BeeColors.DeepAmber.copy(alpha = 0.35f)
+                        ),
                         modifier = Modifier.clickable { showPlaybackEditor = true }
                     ) {
                         Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)) {
@@ -1738,7 +2263,10 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
                 Spacer(Modifier.height(4.dp))
                 // IMDb ID + copy
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.background(Color(0xFFF5C518), RoundedCornerShape(3.dp)).padding(horizontal = 4.dp, vertical = 1.dp)) {
+                    Box(
+                        Modifier.background(Color(0xFFF5C518), RoundedCornerShape(3.dp))
+                            .padding(horizontal = 4.dp, vertical = 1.dp)
+                    ) {
                         Text("IMDb", fontSize = 8.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black)
                     }
                     Spacer(Modifier.width(4.dp))
@@ -1747,7 +2275,12 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
                         copyToClipboard(context, bm.imdbId)
                         Toast.makeText(context, "IMDb ID copied", Toast.LENGTH_SHORT).show()
                     }, modifier = Modifier.size(28.dp)) {
-                        Icon(Icons.Default.ContentCopy, "Copy IMDb ID", tint = Color(0xFFF5C518), modifier = Modifier.size(15.dp))
+                        Icon(
+                            Icons.Default.ContentCopy,
+                            "Copy IMDb ID",
+                            tint = Color(0xFFF5C518),
+                            modifier = Modifier.size(15.dp)
+                        )
                     }
                 }
             }
@@ -1757,10 +2290,19 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
                 // hidden while reminder active — badge already offers cancel/change
                 if (!hasReminder) {
                     IconButton(onClick = { onSetReminder(askDate) }, modifier = Modifier.size(36.dp)) {
-                        Icon(Icons.Default.NotificationAdd, "Set reminder", tint = BeeColors.HoneyGold, modifier = Modifier.size(20.dp))
+                        Icon(
+                            Icons.Default.NotificationAdd,
+                            "Set reminder",
+                            tint = BeeColors.HoneyGold,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                     IconButton(onClick = { autoLookup() }, modifier = Modifier.size(36.dp)) {
-                        if (nextBusy) CircularProgressIndicator(Modifier.size(18.dp), Color(0xFF26A69A), strokeWidth = 2.dp)
+                        if (nextBusy) CircularProgressIndicator(
+                            Modifier.size(18.dp),
+                            Color(0xFF26A69A),
+                            strokeWidth = 2.dp
+                        )
                         else Icon(
                             Icons.Default.Radar,
                             "Find next episode air date",
@@ -1778,7 +2320,12 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
                     )
                 }
                 IconButton(onClick = { showConfirmRemoveBookmark = true }, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.BookmarkRemove, "Remove", tint = BeeColors.HoneyGold, modifier = Modifier.size(20.dp))
+                    Icon(
+                        Icons.Default.BookmarkRemove,
+                        "Remove",
+                        tint = BeeColors.HoneyGold,
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
             }
         }
@@ -1811,10 +2358,17 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
     if (askDate != null) {
         AlertDialog(
             title = { Text("📡 Next Episode") },
-            text  = {
+            text = {
                 val nice = try {
-                    askDate!!.format(java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy", java.util.Locale.ENGLISH))
-                } catch (_: Exception) { askDate!!.toString() }
+                    askDate!!.format(
+                        java.time.format.DateTimeFormatter.ofPattern(
+                            "d MMMM yyyy",
+                            java.util.Locale.ENGLISH
+                        )
+                    )
+                } catch (_: Exception) {
+                    askDate!!.toString()
+                }
                 Text("The next episode of \"${bm.title}\" airs on $nice.\n\nWould you like to set a reminder for that date?")
             },
             confirmButton = {
@@ -1838,7 +2392,10 @@ fun BookmarkCard(bm: Bookmark, context: Context, onSetReminder: (java.time.Local
             confirmText = "Remove",
             onDismiss = { showConfirmRemoveBookmark = false }
         ) {
-            BookmarksManager.toggle(context, ImdbResult(bm.imdbId, bm.title, bm.year, bm.mediaType, bm.posterUrl, bm.imdbUrl))
+            BookmarksManager.toggle(
+                context,
+                ImdbResult(bm.imdbId, bm.title, bm.year, bm.mediaType, bm.posterUrl, bm.imdbUrl)
+            )
             Toast.makeText(context, "Bookmark removed", Toast.LENGTH_SHORT).show()
         }
     }
@@ -1850,23 +2407,25 @@ fun PlaybackInfoDialog(
     onDismiss: () -> Unit,
     onSave: (season: Int?, episode: Int?, timestamp: String?, note: String?) -> Unit
 ) {
-    val bgColor   = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
+    val bgColor = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
     val textColor = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
 
-    var seasonStr    by remember { mutableStateOf(bookmark.season?.toString() ?: "") }
-    var episodeStr   by remember { mutableStateOf(bookmark.episode?.toString() ?: "") }
+    var seasonStr by remember { mutableStateOf(bookmark.season?.toString() ?: "") }
+    var episodeStr by remember { mutableStateOf(bookmark.episode?.toString() ?: "") }
     var timestampStr by remember { mutableStateOf(bookmark.timestamp ?: "") }
-    var noteStr      by remember { mutableStateOf(bookmark.note ?: "") }
+    var noteStr by remember { mutableStateOf(bookmark.note ?: "") }
     var showConfirmClear by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor   = bgColor,
+        containerColor = bgColor,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("▶️ ", fontSize = 20.sp)
-                Text("Playback Position", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp,
-                    color = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold))
+                Text(
+                    "Playback Position", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp,
+                    color = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold)
+                )
             }
         },
         text = {
@@ -1877,7 +2436,10 @@ fun PlaybackInfoDialog(
                 )
                 Spacer(Modifier.height(12.dp))
 
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     OutlinedTextField(
                         value = seasonStr,
                         onValueChange = { seasonStr = it.filter { c -> c.isDigit() }.take(4) },
@@ -1981,20 +2543,22 @@ fun BackupScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val scope   = rememberCoroutineScope()
+    val scope = rememberCoroutineScope()
     val bgColor = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
-    val cardBg  = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
+    val cardBg = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
     val textColor = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface)
 
     var statusMsg by remember { mutableStateOf<String?>(null) }
-    var errorMsg  by remember { mutableStateOf<String?>(null) }
-    var isBusy    by remember { mutableStateOf(false) }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
+    var isBusy by remember { mutableStateOf(false) }
 
     // ── Export: write a JSON file to the user's chosen location ──────────────
     val createFileLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
-        if (uri == null) { isBusy = false; return@rememberLauncherForActivityResult }
+        if (uri == null) {
+            isBusy = false; return@rememberLauncherForActivityResult
+        }
         scope.launch {
             val outcome = withContext(Dispatchers.IO) {
                 try {
@@ -2009,15 +2573,18 @@ fun BackupScreen(
                         out.write(json.toByteArray(Charsets.UTF_8))
                     } ?: return@withContext "Could not open file for writing"
                     val sourceCount = backup.shows.size + backup.movies.size +
-                        backup.apiSites.size + backup.manualChecks.size + backup.exclusions.size
+                            backup.apiSites.size + backup.manualChecks.size + backup.exclusions.size
                     "Exported ${backup.bookmarks.size} bookmark(s) and $sourceCount source(s)."
                 } catch (e: Exception) {
                     "Export failed: ${e.message ?: "unknown error"}"
                 }
             }
             isBusy = false
-            if (outcome.startsWith("Exported")) { statusMsg = outcome; errorMsg = null }
-            else { errorMsg = outcome; statusMsg = null }
+            if (outcome.startsWith("Exported")) {
+                statusMsg = outcome; errorMsg = null
+            } else {
+                errorMsg = outcome; statusMsg = null
+            }
         }
     }
 
@@ -2025,7 +2592,9 @@ fun BackupScreen(
     val openFileLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri ->
-        if (uri == null) { isBusy = false; return@rememberLauncherForActivityResult }
+        if (uri == null) {
+            isBusy = false; return@rememberLauncherForActivityResult
+        }
         scope.launch {
             val outcome = withContext(Dispatchers.IO) {
                 try {
@@ -2037,11 +2606,11 @@ fun BackupScreen(
                         ?: return@withContext "File is not a valid Dvora backup"
 
                     // Restore source lists
-                    if (backup.shows.isNotEmpty())        onUpdate(SourceType.SHOW, backup.shows)
-                    if (backup.movies.isNotEmpty())       onUpdate(SourceType.MOVIE, backup.movies)
+                    if (backup.shows.isNotEmpty()) onUpdate(SourceType.SHOW, backup.shows)
+                    if (backup.movies.isNotEmpty()) onUpdate(SourceType.MOVIE, backup.movies)
                     if (backup.manualChecks.isNotEmpty()) onUpdate(SourceType.MANUAL, backup.manualChecks)
-                    if (backup.apiSites.isNotEmpty())     onUpdate(SourceType.API, backup.apiSites)
-                    if (backup.exclusions.isNotEmpty())   onUpdate(SourceType.EXCLUSION, backup.exclusions)
+                    if (backup.apiSites.isNotEmpty()) onUpdate(SourceType.API, backup.apiSites)
+                    if (backup.exclusions.isNotEmpty()) onUpdate(SourceType.EXCLUSION, backup.exclusions)
 
                     // Restore custom API types
                     if (backup.customApiTypes.isNotEmpty()) {
@@ -2054,21 +2623,29 @@ fun BackupScreen(
                     }
 
                     val sourceCount = backup.shows.size + backup.movies.size +
-                        backup.apiSites.size + backup.manualChecks.size + backup.exclusions.size
+                            backup.apiSites.size + backup.manualChecks.size + backup.exclusions.size
                     "Imported ${backup.bookmarks.size} bookmark(s), " +
-                        "${backup.customApiTypes.size} custom API type(s), and $sourceCount source(s)."
+                            "${backup.customApiTypes.size} custom API type(s), and $sourceCount source(s)."
                 } catch (e: Exception) {
                     "Import failed: ${e.message ?: "unknown error"}"
                 }
             }
             isBusy = false
-            if (outcome.startsWith("Imported")) { statusMsg = outcome; errorMsg = null }
-            else { errorMsg = outcome; statusMsg = null }
+            if (outcome.startsWith("Imported")) {
+                statusMsg = outcome; errorMsg = null
+            } else {
+                errorMsg = outcome; statusMsg = null
+            }
         }
     }
 
     Column(modifier = modifier.fillMaxSize().background(bgColor).padding(16.dp).verticalScroll(rememberScrollState())) {
-        Text("📦 Backup & Restore", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold))
+        Text(
+            "📦 Backup & Restore",
+            fontSize = 18.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold)
+        )
         Spacer(Modifier.height(4.dp))
         Text(
             "Export everything (shows, movies, API sources, exclusions, saved bookmarks, and custom API types) to a single JSON file, or restore from a previously exported file.",
@@ -2089,7 +2666,11 @@ fun BackupScreen(
                     Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Export", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = textColor)
-                        Text("Save a backup of all your data to a JSON file.", fontSize = 11.sp, color = textColor.copy(alpha = 0.65f))
+                        Text(
+                            "Save a backup of all your data to a JSON file.",
+                            fontSize = 11.sp,
+                            color = textColor.copy(alpha = 0.65f)
+                        )
                     }
                 }
                 Spacer(Modifier.height(10.dp))
@@ -2126,7 +2707,11 @@ fun BackupScreen(
                     Spacer(Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Import / Restore", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = textColor)
-                        Text("Restore from a previously exported backup file. Existing data for restored sections will be replaced.", fontSize = 11.sp, color = textColor.copy(alpha = 0.65f))
+                        Text(
+                            "Restore from a previously exported backup file. Existing data for restored sections will be replaced.",
+                            fontSize = 11.sp,
+                            color = textColor.copy(alpha = 0.65f)
+                        )
                     }
                 }
                 Spacer(Modifier.height(10.dp))
@@ -2161,13 +2746,26 @@ fun BackupScreen(
             Spacer(Modifier.height(6.dp))
             Card(
                 shape = RoundedCornerShape(10.dp),
-                colors = CardDefaults.cardColors(containerColor = beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark).copy(alpha = 0.15f)),
-                border = androidx.compose.foundation.BorderStroke(1.dp, beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark).copy(alpha = 0.5f))
+                colors = CardDefaults.cardColors(
+                    containerColor = beeAdapt(
+                        BeeColors.FoundGreen,
+                        BeeColors.FoundGreenDark
+                    ).copy(alpha = 0.15f)
+                ),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark).copy(alpha = 0.5f)
+                )
             ) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("✅", fontSize = 16.sp)
                     Spacer(Modifier.width(8.dp))
-                    Text(it, fontSize = 12.sp, color = beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark), fontWeight = FontWeight.SemiBold)
+                    Text(
+                        it,
+                        fontSize = 12.sp,
+                        color = beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark),
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
             }
         }
@@ -2202,7 +2800,12 @@ fun BackupScreen(
             "🔖 Saved bookmarks & reminders",
             "🧙 Custom API types"
         ).forEach { line ->
-            Text("• $line", fontSize = 12.sp, color = textColor.copy(alpha = 0.75f), modifier = Modifier.padding(start = 8.dp, top = 1.dp, bottom = 1.dp))
+            Text(
+                "• $line",
+                fontSize = 12.sp,
+                color = textColor.copy(alpha = 0.75f),
+                modifier = Modifier.padding(start = 8.dp, top = 1.dp, bottom = 1.dp)
+            )
         }
     }
 }
@@ -2220,16 +2823,37 @@ fun SettingsScreen(
 ) {
     BackHandler { onBack() }
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs     = listOf("Shows", "Movies", "APIs", "Manual", "Exclusions", "Backup", "Logs")
-    val isDark   = LocalDarkMode.current.value
+    val tabs = listOf("Shows", "Movies", "APIs", "Manual", "Exclusions", "Backup", "Logs")
+    val isDark = LocalDarkMode.current.value
     val headerBg = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
-    val bgColor  = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
+    val bgColor = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
 
     Column(modifier = modifier.fillMaxSize().background(bgColor)) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().background(headerBg).padding(4.dp)) {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back", tint = BeeColors.HoneyGold) }
-            Text("🏮 MY HIVE", style = MaterialTheme.typography.titleLarge, color = BeeColors.HoneyGold, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            IconButton(onClick = onToggleDark) { Icon(if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode, "Theme", tint = BeeColors.HoneyGold) }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().background(headerBg).padding(4.dp)
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    Icons.AutoMirrored.Filled.ArrowBack,
+                    "Back",
+                    tint = BeeColors.HoneyGold
+                )
+            }
+            Text(
+                "🏮 MY HIVE",
+                style = MaterialTheme.typography.titleLarge,
+                color = BeeColors.HoneyGold,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onToggleDark) {
+                Icon(
+                    if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode,
+                    "Theme",
+                    tint = BeeColors.HoneyGold
+                )
+            }
         }
         ScrollableTabRow(
             selectedTabIndex = selectedTab, edgePadding = 16.dp,
@@ -2244,13 +2868,17 @@ fun SettingsScreen(
         ) {
             tabs.forEachIndexed { index, title ->
                 Tab(selected = selectedTab == index, onClick = { selectedTab = index }, text = {
-                    Text(title, color = if (selectedTab == index) BeeColors.HoneyGold else BeeColors.HoneyGold.copy(alpha = 0.45f), fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal)
+                    Text(
+                        title,
+                        color = if (selectedTab == index) BeeColors.HoneyGold else BeeColors.HoneyGold.copy(alpha = 0.45f),
+                        fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Normal
+                    )
                 })
             }
         }
         when (selectedTab) {
-            0 -> SourceEditor(shows) { onUpdate(SourceType.SHOW, it) }
-            1 -> SourceEditor(movies) { onUpdate(SourceType.MOVIE, it) }
+            0 -> SourceEditor(shows, dvoraHint = true) { onUpdate(SourceType.SHOW, it) }
+            1 -> SourceEditor(movies, dvoraHint = true) { onUpdate(SourceType.MOVIE, it) }
             2 -> ApiSourcesEditor(apiSites) { onUpdate(SourceType.API, it) }
             3 -> SourceEditor(manualChecks) { onUpdate(SourceType.MANUAL, it) }
             4 -> SourceEditor(exclusions) { onUpdate(SourceType.EXCLUSION, it) }
@@ -2259,6 +2887,7 @@ fun SettingsScreen(
                 apiSites = apiSites, exclusions = exclusions,
                 onUpdate = onUpdate
             )
+
             6 -> VerboseLogsScreen()
         }
     }
@@ -2269,10 +2898,10 @@ fun SettingsScreen(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 data class ApiEntry(
-    val type:       String,          // "v1", "stremio", or "custom"
-    val apiUrl:     String,          // base URL used for the search API call
+    val type: String,          // "v1", "stremio", or "custom"
+    val apiUrl: String,          // base URL used for the search API call
     val landingUrl: String? = null,  // different base URL for the result link
-    val matchKeys:  List<String> = emptyList(), // JSON key paths to match against (e.g. "data.title")
+    val matchKeys: List<String> = emptyList(), // JSON key paths to match against (e.g. "data.title")
     val customName: String? = null   // name of the custom API type (for "custom" type)
 ) {
     fun toRawString(): String {
@@ -2282,21 +2911,22 @@ data class ApiEntry(
         // Append custom name with '@' separator if present
         return if (!customName.isNullOrBlank() && type == "custom") "$withKeys@${customName}" else withKeys
     }
+
     fun displayType(): String = when (type) {
         "stremio" -> "Stremio"
-        "custom"  -> customName ?: "Custom"
-        else      -> "V1 JSON API"
+        "custom" -> customName ?: "Custom"
+        else -> "V1 JSON API"
     }
 }
 
 fun parseApiEntry(raw: String): ApiEntry {
     val type = when {
         raw.startsWith("stremio:") -> "stremio"
-        raw.startsWith("v1:")      -> "v1"
-        raw.startsWith("custom:")  -> "custom"
-        else                       -> "v1"
+        raw.startsWith("v1:") -> "v1"
+        raw.startsWith("custom:") -> "custom"
+        else -> "v1"
     }
-    val rest  = raw.removePrefix("$type:")
+    val rest = raw.removePrefix("$type:")
     // Split off the custom name section (after '@') if present
     val (withoutName, namePart) = if (rest.contains("@")) {
         val idx = rest.indexOf("@")
@@ -2312,13 +2942,14 @@ fun parseApiEntry(raw: String): ApiEntry {
         withoutName to ""
     }
     val parts = mainPart.split("|", limit = 2)
-    val keys = if (keysPart.isNotBlank()) keysPart.split(",").map { it.trim() }.filter { it.isNotBlank() } else emptyList()
+    val keys =
+        if (keysPart.isNotBlank()) keysPart.split(",").map { it.trim() }.filter { it.isNotBlank() } else emptyList()
     val cName = namePart.trim().ifBlank { null }
     return ApiEntry(
-        type       = type,
-        apiUrl     = parts[0].trim(),
+        type = type,
+        apiUrl = parts[0].trim(),
         landingUrl = parts.getOrNull(1)?.trim()?.ifBlank { null },
-        matchKeys  = keys,
+        matchKeys = keys,
         customName = cName
     )
 }
@@ -2334,11 +2965,11 @@ fun extractDomain(url: String): String {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 data class CustomApiType(
-    val id:          String,          // unique id, e.g. "custom_1"
-    val name:        String,          // user-facing name, e.g. "My V2 API"
-    val apiUrl:      String,          // search API URL template (with DVORA placeholder)
-    val landingUrl:  String,          // landing URL template (with DVORA placeholder)
-    val matchKeys:   List<String>     // JSON key paths to match against
+    val id: String,          // unique id, e.g. "custom_1"
+    val name: String,          // user-facing name, e.g. "My V2 API"
+    val apiUrl: String,          // search API URL template (with DVORA placeholder)
+    val landingUrl: String,          // landing URL template (with DVORA placeholder)
+    val matchKeys: List<String>     // JSON key paths to match against
 ) {
     fun toRawString(): String {
         // Format: CUSTOM|id|name|apiUrl|landingUrl|key1,key2,key3
@@ -2352,28 +2983,33 @@ fun parseCustomApiType(raw: String): CustomApiType? {
     if (!raw.startsWith("CUSTOM|")) return null
     val parts = raw.split("|")
     if (parts.size < 6) return null
-    val keys = if (parts[5].isNotBlank()) parts[5].split(",").map { it.trim() }.filter { it.isNotBlank() } else emptyList()
+    val keys =
+        if (parts[5].isNotBlank()) parts[5].split(",").map { it.trim() }.filter { it.isNotBlank() } else emptyList()
     return CustomApiType(
-        id         = parts[1],
-        name       = parts[2],
-        apiUrl     = parts[3],
+        id = parts[1],
+        name = parts[2],
+        apiUrl = parts[3],
         landingUrl = parts[4],
-        matchKeys  = keys
+        matchKeys = keys
     )
 }
 
 object CustomApiTypeManager {
     private const val PREFS_KEY = "dvora_custom_api_types"
-    private const val JSON_KEY  = "custom_api_types_json"
+    private const val JSON_KEY = "custom_api_types_json"
 
     var customTypes by mutableStateOf<List<CustomApiType>>(emptyList())
         private set
 
     fun load(context: Context) {
         val prefs = context.getSharedPreferences(PREFS_KEY, Context.MODE_PRIVATE)
-        val json  = prefs.getString(JSON_KEY, null) ?: run { customTypes = emptyList(); return }
-        val type  = object : TypeToken<List<CustomApiType>>() {}.type
-        customTypes = try { Gson().fromJson(json, type) ?: emptyList() } catch (_: Exception) { emptyList() }
+        val json = prefs.getString(JSON_KEY, null) ?: run { customTypes = emptyList(); return }
+        val type = object : TypeToken<List<CustomApiType>>() {}.type
+        customTypes = try {
+            Gson().fromJson(json, type) ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
     }
 
     fun save(context: Context, types: List<CustomApiType>) {
@@ -2393,22 +3029,23 @@ object CustomApiTypeManager {
 
 @Composable
 fun ApiSourcesEditor(apiSites: List<String>, onUpdate: (List<String>) -> Unit) {
-    var showWizard    by remember { mutableStateOf(false) }
-    var showTester    by remember { mutableStateOf(false) }
-    var editingIndex  by remember { mutableIntStateOf(-1) }
-    var editingEntry  by remember { mutableStateOf<ApiEntry?>(null) }
+    var showWizard by remember { mutableStateOf(false) }
+    var showTester by remember { mutableStateOf(false) }
+    var editingIndex by remember { mutableIntStateOf(-1) }
+    var editingEntry by remember { mutableStateOf<ApiEntry?>(null) }
     var pendingDeleteIndex by remember { mutableIntStateOf(-1) }
     var showTransferDialog by remember { mutableStateOf(false) }
-    val context       = LocalContext.current
+    val context = LocalContext.current
 
-    val bgColor   = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
+    val bgColor = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
     val textColor = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface)
-    val cardBg    = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
+    val cardBg = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
 
     val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let {
             try {
-                val lines = context.contentResolver.openInputStream(it)?.bufferedReader()?.use { r -> r.readLines() } ?: emptyList()
+                val lines = context.contentResolver.openInputStream(it)?.bufferedReader()?.use { r -> r.readLines() }
+                    ?: emptyList()
                 val clean = lines.map { l -> l.trim() }.filter { l -> l.isNotBlank() }
                 if (clean.isNotEmpty()) {
                     onUpdate((apiSites + clean).distinct())
@@ -2416,26 +3053,37 @@ fun ApiSourcesEditor(apiSites: List<String>, onUpdate: (List<String>) -> Unit) {
                 } else {
                     Toast.makeText(context, "File empty or unreadable", Toast.LENGTH_SHORT).show()
                 }
-            } catch (_: Exception) { Toast.makeText(context, "Import failed", Toast.LENGTH_SHORT).show() }
+            } catch (_: Exception) {
+                Toast.makeText(context, "Import failed", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
-    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
-        uri?.let {
-            try {
-                context.contentResolver.openOutputStream(it)?.bufferedWriter()?.use { w ->
-                    apiSites.forEach { item -> w.write(item); w.newLine() }
+    val exportLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+            uri?.let {
+                try {
+                    context.contentResolver.openOutputStream(it)?.bufferedWriter()?.use { w ->
+                        apiSites.forEach { item -> w.write(item); w.newLine() }
+                    }
+                    Toast.makeText(context, "Exported ${apiSites.size} item(s)", Toast.LENGTH_SHORT).show()
+                } catch (_: Exception) {
+                    Toast.makeText(context, "Export failed", Toast.LENGTH_SHORT).show()
                 }
-                Toast.makeText(context, "Exported ${apiSites.size} item(s)", Toast.LENGTH_SHORT).show()
-            } catch (_: Exception) { Toast.makeText(context, "Export failed", Toast.LENGTH_SHORT).show() }
+            }
         }
-    }
 
     if (showTransferDialog) {
         AlertDialog(
             onDismissRequest = { showTransferDialog = false },
             title = { Text("API Sources", fontWeight = FontWeight.Bold, color = textColor) },
-            text = { Text("Import list from a .txt file, or export current list to share with others.", color = textColor.copy(alpha = 0.75f), fontSize = 13.sp) },
+            text = {
+                Text(
+                    "Import list from a .txt file, or export current list to share with others.",
+                    color = textColor.copy(alpha = 0.75f),
+                    fontSize = 13.sp
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     showTransferDialog = false
@@ -2518,35 +3166,56 @@ fun ApiSourcesEditor(apiSites: List<String>, onUpdate: (List<String>) -> Unit) {
                 val entry = remember(raw) { parseApiEntry(raw) }
                 val hasSplitUrl = !entry.landingUrl.isNullOrBlank() && entry.landingUrl != entry.apiUrl
                 Card(
-                    modifier  = Modifier.fillMaxWidth().padding(vertical = 5.dp),
-                    shape     = RoundedCornerShape(10.dp),
-                    colors    = CardDefaults.cardColors(containerColor = cardBg),
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = CardDefaults.cardColors(containerColor = cardBg),
                     elevation = CardDefaults.cardElevation(2.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(10.dp)) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
                                 Surface(
                                     shape = RoundedCornerShape(4.dp),
                                     color = if (entry.type == "stremio") Color(0xFF6C3FC4) else BeeColors.DeepAmber
                                 ) {
                                     Text(
-                                        entry.displayType(), fontSize = 9.sp, fontWeight = FontWeight.Bold, color = Color.White,
+                                        entry.displayType(),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
                                         modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                     )
                                 }
                                 if (hasSplitUrl) {
-                                    Surface(shape = RoundedCornerShape(4.dp), color = BeeColors.HoneyGold.copy(alpha = 0.2f)) {
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = BeeColors.HoneyGold.copy(alpha = 0.2f)
+                                    ) {
                                         Text(
-                                            "SPLIT", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = BeeColors.DeepAmber,
+                                            "SPLIT",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = BeeColors.DeepAmber,
                                             modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                         )
                                     }
                                 }
                                 if (entry.type == "custom") {
-                                    Surface(shape = RoundedCornerShape(4.dp), color = beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark).copy(alpha = 0.25f)) {
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = beeAdapt(
+                                            BeeColors.FoundGreen,
+                                            BeeColors.FoundGreenDark
+                                        ).copy(alpha = 0.25f)
+                                    ) {
                                         Text(
-                                            "CUSTOM", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark),
+                                            "CUSTOM",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark),
                                             modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                         )
                                     }
@@ -2554,8 +3223,8 @@ fun ApiSourcesEditor(apiSites: List<String>, onUpdate: (List<String>) -> Unit) {
                             }
                             Spacer(Modifier.height(5.dp))
                             // Show only the domain name of the search API
-                            val apiDomain    = extractDomain(entry.apiUrl)
-                            val landDomain   = if (hasSplitUrl) extractDomain(entry.landingUrl!!) else apiDomain
+                            val apiDomain = extractDomain(entry.apiUrl)
+                            val landDomain = if (hasSplitUrl) extractDomain(entry.landingUrl!!) else apiDomain
                             val domainsDiffer = hasSplitUrl && landDomain != apiDomain
                             Text(
                                 "🔍 $apiDomain",
@@ -2592,7 +3261,11 @@ fun ApiSourcesEditor(apiSites: List<String>, onUpdate: (List<String>) -> Unit) {
         ConfirmDeleteDialog(
             title = "Delete API Source",
             message = if (targetEntry != null)
-                "Are you sure you want to remove the ${targetEntry.displayType()} source for \"${extractDomain(targetEntry.apiUrl)}\"?"
+                "Are you sure you want to remove the ${targetEntry.displayType()} source for \"${
+                    extractDomain(
+                        targetEntry.apiUrl
+                    )
+                }\"?"
             else
                 "Are you sure you want to remove this API source?",
             confirmText = "Delete",
@@ -2605,9 +3278,9 @@ fun ApiSourcesEditor(apiSites: List<String>, onUpdate: (List<String>) -> Unit) {
 
     if (showWizard) {
         ApiSourceWizardDialog(
-            initial   = editingEntry,
+            initial = editingEntry,
             onDismiss = { showWizard = false; editingIndex = -1; editingEntry = null },
-            onSave    = { newEntry ->
+            onSave = { newEntry ->
                 val updated = apiSites.toMutableList()
                 if (editingIndex >= 0) updated[editingIndex] = newEntry.toRawString()
                 else updated.add(newEntry.toRawString())
@@ -2630,29 +3303,29 @@ fun ApiSourcesEditor(apiSites: List<String>, onUpdate: (List<String>) -> Unit) {
 
 @Composable
 fun ApiSourceWizardDialog(
-    initial:   ApiEntry?,
+    initial: ApiEntry?,
     onDismiss: () -> Unit,
-    onSave:    (ApiEntry) -> Unit
+    onSave: (ApiEntry) -> Unit
 ) {
     val context = LocalContext.current
-    var step               by remember { mutableIntStateOf(0) }
-    var apiType            by remember { mutableStateOf(initial?.type ?: "v1") }
-    var apiUrl             by remember { mutableStateOf(initial?.apiUrl ?: "") }
-    var landingUrl         by remember { mutableStateOf(initial?.landingUrl ?: "") }
+    var step by remember { mutableIntStateOf(0) }
+    var apiType by remember { mutableStateOf(initial?.type ?: "v1") }
+    var apiUrl by remember { mutableStateOf(initial?.apiUrl ?: "") }
+    var landingUrl by remember { mutableStateOf(initial?.landingUrl ?: "") }
     var selectedCustomTypeId by remember { mutableStateOf<String?>(null) }
     var pendingDeleteCustom by remember { mutableStateOf<CustomApiType?>(null) }
 
-    val bgColor   = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
+    val bgColor = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
     val textColor = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface)
-    val cardBg    = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
+    val cardBg = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
     val isEditing = initial != null
     val totalSteps = 3
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor   = bgColor,
+        containerColor = bgColor,
         title = null,
-        text  = {
+        text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 // ── Header ──
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2663,22 +3336,32 @@ fun ApiSourceWizardDialog(
                         color = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold)
                     )
                     Spacer(Modifier.weight(1f))
-                    Text("${step + 1} / $totalSteps", fontSize = 11.sp, color = BeeColors.DeepAmber, fontWeight = FontWeight.Bold)
+                    Text(
+                        "${step + 1} / $totalSteps",
+                        fontSize = 11.sp,
+                        color = BeeColors.DeepAmber,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
                 Spacer(Modifier.height(6.dp))
                 // Progress bar
                 androidx.compose.material3.LinearProgressIndicator(
-                    progress            = { (step + 1f) / totalSteps },
-                    modifier            = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
-                    color               = BeeColors.HoneyGold,
-                    trackColor          = BeeColors.HoneyGold.copy(alpha = 0.2f)
+                    progress = { (step + 1f) / totalSteps },
+                    modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                    color = BeeColors.HoneyGold,
+                    trackColor = BeeColors.HoneyGold.copy(alpha = 0.2f)
                 )
                 Spacer(Modifier.height(18.dp))
 
                 when (step) {
                     // ── Step 1: API type ──────────────────────────────────────
                     0 -> {
-                        Text("What type of API does this site use?", fontWeight = FontWeight.SemiBold, color = textColor, fontSize = 14.sp)
+                        Text(
+                            "What type of API does this site use?",
+                            fontWeight = FontWeight.SemiBold,
+                            color = textColor,
+                            fontSize = 14.sp
+                        )
                         Spacer(Modifier.height(12.dp))
                         // Built-in types.
                         // When adding a NEW source we hide the Stremio option because the
@@ -2687,7 +3370,7 @@ fun ApiSourceWizardDialog(
                         // can be modified correctly.
                         val builtInTypes = if (isEditing) {
                             listOf(
-                                "v1"      to ("V1 JSON API"   to "Sites with /searching?q= endpoint\ne.g. 123moviesfree, fmovies, yesmovies"),
+                                "v1" to ("V1 JSON API" to "Sites with /searching?q= endpoint\ne.g. 123moviesfree, fmovies, yesmovies"),
                                 "stremio" to ("Stremio Addon" to "Stremio catalog addons\ne.g. Cinemeta")
                             )
                         } else {
@@ -2699,17 +3382,21 @@ fun ApiSourceWizardDialog(
                             val (label, desc) = info
                             val selected = apiType == type
                             Card(
-                                modifier  = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { apiType = type; selectedCustomTypeId = null },
-                                shape     = RoundedCornerShape(10.dp),
-                                colors    = CardDefaults.cardColors(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                    .clickable { apiType = type; selectedCustomTypeId = null },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(
                                     containerColor = if (selected) BeeColors.DeepAmber.copy(alpha = 0.15f) else cardBg
                                 ),
-                                border    = androidx.compose.foundation.BorderStroke(
+                                border = androidx.compose.foundation.BorderStroke(
                                     if (selected) 2.dp else 1.dp,
                                     if (selected) BeeColors.DeepAmber else BeeColors.HoneyGold.copy(alpha = 0.3f)
                                 )
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(12.dp)
+                                ) {
                                     RadioButton(
                                         selected = selected, onClick = { apiType = type; selectedCustomTypeId = null },
                                         colors = RadioButtonDefaults.colors(selectedColor = BeeColors.DeepAmber)
@@ -2725,37 +3412,68 @@ fun ApiSourceWizardDialog(
                         // User-defined custom API types
                         if (CustomApiTypeManager.customTypes.isNotEmpty()) {
                             Spacer(Modifier.height(8.dp))
-                            Text("Your custom API types:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = BeeColors.HoneyGold)
+                            Text(
+                                "Your custom API types:",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = BeeColors.HoneyGold
+                            )
                             Spacer(Modifier.height(4.dp))
                         }
                         CustomApiTypeManager.customTypes.forEach { custom ->
                             val selected = selectedCustomTypeId == custom.id
                             Card(
-                                modifier  = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable {
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable {
                                     apiType = "custom"; selectedCustomTypeId = custom.id
                                 },
-                                shape     = RoundedCornerShape(10.dp),
-                                colors    = CardDefaults.cardColors(
-                                    containerColor = if (selected) beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark).copy(alpha = 0.15f) else cardBg
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (selected) beeAdapt(
+                                        BeeColors.FoundGreen,
+                                        BeeColors.FoundGreenDark
+                                    ).copy(alpha = 0.15f) else cardBg
                                 ),
-                                border    = androidx.compose.foundation.BorderStroke(
+                                border = androidx.compose.foundation.BorderStroke(
                                     if (selected) 2.dp else 1.dp,
-                                    if (selected) beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark) else BeeColors.HoneyGold.copy(alpha = 0.3f)
+                                    if (selected) beeAdapt(
+                                        BeeColors.FoundGreen,
+                                        BeeColors.FoundGreenDark
+                                    ) else BeeColors.HoneyGold.copy(alpha = 0.3f)
                                 )
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(12.dp)
+                                ) {
                                     RadioButton(
-                                        selected = selected, onClick = { apiType = "custom"; selectedCustomTypeId = custom.id },
-                                        colors = RadioButtonDefaults.colors(selectedColor = beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark))
+                                        selected = selected,
+                                        onClick = { apiType = "custom"; selectedCustomTypeId = custom.id },
+                                        colors = RadioButtonDefaults.colors(
+                                            selectedColor = beeAdapt(
+                                                BeeColors.FoundGreen,
+                                                BeeColors.FoundGreenDark
+                                            )
+                                        )
                                     )
                                     Spacer(Modifier.width(8.dp))
                                     Column(modifier = Modifier.weight(1f)) {
-                                        Text(custom.name, fontWeight = FontWeight.Bold, color = textColor, fontSize = 13.sp)
-                                        Text("Custom API • ${custom.matchKeys.size} match key(s) • ${extractDomain(custom.apiUrl)}",
-                                            fontSize = 11.sp, color = textColor.copy(alpha = 0.65f), maxLines = 1)
+                                        Text(
+                                            custom.name,
+                                            fontWeight = FontWeight.Bold,
+                                            color = textColor,
+                                            fontSize = 13.sp
+                                        )
+                                        Text(
+                                            "Custom API • ${custom.matchKeys.size} match key(s) • ${extractDomain(custom.apiUrl)}",
+                                            fontSize = 11.sp, color = textColor.copy(alpha = 0.65f), maxLines = 1
+                                        )
                                     }
                                     IconButton(onClick = { pendingDeleteCustom = custom }) {
-                                        Icon(Icons.Default.Delete, "Delete custom type", tint = BeeColors.DeepAmber.copy(alpha = 0.7f))
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            "Delete custom type",
+                                            tint = BeeColors.DeepAmber.copy(alpha = 0.7f)
+                                        )
                                     }
                                 }
                             }
@@ -2792,19 +3510,19 @@ fun ApiSourceWizardDialog(
                         )
                         Spacer(Modifier.height(10.dp))
                         OutlinedTextField(
-                            value         = apiUrl,
+                            value = apiUrl,
                             onValueChange = { apiUrl = it },
-                            label         = { Text(if (apiType == "stremio") "Addon Base URL" else "API URL  (use DVORA as placeholder)") },
-                            placeholder   = {
+                            label = { Text(if (apiType == "stremio") "Addon Base URL" else "API URL  (use DVORA as placeholder)") },
+                            placeholder = {
                                 Text(
                                     if (apiType == "stremio") "https://v3-cinemeta.strem.io"
                                     else "https://ww1.yesmovies.ag/searching?q=DVORA&limit=40",
                                     color = textColor.copy(alpha = 0.35f)
                                 )
                             },
-                            modifier      = Modifier.fillMaxWidth(),
-                            singleLine    = true,
-                            colors        = beeTextFieldColors()
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = beeTextFieldColors()
                         )
                         Spacer(Modifier.height(10.dp))
                         // Live preview
@@ -2812,20 +3530,35 @@ fun ApiSourceWizardDialog(
                         val previewApiUrl = if (apiUrl.isBlank())
                             if (apiType == "stremio") "https://addon.strem.io" else "https://your-site.com/searching?q=DVORA&limit=40"
                         else apiUrl
-                        Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = cardBg)) {
+                        Card(
+                            shape = RoundedCornerShape(8.dp),
+                            colors = CardDefaults.cardColors(containerColor = cardBg)
+                        ) {
                             Column(Modifier.padding(10.dp)) {
-                                Text("📡 Dvora will call:", fontSize = 11.sp, color = BeeColors.DeepAmber, fontWeight = FontWeight.Bold)
+                                Text(
+                                    "📡 Dvora will call:",
+                                    fontSize = 11.sp,
+                                    color = BeeColors.DeepAmber,
+                                    fontWeight = FontWeight.Bold
+                                )
                                 Spacer(Modifier.height(3.dp))
                                 Text(
                                     if (apiType == "stremio")
                                         "$previewApiUrl/catalog/movie/top/search=$previewQuery.json"
                                     else
                                         previewApiUrl.replace("DVORA", previewQuery),
-                                    fontSize = 10.sp, color = textColor.copy(alpha = 0.65f), fontFamily = FontFamily.Monospace
+                                    fontSize = 10.sp,
+                                    color = textColor.copy(alpha = 0.65f),
+                                    fontFamily = FontFamily.Monospace
                                 )
                                 if (apiType == "v1" && apiUrl.isNotBlank() && !apiUrl.contains("DVORA")) {
                                     Spacer(Modifier.height(6.dp))
-                                    Text("⚠️ Add DVORA somewhere in the URL", fontSize = 10.sp, color = BeeColors.PollenOrange, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "⚠️ Add DVORA somewhere in the URL",
+                                        fontSize = 10.sp,
+                                        color = BeeColors.PollenOrange,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
                                 }
                             }
                         }
@@ -2841,25 +3574,40 @@ fun ApiSourceWizardDialog(
                         )
                         Spacer(Modifier.height(10.dp))
                         OutlinedTextField(
-                            value         = landingUrl,
+                            value = landingUrl,
                             onValueChange = { landingUrl = it },
-                            label         = { Text("Landing URL  (use DVORA as placeholder, required)") },
-                            placeholder   = { Text("https://yesmovies.ag/search/?q=DVORA", color = textColor.copy(alpha = 0.35f)) },
-                            modifier      = Modifier.fillMaxWidth(),
-                            singleLine    = true,
-                            colors        = beeTextFieldColors()
+                            label = { Text("Landing URL  (use DVORA as placeholder, required)") },
+                            placeholder = {
+                                Text(
+                                    "https://yesmovies.ag/search/?q=DVORA",
+                                    color = textColor.copy(alpha = 0.35f)
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            colors = beeTextFieldColors()
                         )
                         Spacer(Modifier.height(10.dp))
                         val previewQuery2 = "the+matrix"
                         val effectiveLanding = landingUrl.ifBlank { "https://your-site.com/search/?q=DVORA" }
                         val isSplit = landingUrl.isNotBlank() && landingUrl.trimEnd('/') != apiUrl.trimEnd('/')
-                        Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = cardBg)) {
+                        Card(
+                            shape = RoundedCornerShape(8.dp),
+                            colors = CardDefaults.cardColors(containerColor = cardBg)
+                        ) {
                             Column(Modifier.padding(10.dp)) {
-                                Text("🔗 Match will open:", fontSize = 11.sp, color = BeeColors.HoneyGold, fontWeight = FontWeight.Bold)
+                                Text(
+                                    "🔗 Match will open:",
+                                    fontSize = 11.sp,
+                                    color = BeeColors.HoneyGold,
+                                    fontWeight = FontWeight.Bold
+                                )
                                 Spacer(Modifier.height(3.dp))
                                 Text(
                                     effectiveLanding.replace("DVORA", previewQuery2),
-                                    fontSize = 10.sp, color = textColor.copy(alpha = 0.65f), fontFamily = FontFamily.Monospace
+                                    fontSize = 10.sp,
+                                    color = textColor.copy(alpha = 0.65f),
+                                    fontFamily = FontFamily.Monospace
                                 )
                                 Spacer(Modifier.height(6.dp))
                                 if (isSplit) {
@@ -2868,7 +3616,8 @@ fun ApiSourceWizardDialog(
                                         Spacer(Modifier.width(4.dp))
                                         Text(
                                             "Split mode — search API and landing site are different",
-                                            fontSize = 10.sp, color = beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark),
+                                            fontSize = 10.sp,
+                                            color = beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark),
                                             fontWeight = FontWeight.SemiBold
                                         )
                                     }
@@ -2876,12 +3625,19 @@ fun ApiSourceWizardDialog(
                                 if (landingUrl.isBlank()) {
                                     Text(
                                         "⚠️ Landing URL is required",
-                                        fontSize = 10.sp, color = BeeColors.PollenOrange, fontWeight = FontWeight.SemiBold
+                                        fontSize = 10.sp,
+                                        color = BeeColors.PollenOrange,
+                                        fontWeight = FontWeight.SemiBold
                                     )
                                 }
                                 if (landingUrl.isNotBlank() && !landingUrl.contains("DVORA")) {
                                     Spacer(Modifier.height(4.dp))
-                                    Text("⚠️ Add DVORA somewhere in the URL", fontSize = 10.sp, color = BeeColors.PollenOrange, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "⚠️ Add DVORA somewhere in the URL",
+                                        fontSize = 10.sp,
+                                        color = BeeColors.PollenOrange,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
                                 }
                             }
                         }
@@ -2899,33 +3655,35 @@ fun ApiSourceWizardDialog(
                 }
                 if (step < totalSteps - 1) {
                     Button(
-                        onClick  = { step++ },
-                        enabled  = step == 0 || apiUrl.isNotBlank(),
-                        colors   = ButtonDefaults.buttonColors(containerColor = BeeColors.DeepAmber),
-                        shape    = RoundedCornerShape(8.dp)
+                        onClick = { step++ },
+                        enabled = step == 0 || apiUrl.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(containerColor = BeeColors.DeepAmber),
+                        shape = RoundedCornerShape(8.dp)
                     ) {
                         Text("Next →", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 } else {
                     Button(
-                        onClick  = {
+                        onClick = {
                             if (apiUrl.isNotBlank() && landingUrl.isNotBlank()) {
                                 // If a custom API type is selected, carry its match keys and name
                                 val custom = if (apiType == "custom") {
                                     CustomApiTypeManager.customTypes.find { it.id == selectedCustomTypeId }
                                 } else null
-                                onSave(ApiEntry(
-                                    type       = apiType,
-                                    apiUrl     = apiUrl.trimEnd('/'),
-                                    landingUrl = landingUrl.trimEnd('/'),
-                                    matchKeys  = custom?.matchKeys ?: emptyList(),
-                                    customName = custom?.name
-                                ))
+                                onSave(
+                                    ApiEntry(
+                                        type = apiType,
+                                        apiUrl = apiUrl.trimEnd('/'),
+                                        landingUrl = landingUrl.trimEnd('/'),
+                                        matchKeys = custom?.matchKeys ?: emptyList(),
+                                        customName = custom?.name
+                                    )
+                                )
                             }
                         },
-                        enabled  = apiUrl.isNotBlank() && landingUrl.isNotBlank(),
-                        colors   = ButtonDefaults.buttonColors(containerColor = BeeColors.HoneyGold),
-                        shape    = RoundedCornerShape(8.dp)
+                        enabled = apiUrl.isNotBlank() && landingUrl.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(containerColor = BeeColors.HoneyGold),
+                        shape = RoundedCornerShape(8.dp)
                     ) {
                         Text("💾 Save", color = BeeColors.BeeBlack, fontWeight = FontWeight.Bold)
                     }
@@ -2976,6 +3734,7 @@ fun flattenJson(element: com.google.gson.JsonElement, prefix: String = ""): List
                 result.addAll(flattenJson(value, newPrefix))
             }
         }
+
         element.isJsonArray -> {
             val arr = element.asJsonArray
             if (arr.size() > 0) {
@@ -2985,6 +3744,7 @@ fun flattenJson(element: com.google.gson.JsonElement, prefix: String = ""): List
                 result.add(JsonKeyPath(prefix, "[] (empty array)"))
             }
         }
+
         else -> {
             val valueStr = element.toString().trim('"')
             result.add(JsonKeyPath(prefix, valueStr.take(80)))
@@ -3002,27 +3762,29 @@ fun ApiEndpointTesterDialog(
     val scope = rememberCoroutineScope()
 
     var endpointUrl by remember { mutableStateOf("") }
-    var landingUrl  by remember { mutableStateOf("") }
-    var customName  by remember { mutableStateOf("") }
-    var isLoading   by remember { mutableStateOf(false) }
-    var rawJson     by remember { mutableStateOf("") }
-    var errorMsg    by remember { mutableStateOf<String?>(null) }
-    var keyPaths    by remember { mutableStateOf<List<JsonKeyPath>>(emptyList()) }
+    var landingUrl by remember { mutableStateOf("") }
+    var customName by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+    var rawJson by remember { mutableStateOf("") }
+    var errorMsg by remember { mutableStateOf<String?>(null) }
+    var keyPaths by remember { mutableStateOf<List<JsonKeyPath>>(emptyList()) }
     var selectedKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
-    var saveMsg     by remember { mutableStateOf<String?>(null) }
+    var saveMsg by remember { mutableStateOf<String?>(null) }
 
-    val bgColor   = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
+    val bgColor = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
     val textColor = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface)
-    val cardBg    = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
+    val cardBg = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor   = bgColor,
+        containerColor = bgColor,
         title = {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("🧪 ", fontSize = 20.sp)
-                Text("Create Custom API Type", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp,
-                    color = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold))
+                Text(
+                    "Create Custom API Type", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp,
+                    color = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold)
+                )
             }
         },
         text = {
@@ -3033,13 +3795,13 @@ fun ApiEndpointTesterDialog(
                 )
                 Spacer(Modifier.height(10.dp))
                 OutlinedTextField(
-                    value         = endpointUrl,
+                    value = endpointUrl,
                     onValueChange = { endpointUrl = it },
-                    label         = { Text("API Endpoint URL  (use DVORA as placeholder)") },
-                    placeholder   = { Text("https://example.com/search?q=DVORA", color = textColor.copy(alpha = 0.35f)) },
-                    modifier      = Modifier.fillMaxWidth(),
-                    singleLine    = true,
-                    colors        = beeTextFieldColors()
+                    label = { Text("API Endpoint URL  (use DVORA as placeholder)") },
+                    placeholder = { Text("https://example.com/search?q=DVORA", color = textColor.copy(alpha = 0.35f)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    colors = beeTextFieldColors()
                 )
                 Spacer(Modifier.height(10.dp))
                 Button(
@@ -3119,7 +3881,12 @@ fun ApiEndpointTesterDialog(
 
                 if (rawJson.isNotEmpty()) {
                     Spacer(Modifier.height(12.dp))
-                    Text("📄 Raw JSON Response:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BeeColors.DeepAmber)
+                    Text(
+                        "📄 Raw JSON Response:",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = BeeColors.DeepAmber
+                    )
                     Spacer(Modifier.height(4.dp))
                     Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = cardBg)) {
                         Text(
@@ -3134,10 +3901,17 @@ fun ApiEndpointTesterDialog(
 
                 if (keyPaths.isNotEmpty()) {
                     Spacer(Modifier.height(12.dp))
-                    Text("🔑 Pick key-value pairs to match on:", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = BeeColors.DeepAmber)
+                    Text(
+                        "🔑 Pick key-value pairs to match on:",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = BeeColors.DeepAmber
+                    )
                     Spacer(Modifier.height(4.dp))
-                    Text("Tap to select/deselect. Selected keys will be used when scanning for matches.",
-                        fontSize = 10.sp, color = textColor.copy(alpha = 0.55f))
+                    Text(
+                        "Tap to select/deselect. Selected keys will be used when scanning for matches.",
+                        fontSize = 10.sp, color = textColor.copy(alpha = 0.55f)
+                    )
                     Spacer(Modifier.height(6.dp))
                     keyPaths.forEach { kp ->
                         val isSelected = kp.path in selectedKeys
@@ -3164,8 +3938,19 @@ fun ApiEndpointTesterDialog(
                                     colors = CheckboxDefaults.colors(checkedColor = BeeColors.DeepAmber)
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(kp.path, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = textColor, fontFamily = FontFamily.Monospace)
-                                    Text("e.g. ${kp.sampleValue}", fontSize = 10.sp, color = textColor.copy(alpha = 0.6f), maxLines = 1)
+                                    Text(
+                                        kp.path,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = textColor,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                    Text(
+                                        "e.g. ${kp.sampleValue}",
+                                        fontSize = 10.sp,
+                                        color = textColor.copy(alpha = 0.6f),
+                                        maxLines = 1
+                                    )
                                 }
                             }
                         }
@@ -3173,12 +3958,25 @@ fun ApiEndpointTesterDialog(
 
                     if (selectedKeys.isNotEmpty()) {
                         Spacer(Modifier.height(10.dp))
-                        Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = BeeColors.HoneyGold.copy(alpha = 0.15f))) {
+                        Card(
+                            shape = RoundedCornerShape(8.dp),
+                            colors = CardDefaults.cardColors(containerColor = BeeColors.HoneyGold.copy(alpha = 0.15f))
+                        ) {
                             Column(Modifier.padding(10.dp)) {
-                                Text("✅ Selected keys for matching:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = BeeColors.DeepAmber)
+                                Text(
+                                    "✅ Selected keys for matching:",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = BeeColors.DeepAmber
+                                )
                                 Spacer(Modifier.height(4.dp))
                                 selectedKeys.forEach { key ->
-                                    Text("• $key", fontSize = 11.sp, color = textColor, fontFamily = FontFamily.Monospace)
+                                    Text(
+                                        "• $key",
+                                        fontSize = 11.sp,
+                                        color = textColor,
+                                        fontFamily = FontFamily.Monospace
+                                    )
                                 }
                             }
                         }
@@ -3188,7 +3986,12 @@ fun ApiEndpointTesterDialog(
                     Spacer(Modifier.height(14.dp))
                     HorizontalDivider(color = BeeColors.HoneyGold.copy(alpha = 0.3f))
                     Spacer(Modifier.height(10.dp))
-                    Text("🏷️ Name your API type", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = BeeColors.HoneyGold)
+                    Text(
+                        "🏷️ Name your API type",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = BeeColors.HoneyGold
+                    )
                     Spacer(Modifier.height(4.dp))
                     Text(
                         "Give this API type a name (e.g. 'My V2 API'). It will appear as an option when adding API sources.",
@@ -3196,16 +3999,21 @@ fun ApiEndpointTesterDialog(
                     )
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
-                        value         = customName,
+                        value = customName,
                         onValueChange = { customName = it },
-                        label         = { Text("API Type Name") },
-                        placeholder   = { Text("e.g. My V2 API", color = textColor.copy(alpha = 0.35f)) },
-                        modifier      = Modifier.fillMaxWidth(),
-                        singleLine    = true,
-                        colors        = beeTextFieldColors()
+                        label = { Text("API Type Name") },
+                        placeholder = { Text("e.g. My V2 API", color = textColor.copy(alpha = 0.35f)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        colors = beeTextFieldColors()
                     )
                     Spacer(Modifier.height(10.dp))
-                    Text("🔗 Landing URL (required)", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = BeeColors.HoneyGold)
+                    Text(
+                        "🔗 Landing URL (required)",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = BeeColors.HoneyGold
+                    )
                     Spacer(Modifier.height(4.dp))
                     Text(
                         "The link Dvora opens when a match is found. Put DVORA where the title goes.",
@@ -3213,30 +4021,37 @@ fun ApiEndpointTesterDialog(
                     )
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
-                        value         = landingUrl,
+                        value = landingUrl,
                         onValueChange = { landingUrl = it },
-                        label         = { Text("Landing URL  (use DVORA as placeholder)") },
-                        placeholder   = { Text("https://example.com/watch?q=DVORA", color = textColor.copy(alpha = 0.35f)) },
-                        modifier      = Modifier.fillMaxWidth(),
-                        singleLine    = true,
-                        colors        = beeTextFieldColors()
+                        label = { Text("Landing URL  (use DVORA as placeholder)") },
+                        placeholder = {
+                            Text(
+                                "https://example.com/watch?q=DVORA",
+                                color = textColor.copy(alpha = 0.35f)
+                            )
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        colors = beeTextFieldColors()
                     )
                     Spacer(Modifier.height(10.dp))
 
-                    val canSave = endpointUrl.isNotBlank() && landingUrl.isNotBlank() && selectedKeys.isNotEmpty() && customName.isNotBlank()
+                    val canSave =
+                        endpointUrl.isNotBlank() && landingUrl.isNotBlank() && selectedKeys.isNotEmpty() && customName.isNotBlank()
                     Button(
                         onClick = {
                             val customType = CustomApiType(
-                                id         = "custom_${System.currentTimeMillis()}",
-                                name       = customName.trim(),
-                                apiUrl     = endpointUrl.trimEnd('/'),
+                                id = "custom_${System.currentTimeMillis()}",
+                                name = customName.trim(),
+                                apiUrl = endpointUrl.trimEnd('/'),
                                 landingUrl = landingUrl.trimEnd('/'),
-                                matchKeys  = selectedKeys.toList()
+                                matchKeys = selectedKeys.toList()
                             )
                             CustomApiTypeManager.add(context, customType)
                             onSaveCustom(customType)
                             saveMsg = "✅ Saved! '${customType.name}' is now available as an API type."
-                            Toast.makeText(context, "Custom API type '${customType.name}' created", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Custom API type '${customType.name}' created", Toast.LENGTH_SHORT)
+                                .show()
                         },
                         enabled = canSave,
                         modifier = Modifier.fillMaxWidth(),
@@ -3254,7 +4069,12 @@ fun ApiEndpointTesterDialog(
                     }
                     saveMsg?.let {
                         Spacer(Modifier.height(6.dp))
-                        Text(it, fontSize = 11.sp, color = beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark), fontWeight = FontWeight.SemiBold)
+                        Text(
+                            it,
+                            fontSize = 11.sp,
+                            color = beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark),
+                            fontWeight = FontWeight.SemiBold
+                        )
                     }
                 }
             }
@@ -3272,20 +4092,21 @@ fun ApiEndpointTesterDialog(
 // ═══════════════════════════════════════════════════════════════════════════════
 
 @Composable
-fun SourceEditor(list: List<String>, onUpdate: (List<String>) -> Unit) {
-    var newItem      by remember { mutableStateOf("") }
+fun SourceEditor(list: List<String>, dvoraHint: Boolean = false, onUpdate: (List<String>) -> Unit) {
+    var newItem by remember { mutableStateOf("") }
     var editingIndex by remember { mutableIntStateOf(-1) }
     var pendingDeleteItem by remember { mutableStateOf<String?>(null) }
     var showTransferDialog by remember { mutableStateOf(false) }
-    val context      = LocalContext.current
-    val bgColor      = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
-    val textColor    = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface)
-    val rowAlt       = beeAdapt(BeeColors.HoneycombYellow.copy(alpha = 0.4f), BeeColors.DarkStripe.copy(alpha = 0.6f))
+    val context = LocalContext.current
+    val bgColor = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
+    val textColor = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface)
+    val rowAlt = beeAdapt(BeeColors.HoneycombYellow.copy(alpha = 0.4f), BeeColors.DarkStripe.copy(alpha = 0.6f))
 
     val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let {
             try {
-                val lines = context.contentResolver.openInputStream(it)?.bufferedReader()?.use { r -> r.readLines() } ?: emptyList()
+                val lines = context.contentResolver.openInputStream(it)?.bufferedReader()?.use { r -> r.readLines() }
+                    ?: emptyList()
                 val clean = lines.map { l -> l.trim() }.filter { l -> l.isNotBlank() }
                 if (clean.isNotEmpty()) {
                     onUpdate((list + clean).distinct())
@@ -3293,26 +4114,37 @@ fun SourceEditor(list: List<String>, onUpdate: (List<String>) -> Unit) {
                 } else {
                     Toast.makeText(context, "File empty or unreadable", Toast.LENGTH_SHORT).show()
                 }
-            } catch (_: Exception) { Toast.makeText(context, "Import failed", Toast.LENGTH_SHORT).show() }
+            } catch (_: Exception) {
+                Toast.makeText(context, "Import failed", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
-    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
-        uri?.let {
-            try {
-                context.contentResolver.openOutputStream(it)?.bufferedWriter()?.use { w ->
-                    list.forEach { item -> w.write(item); w.newLine() }
+    val exportLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { uri ->
+            uri?.let {
+                try {
+                    context.contentResolver.openOutputStream(it)?.bufferedWriter()?.use { w ->
+                        list.forEach { item -> w.write(item); w.newLine() }
+                    }
+                    Toast.makeText(context, "Exported ${list.size} item(s)", Toast.LENGTH_SHORT).show()
+                } catch (_: Exception) {
+                    Toast.makeText(context, "Export failed", Toast.LENGTH_SHORT).show()
                 }
-                Toast.makeText(context, "Exported ${list.size} item(s)", Toast.LENGTH_SHORT).show()
-            } catch (_: Exception) { Toast.makeText(context, "Export failed", Toast.LENGTH_SHORT).show() }
+            }
         }
-    }
 
     if (showTransferDialog) {
         AlertDialog(
             onDismissRequest = { showTransferDialog = false },
             title = { Text("Sources", fontWeight = FontWeight.Bold, color = textColor) },
-            text = { Text("Import list from a .txt file, or export current list to share with others.", color = textColor.copy(alpha = 0.75f), fontSize = 13.sp) },
+            text = {
+                Text(
+                    "Import list from a .txt file, or export current list to share with others.",
+                    color = textColor.copy(alpha = 0.75f),
+                    fontSize = 13.sp
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     showTransferDialog = false
@@ -3351,12 +4183,33 @@ fun SourceEditor(list: List<String>, onUpdate: (List<String>) -> Unit) {
             IconButton(onClick = {
                 if (newItem.isNotBlank()) {
                     if (editingIndex == -1) onUpdate((list + newItem.trim()).distinct())
-                    else { val m = list.toMutableList(); m[editingIndex] = newItem.trim(); onUpdate(m.toList()); editingIndex = -1 }
+                    else {
+                        val m = list.toMutableList(); m[editingIndex] =
+                            newItem.trim(); onUpdate(m.toList()); editingIndex = -1
+                    }
                     newItem = ""
                 }
-            }) { Icon(if (editingIndex == -1) Icons.Default.Add else Icons.Default.Check, null, tint = BeeColors.DeepAmber) }
-            if (editingIndex == -1) IconButton(onClick = { showTransferDialog = true }) { Icon(Icons.Default.FileUpload, null, tint = BeeColors.DeepAmber) }
-            else IconButton(onClick = { editingIndex = -1; newItem = "" }) { Icon(Icons.Default.Close, null, tint = BeeColors.DeepAmber) }
+            }) {
+                Icon(
+                    if (editingIndex == -1) Icons.Default.Add else Icons.Default.Check,
+                    null,
+                    tint = BeeColors.DeepAmber
+                )
+            }
+            if (editingIndex == -1) IconButton(onClick = { showTransferDialog = true }) {
+                Icon(
+                    Icons.Default.FileUpload,
+                    null,
+                    tint = BeeColors.DeepAmber
+                )
+            }
+            else IconButton(onClick = { editingIndex = -1; newItem = "" }) {
+                Icon(
+                    Icons.Default.Close,
+                    null,
+                    tint = BeeColors.DeepAmber
+                )
+            }
         }
         Spacer(Modifier.height(16.dp))
         LazyColumn {
@@ -3368,8 +4221,19 @@ fun SourceEditor(list: List<String>, onUpdate: (List<String>) -> Unit) {
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Text("🔗 ", fontSize = 12.sp)
-                    Text(item, modifier = Modifier.weight(1f).clickable { newItem = item; editingIndex = index }, fontSize = 13.sp, color = textColor)
-                    IconButton(onClick = { pendingDeleteItem = item }) { Icon(Icons.Default.Delete, null, tint = BeeColors.DeepAmber.copy(alpha = 0.7f)) }
+                    Text(
+                        item,
+                        modifier = Modifier.weight(1f).clickable { newItem = item; editingIndex = index },
+                        fontSize = 13.sp,
+                        color = textColor
+                    )
+                    IconButton(onClick = { pendingDeleteItem = item }) {
+                        Icon(
+                            Icons.Default.Delete,
+                            null,
+                            tint = BeeColors.DeepAmber.copy(alpha = 0.7f)
+                        )
+                    }
                 }
                 HorizontalDivider(color = BeeColors.HoneyGold.copy(alpha = 0.25f))
             }
@@ -3395,14 +4259,17 @@ fun SourceEditor(list: List<String>, onUpdate: (List<String>) -> Unit) {
 
 @Composable
 fun VerboseLogsScreen() {
-    val logs    = SearchLogs.lastLogs
+    val logs = SearchLogs.lastLogs
     val bgColor = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
     if (logs.isEmpty()) {
         Box(Modifier.fillMaxSize().background(bgColor), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("🐝", fontSize = 48.sp)
                 Spacer(Modifier.height(8.dp))
-                Text("No logs from last search.", color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f)))
+                Text(
+                    "No logs from last search.",
+                    color = beeAdapt(Color(0xFF8D5A00), BeeColors.HoneyGold.copy(alpha = 0.7f))
+                )
             }
         }
     } else {
@@ -3413,36 +4280,59 @@ fun VerboseLogsScreen() {
 @Composable
 fun LogItem(log: SearchResult) {
     var expanded by remember { mutableStateOf(false) }
-    val cardColor    = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
-    val titleColor   = beeAdapt(Color(0xFF3E2800), BeeColors.DarkOnSurface)
-    val labelColor   = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.75f))
-    val monoColor    = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.7f))
+    val cardColor = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
+    val titleColor = beeAdapt(Color(0xFF3E2800), BeeColors.DarkOnSurface)
+    val labelColor = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.75f))
+    val monoColor = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.7f))
     val verboseColor = beeAdapt(Color(0xFF4E342E), BeeColors.DarkOnSurface.copy(alpha = 0.6f))
 
     Card(
         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp).clickable { expanded = !expanded },
-        shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = cardColor), elevation = CardDefaults.cardElevation(2.dp)
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = cardColor),
+        elevation = CardDefaults.cardElevation(2.dp)
     ) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(if (log.found) "✅" else "🟡", fontSize = 16.sp)
                 Spacer(Modifier.width(8.dp))
-                Text(log.url, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = titleColor, modifier = Modifier.weight(1f))
-                Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null, tint = BeeColors.DeepAmber)
+                Text(
+                    log.url,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp,
+                    color = titleColor,
+                    modifier = Modifier.weight(1f)
+                )
+                Icon(
+                    if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                    null,
+                    tint = BeeColors.DeepAmber
+                )
             }
             Spacer(Modifier.height(4.dp))
             Row {
                 Text("Status: ", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = labelColor)
                 Text(
                     if (log.found) "FOUND" else "NOT FOUND",
-                    color = if (log.found) beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark) else BeeColors.PollenOrange,
+                    color = if (log.found) beeAdapt(
+                        BeeColors.FoundGreen,
+                        BeeColors.FoundGreenDark
+                    ) else BeeColors.PollenOrange,
                     fontSize = 12.sp, fontWeight = FontWeight.Bold
                 )
             }
-            Text("Details: ${log.foundDetails ?: "No details available."}", fontSize = 12.sp, fontFamily = FontFamily.Monospace, color = monoColor)
+            Text(
+                "Details: ${log.foundDetails ?: "No details available."}",
+                fontSize = 12.sp,
+                fontFamily = FontFamily.Monospace,
+                color = monoColor
+            )
             if (expanded && log.verboseLogs != null) {
                 Spacer(Modifier.height(8.dp))
-                HorizontalDivider(color = BeeColors.HoneyGold.copy(alpha = 0.4f), modifier = Modifier.padding(vertical = 4.dp))
+                HorizontalDivider(
+                    color = BeeColors.HoneyGold.copy(alpha = 0.4f),
+                    modifier = Modifier.padding(vertical = 4.dp)
+                )
                 Text(log.verboseLogs, fontSize = 11.sp, fontFamily = FontFamily.Monospace, color = verboseColor)
             }
             if (log.errorMessage != null) {
@@ -3472,26 +4362,36 @@ fun loadSources(context: Context, key: String): List<String> {
                 "+https://hianime.city/?s=", "+https://gogoanime.by/?s=",
                 "+https://hianime.dk/filter?keyword="
             )
+
             "movies" -> listOf(
-                "+https://ww25.soap2day.day/?s=", "+https://hydrahd.ru/index.php?menu=search&query=",
-                "+https://dorawatch.one/?s=", "+https://1movies.bz/browser?keyword=", "+https://yflix.to/browser?keyword=",
-                "+https://www.lookmovie2.to/movies/search/?q=", "+https://1movies.bz/browser?keyword=", "+https://yflix.to/browser?keyword="
+                "+https://ww25.soap2day.day/?s=",
+                "+https://hydrahd.ru/index.php?menu=search&query=",
+                "+https://dorawatch.one/?s=",
+                "+https://1movies.bz/browser?keyword=",
+                "+https://yflix.to/browser?keyword=",
+                "+https://www.lookmovie2.to/movies/search/?q=",
+                "+https://1movies.bz/browser?keyword=",
+                "+https://yflix.to/browser?keyword="
             )
+
             "manual_checks" -> listOf(
                 "https://67movies.net/", "https://popcornmovies.org/"
 
             )
+
             "api_sites" -> listOf(
                 "v1:https://ww8.123moviesfree.net/searching?q=DVORA&limit=40&offset=0|https://ww8.123moviesfree.net/search/?q=DVORA",
                 "v1:https://ww4.fmovies.co/searching?q=DVORA&limit=40&offset=0|https://ww4.fmovies.co/search/?q=DVORA",
                 "v1:https://ww1.yesmovies.ag/searching?q=DVORA&limit=40&offset=0|https://ww1.yesmovies.ag/search.html?q=DVORA",
                 "stremio:https://v3-cinemeta.strem.io"
             )
+
             "exclusions" -> listOf(
                 "addtoany.com", "facebook.com", "twitter.com", "reddit.com",
                 "pinterest.com", "whatsapp.com", "t.me", "mailto:",
                 "/login", "/register", "/signup", "/feed", "#", "/filter", "/search", "/browser", "/?s="
             )
+
             else -> emptyList()
         }
     }
