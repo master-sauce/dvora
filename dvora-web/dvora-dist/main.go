@@ -1122,7 +1122,7 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 			go func(i int, line string) {
 				defer wg.Done()
 				var sr SiteResult
-				apiType, apiUrlTmpl, landingUrlTmpl, matchKeys, customName := parseAPILine(line)
+				apiType, apiUrlTmpl, landingUrlTmpl, matchKeys, _ := parseAPILine(line)
 				qe := strings.ReplaceAll(q, " ", "+")
 
 				if apiType == "stremio" {
@@ -1154,9 +1154,6 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 						mu = matches[0].URL
 					}
 					sr = SiteResult{URL: dispURL, Found: found, Type: "api", MovieURL: mu, Matches: matches, Logs: logs}
-					if customName != "" {
-						sr.Details = customName
-					}
 					if err != nil {
 						sr.Error = err.Error()
 						sr.Logs = append(sr.Logs, LogEntry{"warn", "Error: " + err.Error()})
