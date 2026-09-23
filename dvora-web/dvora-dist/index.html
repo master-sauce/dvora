@@ -390,13 +390,13 @@ a.cu:hover{color:var(--hg);}
     </div>
     <div class="sbody">
       <div class="stabc active" id="tab-shows">
-        <div class="cdesc">One URL prefix per line. The search term is appended directly.<br>
+        <div class="cdesc">One URL prefix per line. The search term is appended directly — unless the line contains <code>DVORA</code>, in which case the search term is placed where <code>DVORA</code> sits.<br>
           <code>+</code> → spaces become <code>+</code> &nbsp;|&nbsp; <code>-</code> → spaces become <code>-</code> &nbsp;|&nbsp; no prefix → spaces kept.<br>Lines starting with <code>//</code> are comments.</div>
         <textarea class="cta" id="ta-shows" rows="12" placeholder="+https://example.com/search?q=&#10;-https://other.com/find/"></textarea>
         <div class="cfoot"><button class="savebtn" onclick="saveCfg('shows.txt','ta-shows','ss-shows')">✓ Save</button><span class="ss" id="ss-shows"></span></div>
       </div>
       <div class="stabc" id="tab-movies">
-        <div class="cdesc">Same format as Shows — one URL prefix per line.<br><code>+</code> / <code>-</code> prefix controls space replacement.</div>
+        <div class="cdesc">Same format as Shows — one URL prefix per line.<br><code>+</code> / <code>-</code> prefix controls space replacement.<br>A line may contain <code>DVORA</code> — the search term is placed there instead of being appended.</div>
         <textarea class="cta" id="ta-movies" rows="12" placeholder="+https://example.com/search?q="></textarea>
         <div class="cfoot"><button class="savebtn" onclick="saveCfg('movies.txt','ta-movies','ss-movies')">✓ Save</button><span class="ss" id="ss-movies"></span></div>
       </div>

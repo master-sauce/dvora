@@ -68,6 +68,7 @@ One site per line. A symbol at the start controls how spaces in your title are h
 - `+https://site.com/search?q=` → spaces become `+`
 - `-https://site.com/search?q=` → spaces become `-`
 - `https://site.com/search?q=` → spaces kept as-is
+- A URL may contain `DVORA` anywhere — the search query is placed where `DVORA` sits (works for shows/movies lists and API sources); without it, the query is simply appended
 - Lines starting with `#` are ignored (use them for notes)
 
 ---

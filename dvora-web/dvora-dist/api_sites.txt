@@ -2,3 +2,4 @@ v1:https://ww8.123moviesfree.net/searching?q=DVORA&limit=40&offset=0|https://ww8
 v1:https://ww4.fmovies.co/searching?q=DVORA&limit=40&offset=0|https://ww4.fmovies.co/search/?q=DVORA
 v1:https://ww1.yesmovies.ag/searching?q=DVORA&limit=40&offset=0|https://ww1.yesmovies.ag/search.html?q=DVORA
 stremio:https://v3-cinemeta.strem.io
+custom:https://api.themoviedb.org/3/search/multi?api_key=57240db50c2008e78c261e1a934627e4&query=DVORA&page=1&language=en-US|https://stream4fun.net/search?q=DVORA&mode=title#results[0].title@v2

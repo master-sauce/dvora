@@ -1082,7 +1082,13 @@ func searchHandler(w http.ResponseWriter, r *http.Request) {
 					fi = q
 					base = line
 				}
-				su := base + fi
+				var su string
+				if strings.Contains(base, "DVORA") {
+					// DVORA marks where the search query goes in the URL
+					su = strings.ReplaceAll(base, "DVORA", fi)
+				} else {
+					su = base + fi
+				}
 				found, details, logs, err := scanSite(su, q)
 				sr := SiteResult{URL: su, Found: found, Details: details, Type: "auto", Logs: logs}
 				if err != nil {
