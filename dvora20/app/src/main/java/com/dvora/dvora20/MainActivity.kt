@@ -1798,9 +1798,15 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
         )
     }
 
-    fun requestReminder(imdbId: String, prefill: java.time.LocalDate? = null) {
+    fun requestReminder(
+        imdbId: String,
+        prefill: java.time.LocalDate? = null,
+        hour: Int? = null,
+        minute: Int? = null,
+        recurrence: String? = null
+    ) {
         if (prefill != null) {
-            // Open the date picker already positioned on the auto-discovered date.
+            // Open the date picker already positioned on the discovered / existing date.
             datePickerState.selectedDateMillis =
                 prefill.atStartOfDay(java.time.ZoneOffset.UTC).toInstant().toEpochMilli()
         }
@@ -1818,8 +1824,28 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
                 )
             }
         }
-        selectedRecurrence = "ONCE"
+        // editing an existing reminder keeps its current time + recurrence
+        hour?.let { timePickerState.hour = it }
+        minute?.let { timePickerState.minute = it }
+        selectedRecurrence = recurrence ?: "ONCE"
         datePickerTargetId = imdbId
+    }
+
+    /** Open the picker prefilled with the bookmark's existing reminder values. */
+    fun editReminder(bm: Bookmark) {
+        val date = try {
+            java.time.LocalDate.parse(bm.reminderDate!!)
+        } catch (_: Exception) {
+            null
+        }
+        val parts = bm.reminderTime?.split(":")
+        requestReminder(
+            bm.imdbId,
+            date,
+            parts?.getOrNull(0)?.toIntOrNull() ?: 9,
+            parts?.getOrNull(1)?.toIntOrNull() ?: 0,
+            bm.reminderRecurrence
+        )
     }
 
     BackHandler { onBack() }
@@ -1965,6 +1991,7 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
                         bm = bm,
                         context = context,
                         onSetReminder = { pref -> requestReminder(bm.imdbId, pref) },
+                        onEditReminder = { editReminder(bm) },
                         onClearReminder = { BookmarksManager.clearReminder(context, bm.imdbId) })
                 }
                 item {
@@ -1991,6 +2018,7 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
                     bm = bm,
                     context = context,
                     onSetReminder = { pref -> requestReminder(bm.imdbId, pref) },
+                    onEditReminder = { editReminder(bm) },
                     onClearReminder = { BookmarksManager.clearReminder(context, bm.imdbId) })
             }
         }
@@ -2002,6 +2030,7 @@ fun BookmarkCard(
     bm: Bookmark,
     context: Context,
     onSetReminder: (java.time.LocalDate?) -> Unit,
+    onEditReminder: () -> Unit,
     onClearReminder: () -> Unit
 ) {
     val cardBg = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
@@ -2041,7 +2070,31 @@ fun BookmarkCard(
                     Toast.makeText(context, "📺 Not found in the database", Toast.LENGTH_LONG).show()
                 // date wins over status — only report show state when no next date exists
                 date != null && date.isAfter(java.time.LocalDate.now()) -> {
-                    askDate = date   // popup: ask user whether to remind on this date
+                    if (!hasReminder) {
+                        askDate = date   // popup: ask user whether to remind on this date
+                    } else {
+                        // reminder exists — only ask when the discovered date differs from it
+                        val current = try {
+                            java.time.LocalDate.parse(bm.reminderDate!!)
+                        } catch (_: Exception) {
+                            null
+                        }
+                        if (current == date) {
+                            val nice = try {
+                                date.format(
+                                    java.time.format.DateTimeFormatter.ofPattern(
+                                        "d MMMM yyyy",
+                                        java.util.Locale.ENGLISH
+                                    )
+                                )
+                            } catch (_: Exception) {
+                                date.toString()
+                            }
+                            Toast.makeText(context, "⏰ A reminder is already set for $nice", Toast.LENGTH_LONG).show()
+                        } else {
+                            askDate = date   // popup: ask user whether to overwrite the existing reminder
+                        }
+                    }
                 }
 
                 info.isEnded -> {
@@ -2287,7 +2340,6 @@ fun BookmarkCard(
 
             // Actions
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                // hidden while reminder active — badge already offers cancel/change
                 if (!hasReminder) {
                     IconButton(onClick = { onSetReminder(askDate) }, modifier = Modifier.size(36.dp)) {
                         Icon(
@@ -2297,19 +2349,30 @@ fun BookmarkCard(
                             modifier = Modifier.size(20.dp)
                         )
                     }
-                    IconButton(onClick = { autoLookup() }, modifier = Modifier.size(36.dp)) {
-                        if (nextBusy) CircularProgressIndicator(
-                            Modifier.size(18.dp),
-                            Color(0xFF26A69A),
-                            strokeWidth = 2.dp
-                        )
-                        else Icon(
-                            Icons.Default.Radar,
-                            "Find next episode air date",
-                            tint = if (askDate != null) Color(0xFF26A69A) else BeeColors.PollenOrange,
+                } else {
+                    // reminder exists — offer in-place edit of its date / time / recurrence
+                    IconButton(onClick = onEditReminder, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            Icons.Default.AccessTime,
+                            "Edit reminder",
+                            tint = BeeColors.DeepAmber,
                             modifier = Modifier.size(20.dp)
                         )
                     }
+                }
+                // radar stays visible even while a reminder exists — can probe a new air date anytime
+                IconButton(onClick = { autoLookup() }, modifier = Modifier.size(36.dp)) {
+                    if (nextBusy) CircularProgressIndicator(
+                        Modifier.size(18.dp),
+                        Color(0xFF26A69A),
+                        strokeWidth = 2.dp
+                    )
+                    else Icon(
+                        Icons.Default.Radar,
+                        "Find next episode air date",
+                        tint = if (askDate != null) Color(0xFF26A69A) else BeeColors.PollenOrange,
+                        modifier = Modifier.size(20.dp)
+                    )
                 }
                 IconButton(onClick = { showPlaybackEditor = true }, modifier = Modifier.size(36.dp)) {
                     Icon(
@@ -2369,17 +2432,38 @@ fun BookmarkCard(
                 } catch (_: Exception) {
                     askDate!!.toString()
                 }
-                Text("The next episode of \"${bm.title}\" airs on $nice.\n\nWould you like to set a reminder for that date?")
+                if (!hasReminder) {
+                    Text("The next episode of \"${bm.title}\" airs on $nice.\n\nWould you like to set a reminder for that date?")
+                } else {
+                    val current = try {
+                        java.time.LocalDate.parse(bm.reminderDate!!)
+                    } catch (_: Exception) {
+                        null
+                    }
+                    val currentNice = current?.let {
+                        try {
+                            it.format(
+                                java.time.format.DateTimeFormatter.ofPattern(
+                                    "d MMMM yyyy",
+                                    java.util.Locale.ENGLISH
+                                )
+                            )
+                        } catch (_: Exception) {
+                            it.toString()
+                        }
+                    } ?: (bm.reminderDate ?: "")
+                    Text("The next episode of \"${bm.title}\" airs on $nice.\n\nA reminder is already set for $currentNice.\n\nOverwrite it with the new date?")
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
                     val d = askDate
                     askDate = null
                     if (d != null) onSetReminder(d)   // open picker prefilled with the discovered date
-                }) { Text("⏰  Remind Me") }
+                }) { Text(if (hasReminder) "⏰  Overwrite" else "⏰  Remind Me") }
             },
             dismissButton = {
-                TextButton(onClick = { askDate = null }) { Text("Not Now") }
+                TextButton(onClick = { askDate = null }) { Text(if (hasReminder) "Cancel" else "Not Now") }
             },
             onDismissRequest = { askDate = null }
         )
