@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">דבורה 2.0</string>
+
+    <!-- icon / button content descriptions -->
+    <string name="cd_back">חזרה</string>
+    <string name="cd_theme">החלפת מצב כהה</string>
+    <string name="cd_browser">דפדפן</string>
+    <string name="cd_back_page">אחורה בהיסטוריית העמוד</string>
+    <string name="cd_fwd_page">קדימה בהיסטוריית העמוד</string>
+    <string name="cd_reload">טעינה מחדש של העמוד</string>
+    <string name="cd_go">בא</string>
+    <string name="cd_shield">בקשות שנחסמו — פרטים</string>
+    <string name="cd_close">סגירה</string>
+    <string name="cd_refresh">עדכון רשימה זו עכשיו</string>
+
+    <!-- settings tabs -->
+    <string name="tab_shows">סדרות</string>
+    <string name="tab_movies">סרטים</string>
+    <string name="tab_apis">APIs</string>
+    <string name="tab_manual">ידני</string>
+    <string name="tab_exclusions">התחמשויות</string>
+    <string name="tab_backup">גיבוי</string>
+    <string name="tab_logs">יומנים</string>
+    <string name="tab_browser">דפדפן</string>
+
+    <!-- SSL error dialog -->
+    <string name="ssl_title">תעודה לא מוכרת</string>
+    <string name="ssl_body">עמוד זה משתמש בתעודה שאינה אמינה. המשך רק אם מצפה שהאתר ישמש תעודה שכזו (או אם יש פרוקסי/MITM מולו).</string>
+    <string name="ssl_proceed">המשך פעם אחת</string>
+    <string name="ssl_cancel">חזרה</string>
+
+    <!-- downloads -->
+    <string name="dl_started">ההורדה התחילה</string>
+    <string name="dl_started_desc">הורדת דבורה</string>
+    <string name="dl_failed">לא ניתן להתחיל את ההורדה</string>
+
+    <!-- shield bottom sheet -->
+    <string name="sheet_blocked_page">נחסמו בעמוד זה</string>
+    <string name="sheet_lifetime">נחסמו מאז ההתקנה</string>
+    <string name="sheet_allowed">אתר מורשה — החסימה כבויה לדומין זה</string>
+    <string name="sheet_log">נחסמו בעמוד זה</string>
+    <string name="sheet_log_empty">כרגע לא נחסם כלום בעמוד זה</string>
+
+    <!-- settings › browser tab -->
+    <string name="btab_title">חסימת פרסומות ומוערכים</string>
+    <string name="btab_hint">רשימות: EasyList, EasyPrivacy, EasyList Hebrew, EasyList Cookie — ממקורות רשמיים ב־HTTPS, עדכון שבועי אוטומטי, וגרסה מובנית להרצה אופליין</string>
+    <string name="btab_lists">רשימות הסינון</string>
+    <string name="btab_never">לא הורדה מעולם</string>
+    <string name="btab_rules">חוקים פעילים</string>
+    <string name="btab_lifetime">נחסמו מאז ההתקנה</string>
+    <string name="btab_linkmode">פתיחת תוצאות ב־:</string>
+    <string name="btab_link_ext">אפליקציות חיצוניות (שרשרת קיימת)</string>
+    <string name="btab_link_dvora">דפדפן דבורה הפנימי</string>
+    <string name="btab_lang">שפה</string>
+    <string name="btab_clear">ניקוי נתוני גלישה</string>
+    <string name="btab_clear_q">לנקות את נתוני הגלישה?</string>
+    <string name="btab_clear_msg">מטמון, עוגיות והיסטוריה של הדפדפן הפנימי יימחקו.</string>
+    <string name="btab_cleared">נתוני הגלישה נוקו</string>
+
+    <!-- dialogs / toasts (shared) -->
+    <string name="toast_open_url_failed">לא ניתן היה לפתוח את הכתובת</string>
+    <string name="ok">אישור</string>
+    <string name="cancel">ביטול</string>
+</resources>
