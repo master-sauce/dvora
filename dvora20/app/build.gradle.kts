@@ -15,6 +15,10 @@ android {
         versionCode = 1
         versionName = "1.0"
 
+        ndk {
+            abiFilters += listOf("x86", "x86_64", "armeabi-v7a", "arm64-v8a")   // the bundled yt-dlp/python ABIs
+        }
+
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -70,6 +74,10 @@ dependencies {
 
     // In-app browser: async list downloads
     implementation(libs.kotlinx.coroutines.android)
+
+    // yt-dlp (bundled python) — capture + download media from the in-app browser
+    implementation(libs.youtubedl.android)
+    implementation(libs.youtubedl.ffmpeg)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

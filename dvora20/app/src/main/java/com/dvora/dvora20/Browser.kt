@@ -9,6 +9,8 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import android.webkit.CookieManager
 import android.webkit.DownloadListener
@@ -55,6 +57,10 @@ import com.dvora.dvora20.adblock.BlockerWebViewClient
 import com.dvora.dvora20.adblock.ListRepo
 import com.dvora.dvora20.adblock.Whitelist
 import java.io.File
+import com.yausername.youtubedl_android.YoutubeDL
+import com.yausername.youtubedl_android.YoutubeDLRequest
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /** default page shown when the top-bar browser button is tapped. */
 const val BROWSER_HOME = "https://duckduckgo.com/"
@@ -101,6 +107,17 @@ fun BrowserScreen(
 
     // the whole site's whitelist — kept live; the interceptor reads this supplier per request
     var allowed by remember { mutableStateOf(Whitelist.hosts(context)) }
+
+    // ── yt-dlp: downloading of media captured on this page ────────────────────────
+    var ytPicker by remember { mutableStateOf(false) }   // dialog listing capturable media
+    var ytProg by remember { mutableIntStateOf(-1) }     // -1 = idle, else % progress
+    val ytScope = rememberCoroutineScope()               // for the background yt-dlp download
+    val ytDir = remember {
+        @Suppress("DEPRECATION")
+        val pub = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        File(pub, "dvora").takeIf { d -> d.canWrite() || d.mkdirs() }
+            ?: context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+    }
 
     // ── one-time objects ──────────────────────────────────────────────────────
     val webView = remember {
@@ -150,6 +167,51 @@ fun BrowserScreen(
                 putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
             }
         })
+    }
+
+    // ── yt-dlp ────────────────────────────────────────────────────────────────────
+
+    /** run yt-dlp on [url], saving into the downloads dir — progress on the toolbar. */
+    fun startYt(url: String) {
+        if (ytProg >= 0) return
+        ytPicker = false
+        val dir = ytDir ?: return
+        ytProg = 0
+        // blocking download — must not run on the UI thread
+        ytScope.launch(Dispatchers.IO) {
+            try {
+                val req = YoutubeDLRequest(url)
+                req.addOption("-o", "${dir.path}/%(title)s.%(ext)s")
+                req.addOption("-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best")
+                YoutubeDL.execute(req, "dvora-media") { p, _, _ ->
+                    val pct = p.toInt()
+                    if (pct >= 100) {
+                        ytProg = -1
+                        val newest = dir.listFiles()?.filter { f -> f.isFile }?.maxByOrNull { f -> f.lastModified() }
+                        Handler(Looper.getMainLooper()).post {
+                            Toast.makeText(context, "⬇ ${newest?.name ?: ""} → ${dir.name}", Toast.LENGTH_LONG).show()
+                        }
+                    } else if (pct >= 0) {
+                        ytProg = pct
+                    }
+                }
+            } catch (_: Exception) {
+                // a user cancel (stopYt) already put us back to idle — no failure toast then
+                if (ytProg >= 0) {
+                    Toast.makeText(context, localeStr(context, R.string.yt_dl_fail), Toast.LENGTH_SHORT).show()
+                }
+                ytProg = -1
+            }
+        }
+    }
+
+    /** abort a running yt-dlp process */
+    fun stopYt() {
+        try {
+            YoutubeDL.getInstance().destroyProcessById("dvora-media")
+        } catch (_: Exception) {
+        }
+        ytProg = -1
     }
 
     fun enqueueDownload(url: String, disposition: String?, mimeType: String?) {
@@ -317,6 +379,54 @@ fun BrowserScreen(
         )
     }
 
+    // ── yt-dlp picker: the media captured for this page (+ page URL) ──────────
+    if (ytPicker) {
+        val cands = remember {
+            buildList {
+                (address.takeIf { a -> a.startsWith("http") })?.let { add(R.string.yt_page to it) }
+                repo.engine.reqLog
+                    .filter { !it.blocked && it.tag == "media" }
+                    .map { it.url }
+                    .distinct()
+                    .take(40)
+                    .forEach { add(R.string.yt_media to it) }
+            }
+        }
+        AlertDialog(
+            onDismissRequest = { ytPicker = false },
+            title = { Text(L(R.string.yt_picker), color = BeeColors.HoneyGold) },
+            text = {
+                Box(Modifier.heightIn(max = 420.dp)) {
+                    if (cands.isEmpty()) {
+                        Text(L(R.string.yt_none), fontSize = 12.sp, color = textColor)
+                    } else {
+                        LazyColumn {
+                            items(cands) { (label, u) ->
+                                Column(
+                                    Modifier.fillMaxWidth().clickable { startYt(u) }.padding(vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        L(label),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (label == R.string.yt_page) BeeColors.FoundGreen else BeeColors.HoneyGold
+                                    )
+                                    Text(u, fontSize = 10.sp, color = textColor, maxLines = 2)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { ytPicker = false }) {
+                    Text(L(R.string.cancel), color = BeeColors.DeepAmber)
+                }
+            }
+        )
+    }
+
     // ── UI ──────────────────────────────────────────────────────────────────────
     // edge-to-edge; the toolbar is a collapsible row at the bottom of the screen
     Box(modifier = modifier.fillMaxSize().background(pageBg)) {
@@ -383,6 +493,24 @@ fun BrowserScreen(
                                     Text("$blocked", fontSize = 9.sp, color = Color.White, maxLines = 1)
                                 }
                             }
+                        }
+                    }
+                    IconButton(onClick = {
+                        when {
+                            ytProg >= 100 -> ytProg = -1     // finished → reset
+                            ytProg >= 0 -> stopYt()          // running → tap cancels
+                            else -> ytPicker = true          // idle → list captured media
+                        }
+                    }) {
+                        if (ytProg >= 0) {
+                            Text(
+                                if (ytProg >= 100) "✓" else "$ytProg%",
+                                fontSize = 11.sp,
+                                color = BeeColors.FoundGreen,
+                                fontWeight = FontWeight.Bold
+                            )
+                        } else {
+                            Icon(Icons.Default.Download, L(R.string.yt_cd), tint = BeeColors.FoundGreen)
                         }
                     }
                     IconButton(onClick = { barVisible = false }) {

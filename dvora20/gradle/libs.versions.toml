@@ -14,6 +14,7 @@ gson = "2.10.1"
 volley = "1.2.1"
 coil = "2.7.0"       # ← add this
 coroutines = "1.10.2"
+ytdl = "0.18.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -37,6 +38,8 @@ gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 volley = { group = "com.android.volley", name = "volley", version.ref = "volley" }
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+youtubedl-android = { group = "io.github.junkfood02.youtubedl-android", name = "library", version.ref = "ytdl" }
+youtubedl-ffmpeg = { group = "io.github.junkfood02.youtubedl-android", name = "ffmpeg", version.ref = "ytdl" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

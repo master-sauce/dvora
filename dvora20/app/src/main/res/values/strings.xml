@@ -64,6 +64,14 @@
     <string name="rs_blocked">blocked</string>
     <string name="rs_empty">nothing requested on this page yet</string>
 
+    <!-- yt-dlp media download -->
+    <string name="yt_picker">media to download (yt-dlp)</string>
+    <string name="yt_page">page</string>
+    <string name="yt_media">captured media</string>
+    <string name="yt_none">start a video first — nothing captured yet</string>
+    <string name="yt_cd">captured media — download with yt-dlp</string>
+    <string name="yt_dl_fail">yt-dlp download failed</string>
+
     <!-- settings › browser tab -->
     <string name="btab_title">Ads &amp; tracker blocking</string>
     <string name="btab_hint">EasyList, EasyPrivacy, EasyList Hebrew, EasyList Cookie — official HTTPS sources, weekly auto-refresh, bundled offline fallback</string>

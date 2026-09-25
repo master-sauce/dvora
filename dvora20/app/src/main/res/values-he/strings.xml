@@ -64,6 +64,14 @@
     <string name="rs_blocked">נחסמו</string>
     <string name="rs_empty">אין עדיין בקשות בעמוד זה</string>
 
+    <!-- הורדת מדיה yt-dlp -->
+    <string name="yt_picker">מדיה להורדה (yt-dlp)</string>
+    <string name="yt_page">עמוד</string>
+    <string name="yt_media">מדיה שנלכדה</string>
+    <string name="yt_none">יש להתחיל סרטון קודם — עוד לא נלכד כלום</string>
+    <string name="yt_cd">מדיה שנלכדה — הורדה עם yt-dlp</string>
+    <string name="yt_dl_fail">כשל בהורדת ה־yt-dlp</string>
+
     <!-- settings › browser tab -->
     <string name="btab_title">חסימת פרסומות ומוערכים</string>
     <string name="btab_hint">רשימות: EasyList, EasyPrivacy, EasyList Hebrew, EasyList Cookie — ממקורות רשמיים ב־HTTPS, עדכון שבועי אוטומטי, וגרסה מובנית להרצה אופליין</string>

@@ -44,6 +44,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.yausername.ffmpeg.FFmpeg
+import com.yausername.youtubedl_android.YoutubeDL
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -346,6 +348,12 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         BookmarksManager.load(this)
         BookmarksManager.rescheduleAllReminders(this)
+        // yt-dlp + ffmpeg — the in-app browser's media-download feature
+        try {
+            YoutubeDL.getInstance().init(this)
+            FFmpeg.getInstance().init(this)
+        } catch (_: Exception) {
+        }
         setContent {
             val prefs = getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE)
             val darkModeState = remember { mutableStateOf(prefs.getBoolean("dark_mode", false)) }
