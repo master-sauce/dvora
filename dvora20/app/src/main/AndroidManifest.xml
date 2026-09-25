@@ -9,6 +9,11 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- DownloadManager saves to public external storage on API 24–28 -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <!-- the yt-dlp media download runs in a foreground service -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
+    <!-- default media folder is /dvora on the internal-storage root -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
 
     <queries>
         <intent>
@@ -44,6 +49,12 @@
         <receiver
             android:name=".YtCancelReceiver"
             android:exported="false" />
+
+        <!-- yt-dlp media download — keeps running while the app is closed -->
+        <service
+            android:name=".YtDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="mediaProcessing" />
 
         <receiver
             android:name=".BootReminderReceiver"

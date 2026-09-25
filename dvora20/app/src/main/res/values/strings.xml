@@ -75,13 +75,14 @@
     <string name="yt_dl_fail">yt-dlp download failed</string>
     <string name="yt_err_title">media download failed</string>
     <string name="yt_seg_hint">segment fragment only — pick the playlist/master (.m3u8 / .mpd) row on top for the full video</string>
-    <string name="yt_folder_lbl">MEDIA DOWNLOAD FOLDER</string>
-    <string name="yt_folder_pick">where captured media gets saved</string>
-    <string name="yt_folder_title">save captured media to:</string>
-    <string name="yt_fold_download">Download / dvora (default)</string>
-    <string name="yt_fold_movies">Movies / dvora</string>
-    <string name="yt_fold_dcim">DCIM / dvora</string>
-    <string name="yt_fold_music">Music / dvora</string>
+    <string name="yt_folder_lbl">MEDIA DOWNLOAD LOCATION</string>
+    <string name="yt_folder_pick">saved folder for captured media — tap to change</string>
+    <string name="yt_folder_title">saved location for media</string>
+    <string name="yt_dir_change">choose another folder…</string>
+    <string name="yt_dir_reset">reset to default (Download / com.dvora.dvora20)</string>
+    <string name="yt_dir_grant">grant folder access</string>
+    <string name="yt_dir_grant_msg">a folder picked outside Download needs the one-time “all files” permission</string>
+    <string name="yt_need_store">folder permission needed to save captured media</string>
 
     <!-- settings › browser tab -->
     <string name="btab_title">Ads &amp; tracker blocking</string>

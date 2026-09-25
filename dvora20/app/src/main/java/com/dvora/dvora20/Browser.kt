@@ -76,24 +76,21 @@ import kotlinx.coroutines.launch
 const val BROWSER_HOME = "https://duckduckgo.com/"
 
 /**
- * Where yt-dlp stores captured media — the folder chosen in the browser tab
- * of the settings (download default, movies / dcim / music), each under a
- * `dvora` subfolder. Falls back to the app-private external files dir if
- * none of the public ones is writable.
+ * Where yt-dlp stores captured media — the picker-chosen folder from the
+ * browser settings tab (prefs `yt_dir`). The default is the app's own
+ * exclusive `Download/com.dvora.dvora20/` folder — writable via raw File IO
+ * without the "all files" permission, yet still visible in Downloads.
+ * Falls back to the app-private external files dir if nothing is writable.
  */
 @Suppress("DEPRECATION")
 fun ytSaveDir(context: Context): File? {
-    val pick = context.getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE)
-        .getString("yt_folder", "download") ?: "download"
-    val env = when (pick) {
-        "movies" -> Environment.DIRECTORY_MOVIES
-        "dcim" -> Environment.DIRECTORY_DCIM
-        "music" -> Environment.DIRECTORY_MUSIC
-        else -> Environment.DIRECTORY_DOWNLOADS
-    }
-    val dir = File(Environment.getExternalStoragePublicDirectory(env), "dvora")
-    return dir.takeIf { d -> d.canWrite() || d.mkdirs() }
-        ?: context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+    val prefs = context.getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE)
+    val custom = prefs.getString("yt_dir", null)?.takeIf { it.isNotBlank() }
+    val dir = custom?.let { File(it) }
+        ?: File(Environment.getExternalStorageDirectory(), "Download/${context.packageName}")
+    return if (dir.canWrite() || dir.mkdirs()) dir
+    else context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.let { File(it, "media") }
+        ?: context.filesDir
 }
 
 /**
@@ -139,13 +136,16 @@ fun BrowserScreen(
     // the whole site's whitelist — kept live; the interceptor reads this supplier per request
     var allowed by remember { mutableStateOf(Whitelist.hosts(context)) }
 
-    // ── yt-dlp: downloading of media captured on this page ────────────────────────
+    // ── yt-dlp: media download of what was captured on this page — owned by the
+    // foreground service from here on; here its live state is polled for badge / row ──
     var ytPicker by remember { mutableStateOf(false) }   // dialog listing capturable media
-    var ytUrl by remember { mutableStateOf("") }         // what is downloading now — for the status row/notification
-    var ytProg by remember { mutableIntStateOf(-1) }     // -1 = idle, else % progress
-    val ytScope = rememberCoroutineScope()               // for the background yt-dlp download
-    var ytPending by remember { mutableStateOf<String?>(null) }   // url to resume once the storage prompt is done
-    var ytErr by remember { mutableStateOf<String?>(null) }      // surfaced yt-dlp failure reason (dialog)
+    var yt by remember { mutableIntStateOf(YtCtl.pct) }            // -1 idle · 0..99 % · >=100 done · -3 failed
+    var ytUrl by remember { mutableStateOf(YtCtl.url) }            // what is downloading now
+    var ytBadge by remember { mutableIntStateOf(0) }               // captured media urls → button badge
+    var ytDone by remember { mutableStateOf<File?>(null) }         // newest merged file after a success
+    var ytPending by remember { mutableStateOf<String?>(null) }    // url to resume once the storage prompt is done
+    var ytErr by remember { mutableStateOf<String?>(null) }        // surfaced yt-dlp failure reason (dialog)
+    var mgr by remember { mutableStateOf(Build.VERSION.SDK_INT < 30 || Environment.isExternalStorageManager()) }
 
     // ── one-time objects ──────────────────────────────────────────────────────
     val webView = remember {
@@ -171,6 +171,10 @@ fun BrowserScreen(
     }
     // asked once at the first download — without it only the in-app status row tracks yt-dlp
     val notifPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    // the default folder /dvora sits outside the app sandbox — one-time "all files" grant on API 30+
+    val grant = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        if (it.resultCode == Activity.RESULT_OK) mgr = Environment.isExternalStorageManager()
+    }
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val cb = pendingChooser ?: return@rememberLauncherForActivityResult
         pendingChooser = null
@@ -202,13 +206,15 @@ fun BrowserScreen(
 
     // ── yt-dlp ────────────────────────────────────────────────────────────────────
 
-    /** run yt-dlp on [url], saving into the downloads dir — tracked by the in-app status row and a notification. */
+    /** kick off the media download — a foreground service owns yt-dlp (survives the app closing). */
     fun startYt(given: String) {
-        if (ytProg >= 0) return
+        if (yt >= 0) return
         val url = given.substringBefore('#')     // page hash fragments are noise for yt-dlp
         ytPicker = false
         ytErr = null
-        // old APIs need the write grant on the chosen public folder first — ask, then retry
+        ytDone = null
+        // old APIs need the legacy write grant; new ones the one-time "all files" grant — the default
+        // folder /dvora sits outside the app sandbox
         if (Build.VERSION.SDK_INT < 30 &&
             ContextCompat.checkSelfPermission(
                 context,
@@ -219,109 +225,88 @@ fun BrowserScreen(
             dlPerm.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
             return
         }
+        // only a user-picked custom folder can sit outside our sandbox
+        val picked = context.getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE)
+            .getString("yt_dir", null)?.isNotBlank() ?: false
+        if (picked && Build.VERSION.SDK_INT >= 30 && !mgr) {
+            ytPending = url
+            Toast.makeText(context, localeStr(context, R.string.yt_need_store), Toast.LENGTH_LONG).show()
+            grant.launch(Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+            return
+        }
         if (Build.VERSION.SDK_INT >= 33 &&
             context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) {
-            notifPerm.launch(Manifest.permission.POST_NOTIFICATIONS)
+            notifPerm.launch(Manifest.permission.POST_NOTIFICATIONS)     // once; the download runs without too
         }
+        val dir = ytSaveDir(context) ?: run {
+            Toast.makeText(context, localeStr(context, R.string.yt_dl_fail), Toast.LENGTH_LONG).show()
+            return
+        }
+        if (!dir.exists() && !dir.mkdirs()) {
+            Toast.makeText(context, localeStr(context, R.string.yt_dl_fail), Toast.LENGTH_LONG).show()
+            return
+        }
+        yt = 0
         ytUrl = url
-        ytProg = 0
-        YtNotify.progress(context, 0, url)
-        // blocking download — must not run on the UI thread
-        ytScope.launch(Dispatchers.IO) {
-            // rolling tail of yt-dlp's own stdout/stderr — shown in the failure dialog, logged under tag dvora-yt
-            val out = StringBuilder()
-            fun note(line: String?) {
-                if (line.isNullOrBlank()) return
-                out.append(line).append('\n')
-                if (out.length > 6000) out.delete(0, out.indexOf('\n').takeIf { it > 0 } ?: 0)
-                Log.i("dvora-yt", line.takeLast(400))
-            }
-
-            val started = System.currentTimeMillis()
-            try {
-                val dir = ytSaveDir(context) ?: error("no writable media folder")
-                if (!dir.exists() && !dir.mkdirs()) error("cannot create folder ${dir.path}")
-                val req = YoutubeDLRequest(url)
-                req.addOption("-o", "${dir.path}/%(title)s.%(ext)s")
-                // best video + separate best audio when offered, else single best — merged to one mp4 by ffmpeg
-                req.addOption("-f", "bv*+ba/b")
-                req.addOption("--merge-output-format", "mp4")
-                // stale yt-dlp from a previously crashed / cancelled run under our fixed id
-                try {
-                    YoutubeDL.getInstance().destroyProcessById("dvora-media")
-                } catch (_: Exception) {
-                }
-                note("yt-dlp $url")
-                YoutubeDL.execute(req, "dvora-media") { p, _, line ->
-                    note(line)
-                    val pct = p.toInt()
-                    if (pct >= 100) {
-                        ytProg = -1
-                        val newest = dir.listFiles()?.filter { f -> f.isFile }?.maxByOrNull { f -> f.lastModified() }
-                        YtNotify.done(context, newest?.name ?: "")
-                        Handler(Looper.getMainLooper()).post {
-                            Toast.makeText(context, "⬇ ${newest?.name ?: "saved"} → ${dir.path}", Toast.LENGTH_LONG)
-                                .show()
-                        }
-                    } else if (pct >= 0) {
-                        ytProg = pct
-                        if (pct % 5 == 0) YtNotify.progress(context, pct, url)
-                    }
-                }
-                // the process ended without ever reporting ≥100 — did it still land a fresh file?
-                if (ytProg in 0..99) {
-                    val newest = dir.listFiles()?.filter { f -> f.isFile }?.maxByOrNull { f -> f.lastModified() }
-                    if (newest != null && newest.lastModified() >= started) {
-                        ytProg = -1
-                        YtNotify.done(context, newest.name)
-                        Handler(Looper.getMainLooper()).post {
-                            Toast.makeText(context, "⬇ ${newest.name} → ${dir.path}", Toast.LENGTH_LONG).show()
-                        }
-                    } else {
-                        // nothing fresh on disk — a silent failure; surface what yt-dlp said
-                        YtNotify.dismiss(context)
-                        ytErr = out.toString().takeLast(2000)
-                        ytProg = -1
-                        Handler(Looper.getMainLooper()).post {
-                            Toast.makeText(context, localeStr(context, R.string.yt_dl_fail), Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                note("EXCEPTION: ${e.stackTraceToString().takeLast(1500)}")
-                YtNotify.dismiss(context)
-                // a user cancel (stopYt / notification action) already reset ytProg — no failure toast then
-                if (ytProg >= 0) {
-                    ytErr = "${e.message ?: e}\n${out.toString().takeLast(1200)}".take(2000)
-                    ytProg = -1
-                    // toast is main-thread only — the worker coroutine crashed the app before this was fixed
-                    Handler(Looper.getMainLooper()).post {
-                        Toast.makeText(context, localeStr(context, R.string.yt_dl_fail), Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-        }
+        YtCtl.url = url
+        YtCtl.pct = 0
+        YtCtl.dir = dir.path
+        YtCtl.err = null
+        YtCtl.last = null
+        YtDownloadService.start(context, url, dir)
     }
+
 
     /** abort a running yt-dlp process — from the in-app row or the notification action */
     fun stopYt() {
-        if (ytProg < 0) return
-        try {
-            YoutubeDL.getInstance().destroyProcessById("dvora-media")
-        } catch (_: Exception) {
-        }
-        YtNotify.dismiss(context)
+        if (yt < 0) return
+        YtCtl.cancel(context)
+        yt = -1
+        ytDone = null
         Toast.makeText(context, localeStr(context, R.string.yt_cancelled), Toast.LENGTH_SHORT).show()
-        ytProg = -1
     }
 
     // resume the yt download that waited on the storage prompt — after startYt is declared above it
-    LaunchedEffect(hasStorage, ytPending) {
+    LaunchedEffect(mgr, hasStorage, ytPending) {
         val u = ytPending ?: return@LaunchedEffect
-        if (!hasStorage || ytProg >= 0) return@LaunchedEffect
+        if (yt >= 0) return@LaunchedEffect
         ytPending = null
         startYt(u)
+    }
+
+    // polls the download service — the download keeps running while the screen is disposed; row / badge / dialogs mirror it
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(400)
+            if (YtCtl.pct != yt) yt = YtCtl.pct
+            if (YtCtl.url != ytUrl) ytUrl = YtCtl.url
+            if (yt >= 100 && YtCtl.last != null && ytDone == null) ytDone = YtCtl.last
+            if (yt == -3 && YtCtl.err != null && ytErr == null) ytErr = YtCtl.err
+            val n = runCatching {
+                repo.engine.reqLog.count {
+                    !it.blocked && Media.sniff(it.url) != null && !it.url.contains(
+                        "/api/",
+                        true
+                    )
+                }
+            }.getOrDefault(0)
+            if (n != ytBadge) ytBadge = n
+        }
+    }
+
+    /** opens the folder the newest download landed in — the same target the done-notification uses. */
+    fun openDir() {
+        val dir = (YtCtl.last?.parentFile ?: ytSaveDir(context)) ?: return
+        try {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW)
+                    .setDataAndType(Uri.fromFile(dir), "resource/folder")
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        } catch (_: Exception) {
+            Toast.makeText(context, dir.path, Toast.LENGTH_LONG).show()
+        }
     }
 
     fun enqueueDownload(url: String, disposition: String?, mimeType: String?) {
@@ -601,7 +586,7 @@ fun BrowserScreen(
             }
 
             // yt-dlp download active — slim cancelable status row (shown even when the toolbar is hidden)
-            if (ytProg >= 0) {
+            if (yt in 0..99) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth().background(headerBg)
@@ -618,14 +603,14 @@ fun BrowserScreen(
                     )
                     Spacer(Modifier.width(8.dp))
                     LinearProgressIndicator(
-                        progress = { ytProg.coerceAtLeast(0) / 100f },
+                        progress = { yt / 100f },
                         modifier = Modifier.width(90.dp).height(8.dp),
                         color = BeeColors.FoundGreen,
                         trackColor = BeeColors.FoundGreen.copy(alpha = 0.15f)
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        "$ytProg%",
+                        "$yt%",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = BeeColors.FoundGreen
@@ -671,42 +656,51 @@ fun BrowserScreen(
                         Icon(Icons.Default.Home, L(R.string.cd_home), tint = BeeColors.HoneyGold)
                     }
                     IconButton(onClick = { sheetVisible = !sheetVisible }) {
-                        Box(Modifier.size(38.dp), contentAlignment = Alignment.Center) {
-                            Icon(
-                                Icons.Default.Web,
-                                L(R.string.cd_network),
-                                tint = if (blocked > 0) BeeColors.FoundGreenDark else BeeColors.HoneyGold,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            if (blocked > 0) {
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .background(BeeColors.NotFoundRed, RoundedCornerShape(8.dp))
-                                        .padding(horizontal = 4.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("$blocked", fontSize = 9.sp, color = Color.White, maxLines = 1)
-                                }
-                            }
-                        }
+                        Icon(
+                            Icons.Default.Web,
+                            L(R.string.cd_network),
+                            tint = BeeColors.HoneyGold,
+                            modifier = Modifier.size(24.dp)
+                        )
                     }
                     IconButton(onClick = {
                         when {
-                            ytProg >= 100 -> ytProg = -1     // finished → reset
-                            ytProg >= 0 -> stopYt()          // running → tap cancels
-                            else -> ytPicker = true          // idle → list captured media
+                            yt >= 100 -> {                   // done → open the downloads folder, then clear
+                                openDir()
+                                yt = -1; ytDone = null; YtCtl.reset()
+                            }
+
+                            yt in 0..99 -> stopYt()           // running → cancels
+                            else -> ytPicker = true           // idle → list captured media
                         }
                     }) {
-                        if (ytProg >= 0) {
-                            Text(
-                                if (ytProg >= 100) "✓" else "$ytProg%",
-                                fontSize = 11.sp,
-                                color = BeeColors.FoundGreen,
-                                fontWeight = FontWeight.Bold
-                            )
-                        } else {
-                            Icon(Icons.Default.Download, L(R.string.yt_cd), tint = BeeColors.FoundGreen)
+                        Box(Modifier.size(38.dp), contentAlignment = Alignment.Center) {
+                            when {
+                                yt in 0..99 -> Text(
+                                    "$yt%", fontSize = 11.sp,
+                                    color = BeeColors.FoundGreen,
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                yt >= 100 -> Text(
+                                    "✓", fontSize = 13.sp,
+                                    color = BeeColors.FoundGreen,
+                                    fontWeight = FontWeight.Bold
+                                )
+
+                                else -> Icon(Icons.Default.Download, L(R.string.yt_cd), tint = BeeColors.FoundGreen)
+                            }
+                            if (yt < 0 && ytBadge > 0) {      // media urls captured on this page → count badge
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .background(BeeColors.FoundGreen, RoundedCornerShape(8.dp))
+                                        .padding(horizontal = 4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("$ytBadge", fontSize = 9.sp, color = Color.White, maxLines = 1)
+                                }
+                            }
                         }
                     }
                     IconButton(onClick = { barVisible = false }) {
@@ -935,113 +929,11 @@ private fun mediaRank(u: String): Int = when {
     else -> 1
 }
 
-/** yt-dlp download notification — progress + cancel action, mirrors the in-app status row. */
-object YtNotify {
-    const val PROC = "dvora-media"
-    private const val CHANNEL = "yt_media"
-    private const val ID = 4241
 
-    private fun nm(ctx: Context): NotificationManager =
-        ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-    private fun can(ctx: Context): Boolean =
-        Build.VERSION.SDK_INT < 33 ||
-                ContextCompat.checkSelfPermission(
-                    ctx,
-                    Manifest.permission.POST_NOTIFICATIONS
-                ) == PackageManager.PERMISSION_GRANTED
-
-    private fun ensureChannel(ctx: Context) {
-        if (Build.VERSION.SDK_INT >= 26) {
-            val n = nm(ctx)
-            if (n.getNotificationChannel(CHANNEL) == null) {
-                n.createNotificationChannel(
-                    NotificationChannel(CHANNEL, ctx.getString(R.string.yt_down), NotificationManager.IMPORTANCE_LOW)
-                )
-            }
-        }
-    }
-
-    private val appIntent: (Context) -> PendingIntent
-        get() = { ctx ->
-            PendingIntent.getActivity(
-                ctx, 1, Intent(ctx, MainActivity::class.java),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-        }
-
-    private val cancelPi: (Context) -> PendingIntent
-        get() = { ctx ->
-            PendingIntent.getBroadcast(
-                ctx, 2, Intent(ctx, YtCancelReceiver::class.java),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-        }
-
-    fun progress(ctx: Context, pct: Int, url: String) {
-        if (!can(ctx)) return
-        try {
-            ensureChannel(ctx)
-            nm(ctx).notify(
-                ID, NotificationCompat.Builder(ctx, CHANNEL)
-                    .setContentTitle(ctx.getString(R.string.yt_down))
-                    .setContentText(url.take(120))
-                    .setSmallIcon(android.R.drawable.stat_sys_download)
-                    .setOngoing(true)
-                    .setOnlyAlertOnce(true)
-                    .setProgress(100, pct.coerceIn(0, 99), false)
-                    .addAction(
-                        NotificationCompat.Action.Builder(
-                            android.R.drawable.ic_menu_revert,
-                            ctx.getString(R.string.yt_cancel),
-                            cancelPi(ctx)
-                        ).build()
-                    )
-                    .setContentIntent(appIntent(ctx))
-                    .build()
-            )
-        } catch (_: Exception) {
-        }
-    }
-
-    fun done(ctx: Context, name: String) {
-        if (!can(ctx)) return
-        try {
-            ensureChannel(ctx)
-            val n = nm(ctx)
-            n.notify(
-                ID, NotificationCompat.Builder(ctx, CHANNEL)
-                    .setContentTitle(ctx.getString(R.string.yt_done))
-                    .setContentText(name)
-                    .setSmallIcon(android.R.drawable.stat_sys_download)
-                    .setProgress(100, 100, false)
-                    .setAutoCancel(true)
-                    .setContentIntent(appIntent(ctx))
-                    .build()
-            )
-            // tidy up after a few seconds — the file is already on disk, no need to keep the note
-            Handler(Looper.getMainLooper()).postDelayed({ n.cancel(ID) }, 8000)
-        } catch (_: Exception) {
-        }
-    }
-
-    fun dismiss(ctx: Context) {
-        if (!can(ctx)) return
-        try {
-            nm(ctx).cancel(ID)
-        } catch (_: Exception) {
-        }
-    }
-}
-
-/** notification cancel action — kills the yt-dlp process by its process id. */
+/** notification cancel action — kills the yt-dlp process + stops the download service. */
 class YtCancelReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
-        try {
-            YoutubeDL.getInstance().destroyProcessById(YtNotify.PROC)
-        } catch (_: Exception) {
-        }
-        YtNotify.dismiss(context)
+        YtCtl.cancel(context)
         Toast.makeText(context, "cancelled", Toast.LENGTH_SHORT).show()
     }
 }

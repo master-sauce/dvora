@@ -1,15 +1,22 @@
 package com.dvora.dvora20
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import android.webkit.CookieManager
 import android.webkit.WebStorage
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Refresh
@@ -55,9 +62,39 @@ fun BrowserTab(repo: ListRepo) {
         }
     }
     var confirmClear by remember { mutableStateOf(false) }
-    // where yt-dlp saves captured media — pickable row below
-    var ytFolder by remember { mutableStateOf(prefs.getString("yt_folder", "download") ?: "download") }
+    // where yt-dlp saves captured media — wizard dialog (folder picker / reset / grant)
     var ytFolderDlg by remember { mutableStateOf(false) }
+    var ytPick by remember { mutableStateOf(false) }
+    val grant = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
+    val tree = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                )
+            }
+            val p = uri.path ?: ""
+            prefs.edit().putString(
+                "yt_dir", if (p.startsWith("/storage/")) p
+                else p.substringAfter("primary:", "").let { if (it.startsWith("/")) it else "/$it" }).apply()
+            // a picked folder is only reachable via direct File IO once the
+            // one-time "all files" grant exists — ask for it if not yet
+            if (Build.VERSION.SDK_INT >= 30 && !Environment.isExternalStorageManager())
+                grant.launch(Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+        }
+        ytPick = false
+    }
+    // fire the picker exactly once per flip — a plain `if (ytPick) launch()` would
+    // re-launch on every recomposition (the 900ms ticker keeps the scope hot)
+    LaunchedEffect(ytPick) {
+        if (ytPick) {
+            ytPick = false
+            tree.launch(null)
+        }
+    }
+    // resolved folder (re-read every tick so external changes show up)
+    val curDir = remember(tick) { ytSaveDir(context)?.path ?: "" }
 
     // live UI state — flipped instantly on tap, prefs written straight behind it
     var master by remember { mutableStateOf(repo.isMaster()) }
@@ -219,16 +256,7 @@ fun BrowserTab(repo: ListRepo) {
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(L(R.string.yt_folder_pick), fontSize = 12.sp, color = textColor)
-                Text(
-                    when (ytFolder) {
-                        "movies" -> L(R.string.yt_fold_movies)
-                        "dcim" -> L(R.string.yt_fold_dcim)
-                        "music" -> L(R.string.yt_fold_music)
-                        else -> L(R.string.yt_fold_download)
-                    },
-                    fontSize = 10.sp,
-                    color = subColor
-                )
+                Text(curDir, fontSize = 10.sp, color = subColor)
             }
             Text("›", fontSize = 20.sp, color = BeeColors.DeepAmber)
         }
@@ -252,22 +280,48 @@ fun BrowserTab(repo: ListRepo) {
             title = { Text(L(R.string.yt_folder_title), color = BeeColors.HoneyGold) },
             text = {
                 Column {
-                    listOf(
-                        "download" to R.string.yt_fold_download,
-                        "movies" to R.string.yt_fold_movies,
-                        "dcim" to R.string.yt_fold_dcim,
-                        "music" to R.string.yt_fold_music
-                    ).forEach { (key, label) ->
-                        BeeRadioOption(
-                            L(label),
-                            ytFolder == key,
-                            {
-                                ytFolder = key
-                                prefs.edit().putString("yt_folder", key).apply()
-                                ytFolderDlg = false
-                            },
-                            Modifier.fillMaxWidth().padding(vertical = 3.dp)
+                    Text(curDir, fontSize = 10.sp, color = subColor, modifier = Modifier.padding(bottom = 6.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                            .clickable { ytPick = true }
+                            .padding(vertical = 8.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.FolderOpen,
+                            null,
+                            tint = BeeColors.HoneyGold,
+                            modifier = Modifier.size(18.dp)
                         )
+                        Spacer(Modifier.width(10.dp))
+                        Text(L(R.string.yt_dir_change), fontSize = 13.sp, color = textColor)
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                            .clickable {
+                                prefs.edit().putString("yt_dir", "").apply()
+                                ytFolderDlg = false
+                            }
+                            .padding(vertical = 8.dp)
+                    ) {
+                        Icon(Icons.Default.Refresh, null, tint = BeeColors.HoneyGold, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text(L(R.string.yt_dir_reset), fontSize = 13.sp, color = textColor)
+                    }
+                    if (Build.VERSION.SDK_INT >= 30 && !Environment.isExternalStorageManager()) {
+                        Text(
+                            L(R.string.yt_dir_grant_msg),
+                            fontSize = 11.sp,
+                            color = subColor,
+                            modifier = Modifier.padding(top = 10.dp, start = 4.dp)
+                        )
+                        TextButton(onClick = {
+                            ytFolderDlg = false
+                            grant.launch(Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
+                        }) {
+                            Text(L(R.string.yt_dir_grant), color = BeeColors.HoneyGold)
+                        }
                     }
                 }
             },
