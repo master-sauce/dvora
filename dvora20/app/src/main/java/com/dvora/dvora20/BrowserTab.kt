@@ -5,11 +5,13 @@ import android.webkit.CookieManager
 import android.webkit.WebStorage
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -53,6 +55,9 @@ fun BrowserTab(repo: ListRepo) {
         }
     }
     var confirmClear by remember { mutableStateOf(false) }
+    // where yt-dlp saves captured media — pickable row below
+    var ytFolder by remember { mutableStateOf(prefs.getString("yt_folder", "download") ?: "download") }
+    var ytFolderDlg by remember { mutableStateOf(false) }
 
     // live UI state — flipped instantly on tap, prefs written straight behind it
     var master by remember { mutableStateOf(repo.isMaster()) }
@@ -200,6 +205,35 @@ fun BrowserTab(repo: ListRepo) {
         }
         Spacer(Modifier.height(14.dp))
 
+        // ── where yt-dlp saves captured media ─────────────────────────────────
+        Text(L(R.string.yt_folder_lbl), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textColor)
+        Spacer(Modifier.height(4.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth().height(46.dp)
+                .background(beeAdapt(BeeColors.WaxWhite, BeeColors.DarkStripe), RoundedCornerShape(10.dp))
+                .clickable { ytFolderDlg = true }
+                .padding(horizontal = 12.dp)
+        ) {
+            Icon(Icons.Default.Folder, null, tint = BeeColors.HoneyGold, modifier = Modifier.size(20.dp))
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(L(R.string.yt_folder_pick), fontSize = 12.sp, color = textColor)
+                Text(
+                    when (ytFolder) {
+                        "movies" -> L(R.string.yt_fold_movies)
+                        "dcim" -> L(R.string.yt_fold_dcim)
+                        "music" -> L(R.string.yt_fold_music)
+                        else -> L(R.string.yt_fold_download)
+                    },
+                    fontSize = 10.sp,
+                    color = subColor
+                )
+            }
+            Text("›", fontSize = 20.sp, color = BeeColors.DeepAmber)
+        }
+        Spacer(Modifier.height(14.dp))
+
         // ── browsing data ─────────────────────────────────────────────────────
         Button(
             onClick = { confirmClear = true },
@@ -209,6 +243,41 @@ fun BrowserTab(repo: ListRepo) {
         ) {
             Text(L(R.string.btab_clear), fontWeight = FontWeight.Bold)
         }
+    }
+
+    // ── pick the media download folder ────────────────────────────────────────
+    if (ytFolderDlg) {
+        AlertDialog(
+            onDismissRequest = { ytFolderDlg = false },
+            title = { Text(L(R.string.yt_folder_title), color = BeeColors.HoneyGold) },
+            text = {
+                Column {
+                    listOf(
+                        "download" to R.string.yt_fold_download,
+                        "movies" to R.string.yt_fold_movies,
+                        "dcim" to R.string.yt_fold_dcim,
+                        "music" to R.string.yt_fold_music
+                    ).forEach { (key, label) ->
+                        BeeRadioOption(
+                            L(label),
+                            ytFolder == key,
+                            {
+                                ytFolder = key
+                                prefs.edit().putString("yt_folder", key).apply()
+                                ytFolderDlg = false
+                            },
+                            Modifier.fillMaxWidth().padding(vertical = 3.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { ytFolderDlg = false }) {
+                    Text(L(R.string.cancel), color = BeeColors.DeepAmber)
+                }
+            }
+        )
     }
 
     // ── confirm the destructive clear ─────────────────────────────────────────

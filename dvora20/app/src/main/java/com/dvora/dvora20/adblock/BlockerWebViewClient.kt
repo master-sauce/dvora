@@ -126,11 +126,11 @@ class BlockerWebViewClient(
         ResourceKind.IMAGE -> "img"
         ResourceKind.XHR -> "api"
         else -> {
-            val ext = (req.url.path ?: "").lowercase().substringAfterLast('.')
+            val url = req.url.toString()
             val accept = (req.requestHeaders["Accept"] ?: "").lowercase()
-            if (ext in MEDIA_EXT || accept.contains("video/") || accept.contains("audio/") ||
-                accept.contains("mpegurl")
-            ) "media" else "req"
+            // the sniffer decides which requests are downloadable media
+            // (playlists / manifests / direct videos / segments), header hint kept
+            if (Media.sniff(url) != null || accept.contains("video/") || accept.contains("audio/")) "media" else "req"
         }
     }
 
@@ -149,14 +149,7 @@ class BlockerWebViewClient(
         return WebResourceResponse(mime, "UTF-8", 204, "Blocked by Dvora", headers, ByteArrayInputStream(ByteArray(0)))
     }
 
-    private companion object {
-        val MEDIA_EXT = setOf(
-            "mp4", "webm", "m3u8", "m4s", "m4a", "m4v", "ogv", "ogg", "mp3", "wav",
-            "flv", "avi", "mkv", "mov", "aac", "vtt", "srt", "ass", "ts"
-        )
-    }
-
-    // ── page lifecycle ────────────────────────────────────────────────────────
+    // ── page lifecycle ────────────────────────────────────────────────────────────────
 
     override fun onPageStarted(view: WebView?, url: String?, faviconBitmap: Bitmap?) {
         if (url.isNullOrBlank()) return
