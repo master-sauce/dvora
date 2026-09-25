@@ -54,8 +54,11 @@ fun BrowserTab(repo: ListRepo, onToggleLang: () -> Unit) {
     }
     var confirmClear by remember { mutableStateOf(false) }
 
-    val lang = prefs.getString("ui_lang", "en") ?: "en"
-    val useDvora = prefs.getBoolean("use_dvora_browser", false)
+    // live UI state — flipped instantly on tap, prefs written straight behind it
+    var master by remember { mutableStateOf(repo.isMaster()) }
+    var listOn by remember { mutableStateOf(ListInfo.all.map { repo.isEnabled(it) }) }
+    var useDvora by remember { mutableStateOf(prefs.getBoolean("use_dvora_browser", false)) }
+    val lang = LocalUiLang.current.value
 
     fun statusLine(l: ListInfo): String {
         val msg = repo.statuses[l] ?: ""
@@ -97,8 +100,8 @@ fun BrowserTab(repo: ListRepo, onToggleLang: () -> Unit) {
                 Text(L(R.string.btab_hint), fontSize = 10.sp, color = subColor)
             }
             Switch(
-                checked = repo.isMaster(),
-                onCheckedChange = { repo.setMaster(it) },
+                checked = master,
+                onCheckedChange = { master = it; repo.setMaster(it) },
                 colors = SwitchDefaults.colors(
                     checkedTrackColor = BeeColors.FoundGreen,
                     uncheckedTrackColor = BeeColors.DeepAmber.copy(alpha = 0.4f),
@@ -132,9 +135,13 @@ fun BrowserTab(repo: ListRepo, onToggleLang: () -> Unit) {
                         modifier = Modifier.size(18.dp)
                     )
                 }
+                val idx = ListInfo.all.indexOf(l)
                 Switch(
-                    checked = repo.isEnabled(l),
-                    onCheckedChange = { repo.setEnabled(l, it) },
+                    checked = listOn[idx],
+                    onCheckedChange = {
+                        listOn = listOn.toMutableList().apply { set(idx, it) }
+                        repo.setEnabled(l, it)
+                    },
                     colors = SwitchDefaults.colors(
                         checkedTrackColor = BeeColors.HoneyGold,
                         uncheckedTrackColor = BeeColors.DeepAmber.copy(alpha = 0.3f),
@@ -176,8 +183,8 @@ fun BrowserTab(repo: ListRepo, onToggleLang: () -> Unit) {
                 L(R.string.btab_link_ext),
                 !useDvora,
                 {
+                    useDvora = false
                     prefs.edit().putBoolean("use_dvora_browser", false).apply()
-                    tick++
                 },
                 Modifier.weight(1f)
             )
@@ -186,8 +193,8 @@ fun BrowserTab(repo: ListRepo, onToggleLang: () -> Unit) {
                 L(R.string.btab_link_dvora),
                 useDvora,
                 {
+                    useDvora = true
                     prefs.edit().putBoolean("use_dvora_browser", true).apply()
-                    tick++
                 },
                 Modifier.weight(1f)
             )

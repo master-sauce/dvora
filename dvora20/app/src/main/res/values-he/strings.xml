@@ -35,12 +35,26 @@
     <string name="dl_started_desc">הורדת דבורה</string>
     <string name="dl_failed">לא ניתן להתחיל את ההורדה</string>
 
+    <!-- אישור ניווט בין־אתרי -->
+    <string name="nav_title">לצאת מהאתר הנוכחי?</string>
+    <string name="nav_go">המשך לאתר</string>
+
     <!-- shield bottom sheet -->
     <string name="sheet_blocked_page">נחסמו בעמוד זה</string>
     <string name="sheet_lifetime">נחסמו מאז ההתקנה</string>
     <string name="sheet_allowed">אתר מורשה — החסימה כבויה לדומין זה</string>
     <string name="sheet_log">נחסמו בעמוד זה</string>
     <string name="sheet_log_empty">כרגע לא נחסם כלום בעמוד זה</string>
+
+    <!-- לוח משאבי העמוד -->
+    <string name="cd_network">כל בקשות העמוד — פרטים</string>
+    <string name="chip_all">הכל</string>
+    <string name="chip_blocked">נחסמו</string>
+    <string name="chip_api">api</string>
+    <string name="chip_media">מדיה</string>
+    <string name="rs_req">בקשות</string>
+    <string name="rs_blocked">נחסמו</string>
+    <string name="rs_empty">אין עדיין בקשות בעמוד זה</string>
 
     <!-- settings › browser tab -->
     <string name="btab_title">חסימת פרסומות ומוערכים</string>

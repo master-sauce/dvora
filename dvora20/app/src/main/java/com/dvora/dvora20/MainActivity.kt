@@ -583,70 +583,73 @@ fun DvoraApp(onToggleDarkMode: () -> Unit, onToggleLang: () -> Unit) {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("🐝", fontSize = 22.sp, modifier = Modifier.padding(end = 8.dp))
-                        Text(
-                            text = "DVORA",
-                            fontSize = 12.sp, // Add this line
-                            fontWeight = FontWeight.ExtraBold,
-                            letterSpacing = 4.sp,
-                            color = BeeColors.HoneyGold
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = headerBg,
-                    titleContentColor = BeeColors.HoneyGold,
-                    actionIconContentColor = BeeColors.HoneyGold
-                ),
-                actions = {
-                    IconButton(onClick = {
-                        showSubtitles = true; showSettings = false; showImdb = false; showBookmarks = false
-                    }) {
-                        Icon(Icons.Default.Subtitles, "Subtitles", tint = BeeColors.HoneyGold)
-                    }
-                    IconButton(onClick = {
-                        showImdb = true; showSubtitles = false; showSettings = false; showBookmarks = false
-                    }) {
-                        Box(
-                            Modifier.size(40.dp).padding(6.dp).background(Color(0xFFF5C518), RoundedCornerShape(4.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("IMDb", fontSize = 7.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black)
+            if (!showBrowser) {
+                TopAppBar(
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("🐝", fontSize = 22.sp, modifier = Modifier.padding(end = 8.dp))
+                            Text(
+                                text = "DVORA",
+                                fontSize = 12.sp, // Add this line
+                                fontWeight = FontWeight.ExtraBold,
+                                letterSpacing = 4.sp,
+                                color = BeeColors.HoneyGold
+                            )
                         }
-                    }
-                    val hasReminders = BookmarksManager.bookmarks.any { it.reminderDate != null }
-                    IconButton(onClick = {
-                        showBookmarks = true; showSubtitles = false; showSettings = false; showImdb = false
-                    }) {
-                        Box {
-                            Icon(Icons.Default.Bookmarks, "Bookmarks", tint = BeeColors.HoneyGold)
-                            if (hasReminders) {
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .size(10.dp)
-                                        .background(BeeColors.DeepAmber, RoundedCornerShape(5.dp))
-                                )
+                    },
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = headerBg,
+                        titleContentColor = BeeColors.HoneyGold,
+                        actionIconContentColor = BeeColors.HoneyGold
+                    ),
+                    actions = {
+                        IconButton(onClick = {
+                            showSubtitles = true; showSettings = false; showImdb = false; showBookmarks = false
+                        }) {
+                            Icon(Icons.Default.Subtitles, "Subtitles", tint = BeeColors.HoneyGold)
+                        }
+                        IconButton(onClick = {
+                            showImdb = true; showSubtitles = false; showSettings = false; showBookmarks = false
+                        }) {
+                            Box(
+                                Modifier.size(40.dp).padding(6.dp)
+                                    .background(Color(0xFFF5C518), RoundedCornerShape(4.dp)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("IMDb", fontSize = 7.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black)
                             }
                         }
+                        val hasReminders = BookmarksManager.bookmarks.any { it.reminderDate != null }
+                        IconButton(onClick = {
+                            showBookmarks = true; showSubtitles = false; showSettings = false; showImdb = false
+                        }) {
+                            Box {
+                                Icon(Icons.Default.Bookmarks, "Bookmarks", tint = BeeColors.HoneyGold)
+                                if (hasReminders) {
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .size(10.dp)
+                                            .background(BeeColors.DeepAmber, RoundedCornerShape(5.dp))
+                                    )
+                                }
+                            }
+                        }
+                        IconButton(onClick = {
+                            browserUrl = "https://duckduckgo.com/"
+                            showBrowser = true; showSubtitles = false; showSettings = false; showImdb =
+                            false; showBookmarks = false
+                        }) {
+                            Icon(Icons.Default.Public, L(R.string.cd_browser), tint = BeeColors.HoneyGold)
+                        }
+                        IconButton(onClick = {
+                            showSettings = true; showSubtitles = false; showImdb = false; showBookmarks = false
+                        }) {
+                            Icon(Icons.Default.Settings, "Settings", tint = BeeColors.HoneyGold)
+                        }
                     }
-                    IconButton(onClick = {
-                        browserUrl = "https://www.globes.co.il/"
-                        showBrowser = true; showSubtitles = false; showSettings = false; showImdb =
-                        false; showBookmarks = false
-                    }) {
-                        Icon(Icons.Default.Public, L(R.string.cd_browser), tint = BeeColors.HoneyGold)
-                    }
-                    IconButton(onClick = {
-                        showSettings = true; showSubtitles = false; showImdb = false; showBookmarks = false
-                    }) {
-                        Icon(Icons.Default.Settings, "Settings", tint = BeeColors.HoneyGold)
-                    }
-                }
-            )
+                )
+            }
         },
         containerColor = scaffoldBg,
         modifier = Modifier.fillMaxSize()
@@ -664,7 +667,7 @@ fun DvoraApp(onToggleDarkMode: () -> Unit, onToggleLang: () -> Unit) {
                 repo = repo,
                 onBack = { showBrowser = false },
                 onToggleDark = onToggleDarkMode,
-                modifier = Modifier.padding(innerPadding)
+                modifier = Modifier.fillMaxSize()
             )
 
             showSettings -> SettingsScreen(

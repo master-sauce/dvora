@@ -1,7 +1,7 @@
 package com.dvora.dvora20.adblock
 
 /** The subset of resource kinds this engine understands for $kind options. */
-enum class ResourceKind { SCRIPT, IMAGE, STYLESHEET, XHR, SUBDOCUMENT, FRAME, OBJECT, DOCUMENT, POPUP, OTHER }
+enum class ResourceKind { SCRIPT, IMAGE, STYLESHEET, XHR, SUBDOCUMENT, FRAME, OBJECT, DOCUMENT, POPUP, WEBSOCKET, OTHER }
 
 object Kinds {
     fun of(name: String): ResourceKind = when (name.trim().lowercase()) {
@@ -14,6 +14,7 @@ object Kinds {
         "swf", "flash", "media", "video", "audio" -> ResourceKind.OBJECT
         "document", "mainframe" -> ResourceKind.DOCUMENT
         "popup", "webrtc", "elemhide" -> ResourceKind.POPUP
+        "websocket", "ws", "wss" -> ResourceKind.WEBSOCKET    // never matches an http(s) request
         else -> ResourceKind.OTHER
     }
 }

@@ -32,28 +32,40 @@ class BlockerWebViewClient(
 
     // ── UI callbacks ──────────────────────────────────────────────────────────
     var onUrl: (String) -> Unit = {}
-    var onPageStart: (String) -> Unit = {}      // page doc host, after counters were reset
+    var onPageStart: (String, String) -> Unit = { _, _ -> }    // (page doc host, url), after counters were reset
     var onPageEnd: () -> Unit = {}
     var onBlocked: () -> Unit = {}              // page-block counter just moved → refresh badge
+    var onActivity: () -> Unit = {}             // another page request happened → live the resources panel
+    var onCrossNav: ((String, String) -> Unit)? = null   // (target url, host) — confirm-site-change dialog
     var onSsl: ((Uri?, SslErrorHandler) -> Unit)? = null
 
     @Volatile
-    private var docHost: String = ""
+    var docHost: String = ""                     // current page's host (set from outside on approved cross-nav)
 
-    // ── navigation ────────────────────────────────────────────────────────────
+    // ── navigation ────────────────────────────────────────────────────────────────
 
     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest): Boolean {
         val uri = request.url
-        onUrl(uri.toString())
         val scheme = (uri.scheme ?: "").lowercase()
-        if (scheme == "http" || scheme == "https") return false    // stays inside the app's WebView
-        // mailto: / tel: / sms: / geo: / market: / stremio: / intent: … → appropriate external app
-        try {
-            appCtx.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        } catch (_: Exception) {
-            // no installed handler — ignore
+        if (scheme !in setOf("http", "https")) {
+            // mailto: / tel: / sms: / geo: / market: / stremio: / intent: … → appropriate external app
+            try {
+                appCtx.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            } catch (_: Exception) {
+                // no installed handler — ignore
+            }
+            return true
         }
-        return true
+        onUrl(uri.toString())
+        val newHost = (uri.host ?: "").lowercase()
+        // an actual site change (different registrable domain) while browsing → ask the user
+        if (docHost.isNotEmpty() && newHost.isNotEmpty() &&
+            BlockerEngine.registrable(newHost) != BlockerEngine.registrable(docHost)
+        ) {
+            onCrossNav?.invoke(uri.toString(), (uri.host ?: ""))
+            return true                            // cancelled — the UI loads it again on approve
+        }
+        return false                               // same site → stays inside the app's WebView
     }
 
     // ── filtering ─────────────────────────────────────────────────────────────
@@ -71,10 +83,20 @@ class BlockerWebViewClient(
         if (engine.totalRules + engine.totalException == 0) return null                  // lists still loading
 
         val kind = kindOf(request)
-        val rule =
-            engine.match(uri.toString(), host, kind, docHost) ?: return null      // null = allow / exception wins
-        onBlocked()
-        return empty(kind)
+        val tag = tagOf(request, kind)
+        val url = uri.toString()
+        val rule = engine.match(url, host, kind, docHost)        // null = allow / exception wins
+        when {
+            rule != null -> {
+                engine.noteReq(tag, url, true, "${rule.pattern()} — ${rule.list}")
+                onBlocked()
+                return empty(kind)
+            }
+
+            else -> engine.noteReq(tag, url, false, "")
+        }
+        onActivity()
+        return null
     }
 
     private fun kindOf(req: WebResourceRequest): ResourceKind {
@@ -94,6 +116,23 @@ class BlockerWebViewClient(
         }
     }
 
+    /** display tag for the resources panel: page / js / css / img / frame / api / media / req */
+    private fun tagOf(req: WebResourceRequest, kind: ResourceKind): String = when (kind) {
+        ResourceKind.DOCUMENT -> "page"
+        ResourceKind.SUBDOCUMENT -> "frame"
+        ResourceKind.SCRIPT -> "js"
+        ResourceKind.STYLESHEET -> "css"
+        ResourceKind.IMAGE -> "img"
+        ResourceKind.XHR -> "api"
+        else -> {
+            val ext = (req.url.path ?: "").lowercase().substringAfterLast('.')
+            val accept = (req.requestHeaders["Accept"] ?: "").lowercase()
+            if (ext in MEDIA_EXT || accept.contains("video/") || accept.contains("audio/") ||
+                accept.contains("mpegurl")
+            ) "media" else "req"
+        }
+    }
+
     private fun empty(kind: ResourceKind): WebResourceResponse {
         val mime = when (kind) {
             ResourceKind.IMAGE -> "image/png"
@@ -109,6 +148,13 @@ class BlockerWebViewClient(
         return WebResourceResponse(mime, "UTF-8", 204, "Blocked by Dvora", headers, ByteArrayInputStream(ByteArray(0)))
     }
 
+    private companion object {
+        val MEDIA_EXT = setOf(
+            "mp4", "webm", "m3u8", "m4s", "m4a", "m4v", "ogv", "ogg", "mp3", "wav",
+            "flv", "avi", "mkv", "mov", "aac", "vtt", "srt", "ass", "ts"
+        )
+    }
+
     // ── page lifecycle ────────────────────────────────────────────────────────
 
     override fun onPageStarted(view: WebView?, url: String?, faviconBitmap: Bitmap?) {
@@ -120,8 +166,8 @@ class BlockerWebViewClient(
         }
         if ((uri.scheme ?: "").lowercase() !in setOf("http", "https")) return
         docHost = (uri.host ?: "").lowercase()
-        repo.engine.newPage()          // fresh per-page block counters / log
-        onPageStart(docHost)
+        repo.engine.newPage()          // fresh per-page counters / logs
+        onPageStart(docHost, url)
     }
 
     override fun onPageFinished(view: WebView?, url: String?) {

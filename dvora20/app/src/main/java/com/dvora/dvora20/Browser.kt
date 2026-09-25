@@ -61,7 +61,7 @@ import com.dvora.dvora20.adblock.Whitelist
 import java.io.File
 
 /** default page shown when the top-bar browser button is tapped. */
-const val BROWSER_HOME = "https://www.globes.co.il/"
+const val BROWSER_HOME = "https://duckduckgo.com/"
 
 /**
  * The full-screen, in-app, bee-themed browser with the built-in
@@ -97,13 +97,12 @@ fun BrowserScreen(
     var ssl by remember { mutableStateOf<Pair<Uri?, SslErrorHandler>?>(null) }
     var pendingChooser by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
     var sheetVisible by remember { mutableStateOf(false) }
+    var crossNav by remember { mutableStateOf<Pair<String, String>?>(null) }   // (url, host) awaiting confirm
+    var resTick by remember { mutableIntStateOf(0) }                           // bumps live while the panel is open
     var hasStorage by remember { mutableStateOf(Build.VERSION.SDK_INT >= 29) }
 
     // the whole site's whitelist — kept live; the interceptor reads this supplier per request
     var allowed by remember { mutableStateOf(Whitelist.hosts(context)) }
-    val hostAllowed = pageHost.isNotEmpty() && allowed.any { pageHost == it || pageHost.endsWith(".$it") }
-
-    val faviconBmp = remember(favicon) { favicon?.asImageBitmap() }
 
     // ── one-time objects ──────────────────────────────────────────────────────
     val webView = remember {
@@ -211,13 +210,17 @@ fun BrowserScreen(
         chrome.onProgress = { progress = it }
         chrome.onIcon = { favicon = it }
         client.onUrl = { address = it }
-        client.onPageStart = { host ->
+        client.onPageStart = { host, url ->
             pageHost = host
             pageTitle = ""
             favicon = null
             blocked = 0
             blockLog = emptyList()
+            address =
+                url                              // bar always tracks the page actually loaded (redirects / history)
         }
+        client.onActivity = { if (sheetVisible) resTick++ }
+        client.onCrossNav = { url, host -> crossNav = url to host }
         client.onPageEnd = {
             blockLog = repo.engine.pageLog.toList()
             blocked = repo.engine.pageBlocks
@@ -233,7 +236,10 @@ fun BrowserScreen(
     }
 
     BackHandler {
-        if (webView.canGoBack()) webView.goBack() else onBack()   // page history first, then exit
+        if (sheetVisible) {
+            sheetVisible = false; return@BackHandler
+        }   // shield panel closes first
+        if (webView.canGoBack()) webView.goBack() else onBack()          // then page history, then exit
     }
 
     fun go() {
@@ -277,50 +283,49 @@ fun BrowserScreen(
         )
     }
 
-    // ── UI ────────────────────────────────────────────────────────────────────
-    Box(modifier = modifier.fillMaxSize().background(pageBg)) {
-        Column(Modifier.fillMaxSize()) {
-            // header — back / favicon + title / theme
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().background(headerBg).padding(4.dp)
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = L(R.string.cd_back),
-                        tint = BeeColors.HoneyGold
+    // ── cross-site confirm — asked whenever a page link would change the site ──
+    crossNav?.let { (url, host) ->
+        AlertDialog(
+            onDismissRequest = { crossNav = null; address = webView.url ?: "" },
+            title = { Text(L(R.string.nav_title), color = BeeColors.HoneyGold) },
+            text = {
+                Column {
+                    Text(
+                        host,
+                        color = textColor,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
+                    Spacer(Modifier.height(6.dp))
+                    Text(url, color = subColor, fontSize = 10.sp, maxLines = 2)
                 }
-                if (faviconBmp != null) {
-                    Image(
-                        bitmap = faviconBmp!!,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp),
-                        contentScale = ContentScale.Fit
-                    )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    // follow-up redirects of the approved host must not re-prompt
+                    client.docHost = Uri.parse(url).host?.lowercase() ?: ""
+                    crossNav = null
+                    webView.loadUrl(url)
+                }) {
+                    Text(L(R.string.nav_go), color = BeeColors.DeepAmber, fontWeight = FontWeight.Bold)
                 }
-                Text(
-                    pageTitle.ifEmpty { pageHost },
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = BeeColors.HoneyGold,
-                    maxLines = 1,
-                    modifier = Modifier.weight(1f).padding(horizontal = 8.dp)
-                )
-                IconButton(onClick = onToggleDark) {
-                    Icon(
-                        if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode,
-                        contentDescription = L(R.string.cd_theme),
-                        tint = BeeColors.HoneyGold
-                    )
+            },
+            dismissButton = {
+                TextButton(onClick = { crossNav = null; address = webView.url ?: "" }) {
+                    Text(L(R.string.cancel), color = BeeColors.DeepAmber)
                 }
             }
+        )
+    }
 
-            // toolbar — history / address bar / GO / shield
+    // ── UI ──────────────────────────────────────────────────────────────────────
+    // edge-to-edge; only the top toolbar avoids the status bar — one row, maximised page area
+    Box(modifier = modifier.fillMaxSize().background(pageBg)) {
+        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+            // toolbar — history / address bar / GO / page resources
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 5.dp).background(headerBg)
             ) {
                 IconButton(onClick = { if (webView.canGoBack()) webView.goBack() }, enabled = webView.canGoBack()) {
                     Icon(
@@ -343,7 +348,7 @@ fun BrowserScreen(
                 OutlinedTextField(
                     value = address,
                     onValueChange = { address = it },
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).height(48.dp),
                     singleLine = true,
                     colors = beeTextFieldColors(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
@@ -353,16 +358,19 @@ fun BrowserScreen(
                             Icon(
                                 Icons.Default.PlayArrow,
                                 L(R.string.cd_go),
-                                tint = BeeColors.HoneyGold
+                                tint = BeeColors.HoneyGold,
+                                modifier = Modifier.size(26.dp)
                             )
                         }
                     }
                 )
                 IconButton(onClick = { sheetVisible = !sheetVisible }) {
-                    Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(38.dp), contentAlignment = Alignment.Center) {
                         Icon(
-                            Icons.Default.Shield, L(R.string.cd_shield),
-                            tint = if (blocked > 0) BeeColors.FoundGreenDark else BeeColors.HoneyGold
+                            Icons.Default.Web,
+                            L(R.string.cd_network),
+                            tint = if (blocked > 0) BeeColors.FoundGreenDark else BeeColors.HoneyGold,
+                            modifier = Modifier.size(24.dp)
                         )
                         if (blocked > 0) {
                             Box(
@@ -394,7 +402,7 @@ fun BrowserScreen(
             )
         }
 
-        // the slide-up per-site shield / whitelist panel
+        // the slide-up page-resources panel — every request of this page, api / media first-class
         AnimatedVisibility(
             visible = sheetVisible,
             enter = slideInVertically { 0 },
@@ -402,33 +410,16 @@ fun BrowserScreen(
             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
         ) {
             Box(
-                Modifier.fillMaxWidth().background(
+                Modifier.navigationBarsPadding().fillMaxWidth().background(
                     beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell),
                     RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
                 )
             ) {
-                ShieldSheet(
+                ResourceSheet(
                     host = pageHost,
-                    blocking = !hostAllowed,
-                    blocked = blocked,
-                    log = blockLog,
+                    log = remember(resTick, sheetVisible) { repo.engine.reqLog.toList() },
+                    blocked = repo.engine.pageBlocks,
                     lifetime = repo.engine.lifetime,
-                    onToggle = { on ->
-                        val host = BlockerEngine.registrable(pageHost)
-                        if (host.isNotEmpty()) {
-                            if (on) {
-                                if (allowed.any { host == it || host.endsWith(".$it") }) {
-                                    allowed = allowed.filter { !(host == it || host.endsWith(".$it")) }
-                                    Whitelist.remove(context, host)
-                                }
-                            } else {
-                                if (!allowed.any { host == it || host.endsWith(".$it") }) {
-                                    allowed = allowed + host
-                                    Whitelist.add(context, host)
-                                }
-                            }
-                        }
-                    },
                     onClose = { sheetVisible = false }
                 )
             }
@@ -437,29 +428,37 @@ fun BrowserScreen(
 }
 
 /**
- * The panel opened by the toolbar shield button: per-site allow /
- * block toggle (persisted), this page's block list (url + matched rule + list),
- * and the lifetime block counter.
+ * The panel opened by the toolbar resources button: EVERY request of this
+ * page — page / js / css / img / frame / api / media — with live filters,
+ * rule + list for each blocked one, and the lifetime counter.
  */
 @Composable
-private fun ShieldSheet(
+private fun ResourceSheet(
     host: String,
-    blocking: Boolean,
+    log: List<BlockerEngine.ReqRecord>,
     blocked: Int,
-    log: List<BlockerEngine.BlockRecord>,
     lifetime: Long,
-    onToggle: (Boolean) -> Unit,
     onClose: () -> Unit
 ) {
     val textColor = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
     val subColor = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.7f))
     val rowBg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkStripe)
+    var filter by remember { mutableStateOf("all") }
 
-    Column(Modifier.fillMaxWidth().padding(16.dp).verticalScroll(rememberScrollState())) {
+    val shown = remember(log, filter) {
+        when (filter) {
+            "blocked" -> log.filter { it.blocked }
+            "api" -> log.filter { it.tag == "api" }
+            "media" -> log.filter { it.tag == "media" }
+            else -> log
+        }
+    }
+
+    Column(Modifier.fillMaxWidth().height(560.dp).padding(horizontal = 14.dp, vertical = 12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    "🛡 " + host,
+                    "📡 $host",
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     color = textColor,
@@ -467,50 +466,87 @@ private fun ShieldSheet(
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    if (blocking) {
-                        "${blocked} ${L(R.string.sheet_blocked_page)} · ${lifetime} ${L(R.string.sheet_lifetime)}"
-                    } else L(R.string.sheet_allowed),
-                    fontSize = 11.sp,
-                    color = subColor
+                    "${log.size} ${L(R.string.rs_req)} · $blocked ${L(R.string.rs_blocked)} · ${lifetime} ${L(R.string.sheet_lifetime)}",
+                    fontSize = 10.sp,
+                    color = subColor,
+                    maxLines = 1
                 )
             }
-            Switch(
-                checked = blocking,
-                onCheckedChange = onToggle,
-                colors = SwitchDefaults.colors(
-                    checkedTrackColor = BeeColors.FoundGreen,
-                    uncheckedTrackColor = BeeColors.DeepAmber.copy(alpha = 0.4f),
-                    checkedThumbColor = Color.White,
-                    uncheckedThumbColor = BeeColors.HoneyGold
-                )
-            )
             IconButton(onClick = onClose) {
                 Icon(Icons.Default.Close, contentDescription = L(R.string.cd_close), tint = BeeColors.DeepAmber)
             }
         }
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            listOf("all", "blocked", "api", "media").forEach { key ->
+                val active = filter == key
+                val label = when (key) {
+                    "blocked" -> L(R.string.chip_blocked)
+                    "api" -> L(R.string.chip_api)
+                    "media" -> L(R.string.chip_media)
+                    else -> L(R.string.chip_all)
+                }
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(30.dp)
+                        .background(
+                            if (active) BeeColors.HoneyGold else beeAdapt(BeeColors.WaxWhite, BeeColors.DarkStripe),
+                            RoundedCornerShape(9.dp)
+                        )
+                        .clickable { filter = key },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        label,
+                        fontSize = 11.sp,
+                        fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
+                        color = if (active) Color.Black else textColor
+                    )
+                }
+            }
+        }
         Spacer(Modifier.height(8.dp))
-        Text(L(R.string.sheet_log), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textColor)
-        Spacer(Modifier.height(4.dp))
-        if (log.isEmpty()) {
-            Text(L(R.string.sheet_log_empty), fontSize = 11.sp, color = subColor)
+        if (shown.isEmpty()) {
+            Text(L(R.string.rs_empty), fontSize = 11.sp, color = subColor)
         } else {
-            LazyColumn(modifier = Modifier.height(320.dp)) {
-                items(log) { rec ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = CardDefaults.cardColors(containerColor = rowBg),
-                        elevation = CardDefaults.cardElevation(1.dp)
-                    ) {
-                        Column(Modifier.padding(8.dp)) {
-                            Text(rec.url, fontSize = 10.sp, color = textColor, maxLines = 2)
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                "${rec.pattern} — ${rec.list}",
-                                fontSize = 9.sp,
-                                color = BeeColors.DeepAmber,
-                                maxLines = 1
+            LazyColumn {
+                items(shown) { rec ->
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 2.dp)
+                            .background(
+                                if (rec.blocked) BeeColors.NotFoundRed.copy(alpha = 0.18f) else rowBg,
+                                RoundedCornerShape(8.dp)
                             )
+                            .padding(8.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                rec.tag,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = when {
+                                    rec.blocked -> BeeColors.NotFoundRed
+                                    rec.tag == "media" -> BeeColors.HoneyGold
+                                    rec.tag == "api" -> BeeColors.DeepAmber
+                                    rec.tag == "page" -> BeeColors.FoundGreen
+                                    else -> textColor
+                                }
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                rec.url,
+                                fontSize = 10.sp,
+                                color = textColor,
+                                maxLines = 2,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        if (rec.blocked && rec.rule.isNotEmpty()) {
+                            Spacer(Modifier.height(2.dp))
+                            Text(rec.rule, fontSize = 9.sp, color = BeeColors.DeepAmber, maxLines = 1)
                         }
                     }
                 }

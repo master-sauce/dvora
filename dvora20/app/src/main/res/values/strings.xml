@@ -35,12 +35,26 @@
     <string name="dl_started_desc">Dvora download</string>
     <string name="dl_failed">Could not start download</string>
 
+    <!-- cross-site navigation confirm -->
+    <string name="nav_title">navigate away from this site?</string>
+    <string name="nav_go">continue to site</string>
+
     <!-- shield bottom sheet -->
     <string name="sheet_blocked_page">blocked on this page</string>
     <string name="sheet_lifetime">blocked since install</string>
     <string name="sheet_allowed">Allowed site — blocking OFF for this domain</string>
     <string name="sheet_log">Blocked on this page</string>
     <string name="sheet_log_empty">Nothing blocked on this page so far</string>
+
+    <!-- page resources panel -->
+    <string name="cd_network">all page requests — details</string>
+    <string name="chip_all">all</string>
+    <string name="chip_blocked">blocked</string>
+    <string name="chip_api">api</string>
+    <string name="chip_media">media</string>
+    <string name="rs_req">requests</string>
+    <string name="rs_blocked">blocked</string>
+    <string name="rs_empty">nothing requested on this page yet</string>
 
     <!-- settings › browser tab -->
     <string name="btab_title">Ads &amp; tracker blocking</string>

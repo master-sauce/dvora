@@ -30,6 +30,7 @@ class BlockerEngine {
     // ── per-page state ────────────────────────────────────────────────────────
     private val lock = Any()
     val pageLog = ArrayDeque<BlockRecord>()          // this page's blocks (capped)
+    val reqLog = ArrayDeque<ReqRecord>()             // EVERY request of this page (capped)
 
     @Volatile
     var pageBlocks: Int = 0
@@ -45,6 +46,9 @@ class BlockerEngine {
 
     /** one block event, for the UI list. */
     data class BlockRecord(val url: String, val host: String, val pattern: String, val list: String)
+
+    /** one network request of the page (allowed or blocked), for the resources panel. */
+    data class ReqRecord(val url: String, val tag: String, val blocked: Boolean, val rule: String)
 
     constructor()
 
@@ -66,9 +70,18 @@ class BlockerEngine {
     fun newPage() {
         synchronized(lock) {
             pageLog.clear()
+            reqLog.clear()
             pageBlocks = 0
             byDomain.clear()
             byList.clear()
+        }
+    }
+
+    /** every page request lands here (allowed + blocked), capped at 800. */
+    fun noteReq(tag: String, url: String, blocked: Boolean, rule: String) {
+        synchronized(lock) {
+            reqLog.addLast(ReqRecord(url, tag, blocked, rule))
+            if (reqLog.size > 800) reqLog.removeFirst()
         }
     }
 
