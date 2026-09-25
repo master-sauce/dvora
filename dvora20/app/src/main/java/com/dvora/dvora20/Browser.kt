@@ -9,7 +9,6 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
-import android.util.Patterns.WEB_URL
 import android.webkit.CookieManager
 import android.webkit.DownloadListener
 import android.webkit.SslErrorHandler
@@ -32,8 +31,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -48,8 +45,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -99,6 +94,7 @@ fun BrowserScreen(
     var sheetVisible by remember { mutableStateOf(false) }
     var crossNav by remember { mutableStateOf<Pair<String, String>?>(null) }   // (url, host) awaiting confirm
     var resTick by remember { mutableIntStateOf(0) }                           // bumps live while the panel is open
+    var barVisible by remember { mutableStateOf(true) }                         // hide/show the bottom toolbar
     var hasStorage by remember { mutableStateOf(Build.VERSION.SDK_INT >= 29) }
 
     // the whole site's whitelist — kept live; the interceptor reads this supplier per request
@@ -242,16 +238,6 @@ fun BrowserScreen(
         if (webView.canGoBack()) webView.goBack() else onBack()          // then page history, then exit
     }
 
-    fun go() {
-        var u = address.trim()
-        if (u.isEmpty()) return
-        if (!u.startsWith("http")) {
-            if (WEB_URL.matcher(u).matches()) u = "https://$u"
-            else u = "https://www.google.com/search?q=${Uri.encode(u)}"
-        }
-        webView.loadUrl(u)
-    }
-
     // ── SSL dialog — allow once / go back, never silently proceed ────────────
     ssl?.let { (uri, handler) ->
         AlertDialog(
@@ -319,73 +305,13 @@ fun BrowserScreen(
     }
 
     // ── UI ──────────────────────────────────────────────────────────────────────
-    // edge-to-edge; only the top toolbar avoids the status bar — one row, maximised page area
+    // edge-to-edge; the toolbar is a collapsible row at the bottom of the screen
     Box(modifier = modifier.fillMaxSize().background(pageBg)) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            // toolbar — history / address bar / GO / page resources
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp, vertical = 5.dp).background(headerBg)
-            ) {
-                IconButton(onClick = { if (webView.canGoBack()) webView.goBack() }, enabled = webView.canGoBack()) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack, L(R.string.cd_back_page),
-                        tint = if (webView.canGoBack()) BeeColors.HoneyGold else BeeColors.HoneyGold.copy(alpha = 0.3f)
-                    )
-                }
-                IconButton(
-                    onClick = { if (webView.canGoForward()) webView.goForward() },
-                    enabled = webView.canGoForward()
-                ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.ArrowForward, L(R.string.cd_fwd_page),
-                        tint = if (webView.canGoForward()) BeeColors.HoneyGold else BeeColors.HoneyGold.copy(alpha = 0.3f)
-                    )
-                }
-                IconButton(onClick = { webView.reload() }) {
-                    Icon(Icons.Default.Refresh, L(R.string.cd_reload), tint = BeeColors.HoneyGold)
-                }
-                OutlinedTextField(
-                    value = address,
-                    onValueChange = { address = it },
-                    modifier = Modifier.weight(1f).height(48.dp),
-                    singleLine = true,
-                    colors = beeTextFieldColors(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
-                    keyboardActions = KeyboardActions(onGo = { go() }),
-                    trailingIcon = {
-                        IconButton(onClick = { go() }) {
-                            Icon(
-                                Icons.Default.PlayArrow,
-                                L(R.string.cd_go),
-                                tint = BeeColors.HoneyGold,
-                                modifier = Modifier.size(26.dp)
-                            )
-                        }
-                    }
-                )
-                IconButton(onClick = { sheetVisible = !sheetVisible }) {
-                    Box(Modifier.size(38.dp), contentAlignment = Alignment.Center) {
-                        Icon(
-                            Icons.Default.Web,
-                            L(R.string.cd_network),
-                            tint = if (blocked > 0) BeeColors.FoundGreenDark else BeeColors.HoneyGold,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        if (blocked > 0) {
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .background(BeeColors.NotFoundRed, RoundedCornerShape(8.dp))
-                                    .padding(horizontal = 4.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("$blocked", fontSize = 9.sp, color = Color.White, maxLines = 1)
-                            }
-                        }
-                    }
-                }
-            }
+            AndroidView(
+                factory = { webView },
+                modifier = Modifier.weight(1f).fillMaxWidth()
+            )
 
             if (progress < 100) {
                 LinearProgressIndicator(
@@ -396,10 +322,76 @@ fun BrowserScreen(
                 )
             }
 
-            AndroidView(
-                factory = { webView },
-                modifier = Modifier.weight(1f).fillMaxWidth()
-            )
+            if (barVisible) {
+                // toolbar (bottom) — back / fwd / reload / home / page resources / hide bar
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    modifier = Modifier.navigationBarsPadding().fillMaxWidth()
+                        .padding(horizontal = 2.dp, vertical = 4.dp).background(headerBg)
+                ) {
+                    IconButton(onClick = { if (webView.canGoBack()) webView.goBack() }, enabled = webView.canGoBack()) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack, L(R.string.cd_back_page),
+                            tint = if (webView.canGoBack()) BeeColors.HoneyGold else BeeColors.HoneyGold.copy(alpha = 0.3f)
+                        )
+                    }
+                    IconButton(
+                        onClick = { if (webView.canGoForward()) webView.goForward() },
+                        enabled = webView.canGoForward()
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowForward, L(R.string.cd_fwd_page),
+                            tint = if (webView.canGoForward()) BeeColors.HoneyGold else BeeColors.HoneyGold.copy(alpha = 0.3f)
+                        )
+                    }
+                    IconButton(onClick = { webView.reload() }) {
+                        Icon(Icons.Default.Refresh, L(R.string.cd_reload), tint = BeeColors.HoneyGold)
+                    }
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.Home, L(R.string.cd_home), tint = BeeColors.HoneyGold)
+                    }
+                    IconButton(onClick = { sheetVisible = !sheetVisible }) {
+                        Box(Modifier.size(38.dp), contentAlignment = Alignment.Center) {
+                            Icon(
+                                Icons.Default.Web,
+                                L(R.string.cd_network),
+                                tint = if (blocked > 0) BeeColors.FoundGreenDark else BeeColors.HoneyGold,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            if (blocked > 0) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .background(BeeColors.NotFoundRed, RoundedCornerShape(8.dp))
+                                        .padding(horizontal = 4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("$blocked", fontSize = 9.sp, color = Color.White, maxLines = 1)
+                                }
+                            }
+                        }
+                    }
+                    IconButton(onClick = { barVisible = false }) {
+                        Icon(Icons.Default.ExpandLess, L(R.string.cd_bar_hide), tint = BeeColors.HoneyGold)
+                    }
+                }
+            } else {
+                // bar hidden — slim strip with one button that brings it back
+                Box(
+                    Modifier.navigationBarsPadding().fillMaxWidth().background(headerBg),
+                    contentAlignment = Alignment.Center
+                ) {
+                    IconButton(onClick = { barVisible = true }) {
+                        Icon(
+                            Icons.Default.ExpandMore,
+                            L(R.string.cd_bar_show),
+                            tint = BeeColors.HoneyGold,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                }
+            }
         }
 
         // the slide-up page-resources panel — every request of this page, api / media first-class
@@ -407,7 +399,10 @@ fun BrowserScreen(
             visible = sheetVisible,
             enter = slideInVertically { 0 },
             exit = slideOutVertically { 0 },
-            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(bottom = if (barVisible) 62.dp else 0.dp)
         ) {
             Box(
                 Modifier.navigationBarsPadding().fillMaxWidth().background(

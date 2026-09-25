@@ -353,7 +353,7 @@ class MainActivity : ComponentActivity() {
             CompositionLocalProvider(
                 LocalDarkMode provides darkModeState,
                 LocalUiLang provides langState,
-                LocalLayoutDirection provides if (langState.value == "he") LayoutDirection.Rtl else LayoutDirection.Ltr
+                LocalLayoutDirection provides LayoutDirection.Ltr   // Hebrew swaps the strings only — layout stays unchanged
             ) {
                 MaterialTheme(colorScheme = if (darkModeState.value) BeeDarkScheme else BeeLightScheme) {
                     DvoraApp(
@@ -502,6 +502,20 @@ fun openCard(context: Context, url: String, onBrowser: (String) -> Unit) {
     if (tryOpenInStremio(context, cleanUrl)) return
     val prefs = context.getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE)
     if (prefs.getBoolean("use_dvora_browser", false)) onBrowser(cleanUrl) else openUrl(context, cleanUrl)
+}
+
+/**
+ * System chooser for one link — the user picks ANY app to open it in,
+ * independent of the in-app browser / link-handler settings.
+ */
+fun openWithChooser(context: Context, url: String) {
+    val clean = if (url.startsWith("http")) url else "https://$url"
+    try {
+        val view = Intent(Intent.ACTION_VIEW, Uri.parse(clean)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(Intent.createChooser(view, context.getString(R.string.cd_open_with)))
+    } catch (_: Exception) {
+        Toast.makeText(context, localeStr(context, R.string.toast_open_url_failed), Toast.LENGTH_SHORT).show()
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -921,8 +935,20 @@ fun DvoraApp(onToggleDarkMode: () -> Unit, onToggleLang: () -> Unit) {
                                         Text(
                                             link,
                                             fontSize = 12.sp,
-                                            color = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface)
+                                            color = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface),
+                                            modifier = Modifier.weight(1f)
                                         )
+                                        IconButton(
+                                            onClick = { openWithChooser(context, link) },
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Launch,
+                                                L(R.string.cd_open_with),
+                                                tint = BeeColors.FoundGreen,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -1095,6 +1121,14 @@ fun ResultItem(result: SearchResult, showDetails: Boolean = false, onResult: (St
             if (result.found) IconButton(onClick = { copyToClipboard(context, result.url) }) {
                 Icon(Icons.Default.ContentCopy, "Copy", tint = BeeColors.DeepAmber)
             }
+            IconButton(onClick = { openWithChooser(context, result.url) }, modifier = Modifier.size(40.dp)) {
+                Icon(
+                    Icons.Default.Launch,
+                    L(R.string.cd_open_with),
+                    tint = BeeColors.FoundGreen,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
     }
 }
@@ -1205,6 +1239,10 @@ fun ImdbResultItem(item: ImdbResult, onResult: (String) -> Unit) {
                         "Bookmark",
                         tint = if (isBookmarked) BeeColors.HoneyGold else BeeColors.DeepAmber
                     )
+                }
+
+                IconButton(onClick = { openWithChooser(context, item.imdbUrl) }) {
+                    Icon(Icons.Default.Launch, L(R.string.cd_open_with), tint = BeeColors.FoundGreen)
                 }
             }
         }
@@ -1536,6 +1574,9 @@ fun SubtitleResultCard(item: SubtitleResult, onResult: (String) -> Unit) {
                         "Copy",
                         tint = BeeColors.DeepAmber
                     )
+                }
+                IconButton(onClick = { openWithChooser(context, item.url) }) {
+                    Icon(Icons.Default.Launch, L(R.string.cd_open_with), tint = BeeColors.FoundGreen)
                 }
             }
         }
@@ -2283,6 +2324,14 @@ fun BookmarkCard(
                             Icons.Default.ContentCopy,
                             "Copy title",
                             tint = BeeColors.DeepAmber,
+                            modifier = Modifier.size(15.dp)
+                        )
+                    }
+                    IconButton(onClick = { openWithChooser(context, bm.imdbUrl) }, modifier = Modifier.size(28.dp)) {
+                        Icon(
+                            Icons.Default.Launch,
+                            L(R.string.cd_open_with),
+                            tint = BeeColors.FoundGreen,
                             modifier = Modifier.size(15.dp)
                         )
                     }

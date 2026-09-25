@@ -10,6 +10,10 @@
     <string name="cd_fwd_page">Forward in page history</string>
     <string name="cd_reload">Reload page</string>
     <string name="cd_go">Go</string>
+    <string name="cd_open_with">choose an app to open this link in</string>
+    <string name="cd_home">back to main menu</string>
+    <string name="cd_bar_hide">hide toolbar</string>
+    <string name="cd_bar_show">show toolbar</string>
     <string name="cd_shield">Blocked requests — details</string>
     <string name="cd_close">Close</string>
     <string name="cd_refresh">Update this list now</string>

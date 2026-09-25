@@ -10,6 +10,10 @@
     <string name="cd_fwd_page">קדימה בהיסטוריית העמוד</string>
     <string name="cd_reload">טעינה מחדש של העמוד</string>
     <string name="cd_go">בא</string>
+    <string name="cd_open_with">בחר אפליקציה לפתיחת הקישור</string>
+    <string name="cd_home">חזרה לתפריט הראשי</string>
+    <string name="cd_bar_hide">הסר את סרגל הכלים</string>
+    <string name="cd_bar_show">הצג את סרגל הכלים</string>
     <string name="cd_shield">בקשות שנחסמו — פרטים</string>
     <string name="cd_close">סגירה</string>
     <string name="cd_refresh">עדכון רשימה זו עכשיו</string>
