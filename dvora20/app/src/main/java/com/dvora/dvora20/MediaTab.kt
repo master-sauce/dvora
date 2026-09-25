@@ -280,9 +280,14 @@ fun MediaTab() {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
+
                             .background(rowBg, RoundedCornerShape(10.dp))
+
+                            .clickable { view(f) }
                             .padding(horizontal = 10.dp, vertical = 8.dp)
+
                     ) {
+
                         IconButton(onClick = { view(f) }) {
                             Icon(Icons.Default.PlayArrow, L(R.string.med_play), tint = BeeColors.FoundGreen)
                         }
