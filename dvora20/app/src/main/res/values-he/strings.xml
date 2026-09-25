@@ -66,10 +66,12 @@
 
     <!-- הורדת מדיה yt-dlp -->
     <string name="yt_picker">מדיה להורדה (yt-dlp)</string>
-    <string name="yt_page">עמוד</string>
-    <string name="yt_media">מדיה שנלכדה</string>
     <string name="yt_none">יש להתחיל סרטון קודם — עוד לא נלכד כלום</string>
-    <string name="yt_cd">מדיה שנלכדה — הורדה עם yt-dlp</string>
+    <string name="yt_cd">מדיה שנלכדה — הורדה עם ה־yt-dlp</string>
+    <string name="yt_down">הורדת מדיה</string>
+    <string name="yt_cancel">ביטול הורדה</string>
+    <string name="yt_done">המדיה נשמרה ל־Download/dvora</string>
+    <string name="yt_cancelled">ההורדה בוטלה</string>
     <string name="yt_dl_fail">כשל בהורדת ה־yt-dlp</string>
 
     <!-- settings › browser tab -->

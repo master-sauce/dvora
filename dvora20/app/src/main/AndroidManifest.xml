@@ -40,6 +40,11 @@
             android:name=".ReminderReceiver"
             android:exported="false" />
 
+        <!-- notification action: cancel a running yt-dlp media download -->
+        <receiver
+            android:name=".YtCancelReceiver"
+            android:exported="false" />
+
         <receiver
             android:name=".BootReminderReceiver"
             android:exported="true">
