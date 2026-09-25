@@ -292,17 +292,17 @@ class YtDownloadService : Service() {
         stopSelf()
     }
 
-    /** swipe-proof progress — the user's swipe brings the notification right back. */
+    /** swipe-proof progress — the notification comes straight back on the swipe. */
     override fun onTaskRemoved(rootIntent: Intent?) {
         val n = last ?: return
-        Handler(Looper.getMainLooper()).postDelayed({
-            if (can()) {
-                try {
-                    nm.notify(ID, n)
-                } catch (_: Exception) {
-                }
-            }
-        }, 150)
+        fun repost() {
+            if (!can()) return
+            runCatching { nm.notify(ID, n) }
+        }
+        repost()                               // immediately
+        // rare race: service still processing the swipe → one short retry
+        if (!runCatching { nm.activeNotifications.any { it.id == ID } }.getOrDefault(false))
+            Handler(Looper.getMainLooper()).postDelayed({ repost() }, 150)
     }
 
     override fun onDestroy() {

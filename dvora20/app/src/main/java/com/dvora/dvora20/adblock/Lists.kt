@@ -149,9 +149,13 @@ class ListRepo(private val appCtx: Context) {
         }
     }
 
-    /** background auto-refresh of every stale list. */
+    /**
+     * Automatic (on start) refresh — only EasyList is kept fresh here on a
+     * rolling 7-day interval; the other three lists are updated manually
+     * from their settings rows.
+     */
     fun maybeRefresh(scope: CoroutineScope) {
-        for (l in ListInfo.all) if (stale(l)) refresh(scope, l)
+        if (stale(ListInfo.EASYLIST)) refresh(scope, ListInfo.EASYLIST)
     }
 
     /** manual (settings button) or automatic single-list refresh — background. */

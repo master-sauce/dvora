@@ -27,6 +27,35 @@
         <!-- Allow visibility of the Brave browser package so resolveActivity()
              can detect it on Android 11+. -->
         <package android:name="com.brave.browser" />
+        <!-- the media tab hands files to external players / file managers /
+             share targets — invisible on API 30+ without these. The
+             content:// (FileProvider) AND file:// (fallback) schemes are
+             declared so every flavour of the intent resolves -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="content" />
+            <data android:mimeType="video/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="file" />
+            <data android:mimeType="video/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="file" />
+            <data android:mimeType="resource/folder" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:scheme="content" />
+            <data android:mimeType="video/*" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:scheme="file" />
+            <data android:mimeType="video/*" />
+        </intent>
     </queries>
 
     <application
@@ -40,6 +69,18 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.Dvora20">
+
+        <!-- hands downloaded media to external players / share targets as a
+             proper content:// URI with read permission -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="com.dvora.dvora20.media"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
 
         <receiver
             android:name=".ReminderReceiver"

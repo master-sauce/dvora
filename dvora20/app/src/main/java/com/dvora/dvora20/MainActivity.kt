@@ -3058,7 +3058,8 @@ fun SettingsScreen(
         L(R.string.tab_exclusions),
         L(R.string.tab_backup),
         L(R.string.tab_logs),
-        L(R.string.tab_browser)
+        L(R.string.tab_browser),
+        L(R.string.tab_media)
     )
     val isDark = LocalDarkMode.current.value
     val headerBg = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
@@ -3126,6 +3127,7 @@ fun SettingsScreen(
 
             6 -> VerboseLogsScreen()
             7 -> BrowserTab(repo = repo)
+            8 -> MediaTab()
         }
     }
 }

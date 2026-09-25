@@ -1,15 +1,9 @@
 package com.dvora.dvora20
 
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.os.Build
-import android.os.Environment
 import android.webkit.CookieManager
 import android.webkit.WebStorage
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -32,13 +26,9 @@ import androidx.compose.ui.unit.sp
 import com.dvora.dvora20.adblock.ListInfo
 import com.dvora.dvora20.adblock.ListRepo
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 /**
  * The settings tab for the in-app browser + the whole-app extras that hang
@@ -55,59 +45,12 @@ fun BrowserTab(repo: ListRepo) {
     val cardBg = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
     val subColor = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.7f))
 
-    var tick by remember { mutableIntStateOf(0) }     // refreshes async list statuses live
-    LaunchedEffect(Unit) {
-        while (true) {
-            delay(900); tick++
-        }
-    }
     var confirmClear by remember { mutableStateOf(false) }
-    // where yt-dlp saves captured media — wizard dialog (folder picker / reset / grant)
-    var ytFolderDlg by remember { mutableStateOf(false) }
-    var ytPick by remember { mutableStateOf(false) }
-    val grant = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
-    val tree = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        if (uri != null) {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                )
-            }
-            val p = uri.path ?: ""
-            prefs.edit().putString(
-                "yt_dir", if (p.startsWith("/storage/")) p
-                else p.substringAfter("primary:", "").let { if (it.startsWith("/")) it else "/$it" }).apply()
-            // a picked folder is only reachable via direct File IO once the
-            // one-time "all files" grant exists — ask for it if not yet
-            if (Build.VERSION.SDK_INT >= 30 && !Environment.isExternalStorageManager())
-                grant.launch(Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
-        }
-        ytPick = false
-    }
-    // fire the picker exactly once per flip — a plain `if (ytPick) launch()` would
-    // re-launch on every recomposition (the 900ms ticker keeps the scope hot)
-    LaunchedEffect(ytPick) {
-        if (ytPick) {
-            ytPick = false
-            tree.launch(null)
-        }
-    }
-    // resolved folder (re-read every tick so external changes show up)
-    val curDir = remember(tick) { ytSaveDir(context)?.path ?: "" }
 
     // live UI state — flipped instantly on tap, prefs written straight behind it
     var master by remember { mutableStateOf(repo.isMaster()) }
     var listOn by remember { mutableStateOf(ListInfo.all.map { repo.isEnabled(it) }) }
     var useDvora by remember { mutableStateOf(prefs.getBoolean("use_dvora_browser", false)) }
-
-    fun statusLine(l: ListInfo): String {
-        val msg = repo.statuses[l] ?: ""
-        val ts = repo.lastUpdated(l)
-        val whenStr = if (ts > 0) SimpleDateFormat("d MMM yyyy, HH:mm", Locale.ENGLISH).format(Date(ts))
-        else context.getString(R.string.btab_never)
-        return "$msg · $whenStr"
-    }
 
     fun clearAll() {
         confirmClear = false
@@ -160,13 +103,6 @@ fun BrowserTab(repo: ListRepo) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 5.dp)) {
                 Column(Modifier.weight(1f)) {
                     Text(l.displayName, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = textColor)
-                    Text(
-                        statusLine(l),
-                        fontSize = 10.sp,
-                        color = if ((repo.statuses[l] ?: "").startsWith("bundled") || (repo.statuses[l]
-                                ?: "").startsWith("empty")
-                        ) BeeColors.DeepAmber else subColor
-                    )
                 }
                 IconButton(onClick = { repo.refresh(scope, l) }) {
                     Icon(
@@ -242,26 +178,6 @@ fun BrowserTab(repo: ListRepo) {
         }
         Spacer(Modifier.height(14.dp))
 
-        // ── where yt-dlp saves captured media ─────────────────────────────────
-        Text(L(R.string.yt_folder_lbl), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textColor)
-        Spacer(Modifier.height(4.dp))
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth().height(46.dp)
-                .background(beeAdapt(BeeColors.WaxWhite, BeeColors.DarkStripe), RoundedCornerShape(10.dp))
-                .clickable { ytFolderDlg = true }
-                .padding(horizontal = 12.dp)
-        ) {
-            Icon(Icons.Default.Folder, null, tint = BeeColors.HoneyGold, modifier = Modifier.size(20.dp))
-            Spacer(Modifier.width(10.dp))
-            Column(Modifier.weight(1f)) {
-                Text(L(R.string.yt_folder_pick), fontSize = 12.sp, color = textColor)
-                Text(curDir, fontSize = 10.sp, color = subColor)
-            }
-            Text("›", fontSize = 20.sp, color = BeeColors.DeepAmber)
-        }
-        Spacer(Modifier.height(14.dp))
-
         // ── browsing data ─────────────────────────────────────────────────────
         Button(
             onClick = { confirmClear = true },
@@ -271,67 +187,6 @@ fun BrowserTab(repo: ListRepo) {
         ) {
             Text(L(R.string.btab_clear), fontWeight = FontWeight.Bold)
         }
-    }
-
-    // ── pick the media download folder ────────────────────────────────────────
-    if (ytFolderDlg) {
-        AlertDialog(
-            onDismissRequest = { ytFolderDlg = false },
-            title = { Text(L(R.string.yt_folder_title), color = BeeColors.HoneyGold) },
-            text = {
-                Column {
-                    Text(curDir, fontSize = 10.sp, color = subColor, modifier = Modifier.padding(bottom = 6.dp))
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                            .clickable { ytPick = true }
-                            .padding(vertical = 8.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.FolderOpen,
-                            null,
-                            tint = BeeColors.HoneyGold,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(Modifier.width(10.dp))
-                        Text(L(R.string.yt_dir_change), fontSize = 13.sp, color = textColor)
-                    }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                            .clickable {
-                                prefs.edit().putString("yt_dir", "").apply()
-                                ytFolderDlg = false
-                            }
-                            .padding(vertical = 8.dp)
-                    ) {
-                        Icon(Icons.Default.Refresh, null, tint = BeeColors.HoneyGold, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(10.dp))
-                        Text(L(R.string.yt_dir_reset), fontSize = 13.sp, color = textColor)
-                    }
-                    if (Build.VERSION.SDK_INT >= 30 && !Environment.isExternalStorageManager()) {
-                        Text(
-                            L(R.string.yt_dir_grant_msg),
-                            fontSize = 11.sp,
-                            color = subColor,
-                            modifier = Modifier.padding(top = 10.dp, start = 4.dp)
-                        )
-                        TextButton(onClick = {
-                            ytFolderDlg = false
-                            grant.launch(Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
-                        }) {
-                            Text(L(R.string.yt_dir_grant), color = BeeColors.HoneyGold)
-                        }
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = {
-                TextButton(onClick = { ytFolderDlg = false }) {
-                    Text(L(R.string.cancel), color = BeeColors.DeepAmber)
-                }
-            }
-        )
     }
 
     // ── confirm the destructive clear ─────────────────────────────────────────

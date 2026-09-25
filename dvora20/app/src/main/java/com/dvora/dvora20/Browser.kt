@@ -77,9 +77,7 @@ const val BROWSER_HOME = "https://duckduckgo.com/"
 
 /**
  * Where yt-dlp stores captured media — the picker-chosen folder from the
- * browser settings tab (prefs `yt_dir`). The default is the app's own
- * exclusive `Download/com.dvora.dvora20/` folder — writable via raw File IO
- * without the "all files" permission, yet still visible in Downloads.
+ * browser settings tab (prefs `yt_dir`), defaulting to `Download/dvora`.
  * Falls back to the app-private external files dir if nothing is writable.
  */
 @Suppress("DEPRECATION")
@@ -87,7 +85,7 @@ fun ytSaveDir(context: Context): File? {
     val prefs = context.getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE)
     val custom = prefs.getString("yt_dir", null)?.takeIf { it.isNotBlank() }
     val dir = custom?.let { File(it) }
-        ?: File(Environment.getExternalStorageDirectory(), "Download/${context.packageName}")
+        ?: File(Environment.getExternalStorageDirectory(), "Download/dvora")
     return if (dir.canWrite() || dir.mkdirs()) dir
     else context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)?.let { File(it, "media") }
         ?: context.filesDir
@@ -225,10 +223,7 @@ fun BrowserScreen(
             dlPerm.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
             return
         }
-        // only a user-picked custom folder can sit outside our sandbox
-        val picked = context.getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE)
-            .getString("yt_dir", null)?.isNotBlank() ?: false
-        if (picked && Build.VERSION.SDK_INT >= 30 && !mgr) {
+        if (Build.VERSION.SDK_INT >= 30 && !mgr) {
             ytPending = url
             Toast.makeText(context, localeStr(context, R.string.yt_need_store), Toast.LENGTH_LONG).show()
             grant.launch(Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))

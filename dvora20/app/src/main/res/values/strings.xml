@@ -31,6 +31,19 @@
     <string name="tab_backup">Backup</string>
     <string name="tab_logs">Logs</string>
     <string name="tab_browser">Browser</string>
+    <string name="tab_media">Media</string>
+
+    <!-- downloaded-media viewer tab -->
+    <string name="med_folder_pick">captured media — tap to open the folder</string>
+    <string name="med_open">open folder</string>
+    <string name="med_play">play</string>
+    <string name="med_share">share</string>
+    <string name="med_empty">nothing here yet — media captured in the browser will be listed here</string>
+    <string name="med_no_player">no app found to play this file</string>
+    <string name="med_no_sharer">no app found to share with</string>
+    <string name="med_grant">grant folder access (all files)</string>
+    <string name="med_grant_q">grant folder access?</string>
+    <string name="med_grant_msg">needed to list/save media in Download/dvora — a one-time system permission</string>
 
     <!-- SSL error dialog -->
     <string name="ssl_title">Unknown certificate</string>
@@ -79,9 +92,9 @@
     <string name="yt_folder_pick">saved folder for captured media — tap to change</string>
     <string name="yt_folder_title">saved location for media</string>
     <string name="yt_dir_change">choose another folder…</string>
-    <string name="yt_dir_reset">reset to default (Download / com.dvora.dvora20)</string>
+    <string name="yt_dir_reset">reset to default (Download / dvora)</string>
     <string name="yt_dir_grant">grant folder access</string>
-    <string name="yt_dir_grant_msg">a folder picked outside Download needs the one-time “all files” permission</string>
+    <string name="yt_dir_grant_msg">saving to Download/dvora needs the one-time “all files” permission</string>
     <string name="yt_need_store">folder permission needed to save captured media</string>
 
     <!-- settings › browser tab -->
@@ -92,7 +105,7 @@
     <string name="btab_rules">active rules</string>
     <string name="btab_lifetime">blocked since install</string>
     <string name="btab_linkmode">Result cards open in:</string>
-    <string name="btab_link_ext">external apps (existing chain)</string>
+    <string name="btab_link_ext">external browsers</string>
     <string name="btab_link_dvora">the in-app Dvora browser</string>
     <string name="btab_lang">LANGUAGE</string>
     <string name="btab_clear">CLEAR BROWSING DATA</string>
