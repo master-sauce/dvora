@@ -34,6 +34,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -445,17 +446,20 @@ private fun tryOpenInBrave(context: Context, url: String): Boolean {
     return false
 }
 
+/** the Stremio app deep link for a web detail page, or null when [url] isn't one. */
+private fun stremioDeepLink(url: String): String? {
+    if (!url.contains("web.stremio.com") || !url.contains("/detail/")) return null
+    val match = Regex("detail/(movie|series)/([^/]+)").find(url) ?: return null
+    return "stremio:///detail/${match.groupValues[1]}/${match.groupValues[2]}"
+}
+
 /**
  * If [url] is a Stremio WEB detail page and the Stremio APP is installed,
  * open it there via its deep link — the same route the default browser would
  * have used. Returns true when handled; the caller then stops.
  */
 private fun tryOpenInStremio(context: Context, url: String): Boolean {
-    if (!url.contains("web.stremio.com") || !url.contains("/detail/")) return false
-    val match = Regex("detail/(movie|series)/([^/]+)").find(url) ?: return false
-    val type = match.groupValues[1]
-    val id = match.groupValues[2]
-    val deepLink = "stremio:///detail/$type/$id"
+    val deepLink = stremioDeepLink(url) ?: return false
     return try {
         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(deepLink))
         if (intent.resolveActivity(context.packageManager) != null) {
@@ -504,17 +508,76 @@ fun openCard(context: Context, url: String, onBrowser: (String) -> Unit) {
     if (prefs.getBoolean("use_dvora_browser", false)) onBrowser(cleanUrl) else openUrl(context, cleanUrl)
 }
 
-/**
- * System chooser for one link — the user picks ANY app to open it in,
- * independent of the in-app browser / link-handler settings.
- */
-fun openWithChooser(context: Context, url: String) {
+/** chooser over every app that can open the link (the browsers, IDM, …). */
+fun fireChooser(context: Context, url: String) {
     val clean = if (url.startsWith("http")) url else "https://$url"
     try {
         val view = Intent(Intent.ACTION_VIEW, Uri.parse(clean)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         context.startActivity(Intent.createChooser(view, context.getString(R.string.cd_open_with)))
     } catch (_: Exception) {
         Toast.makeText(context, localeStr(context, R.string.toast_open_url_failed), Toast.LENGTH_SHORT).show()
+    }
+}
+
+/**
+ * The small per-card button: asks where to open the link — a chooser of ALL
+ * apps that can (browsers, downloaders, …), and when the link is a Stremio
+ * detail page a direct "open in Stremio app" option as well.
+ */
+@Composable
+fun OpenWithButton(url: String, modifier: Modifier = Modifier, iconSize: Dp = 20.dp) {
+    val context = LocalContext.current
+    val textColor = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
+    val dl = remember(url) {
+        val clean = if (url.startsWith("http")) url else "https://$url"
+        stremioDeepLink(clean)?.takeIf {
+            try {
+                Intent(Intent.ACTION_VIEW, Uri.parse(it)).resolveActivity(context.packageManager) != null
+            } catch (_: Exception) {
+                false   // Stremio not installed → plain chooser like anything else
+            }
+        }
+    }
+    var ask by remember { mutableStateOf(false) }
+
+    if (ask) {
+        AlertDialog(
+            onDismissRequest = { ask = false },
+            title = { Text(L(R.string.owb_title), color = BeeColors.HoneyGold) },
+            text = {
+                Text(url, color = textColor, fontSize = 11.sp, maxLines = 2)
+            },
+            confirmButton = {
+                TextButton(onClick = { ask = false; fireChooser(context, url) }) {
+                    Text(L(R.string.owb_apps), color = BeeColors.DeepAmber, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                if (dl != null) {
+                    TextButton(onClick = {
+                        ask = false
+                        try {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(dl)))
+                        } catch (_: Exception) {
+                        }
+                    }) {
+                        Text(L(R.string.owb_stremio), color = BeeColors.FoundGreen, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        )
+    }
+
+    IconButton(
+        onClick = { if (dl != null) ask = true else fireChooser(context, url) },
+        modifier = modifier
+    ) {
+        Icon(
+            Icons.Default.Launch,
+            L(R.string.cd_open_with),
+            tint = BeeColors.FoundGreen,
+            modifier = Modifier.size(iconSize)
+        )
     }
 }
 
@@ -938,17 +1001,7 @@ fun DvoraApp(onToggleDarkMode: () -> Unit, onToggleLang: () -> Unit) {
                                             color = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface),
                                             modifier = Modifier.weight(1f)
                                         )
-                                        IconButton(
-                                            onClick = { openWithChooser(context, link) },
-                                            modifier = Modifier.size(36.dp)
-                                        ) {
-                                            Icon(
-                                                Icons.Default.Launch,
-                                                L(R.string.cd_open_with),
-                                                tint = BeeColors.FoundGreen,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
+                                        OpenWithButton(link, Modifier.size(36.dp), 18.dp)
                                     }
                                 }
                             }
@@ -1121,14 +1174,7 @@ fun ResultItem(result: SearchResult, showDetails: Boolean = false, onResult: (St
             if (result.found) IconButton(onClick = { copyToClipboard(context, result.url) }) {
                 Icon(Icons.Default.ContentCopy, "Copy", tint = BeeColors.DeepAmber)
             }
-            IconButton(onClick = { openWithChooser(context, result.url) }, modifier = Modifier.size(40.dp)) {
-                Icon(
-                    Icons.Default.Launch,
-                    L(R.string.cd_open_with),
-                    tint = BeeColors.FoundGreen,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
+            OpenWithButton(result.url, Modifier.size(40.dp), 20.dp)
         }
     }
 }
@@ -1241,9 +1287,7 @@ fun ImdbResultItem(item: ImdbResult, onResult: (String) -> Unit) {
                     )
                 }
 
-                IconButton(onClick = { openWithChooser(context, item.imdbUrl) }) {
-                    Icon(Icons.Default.Launch, L(R.string.cd_open_with), tint = BeeColors.FoundGreen)
-                }
+                OpenWithButton(item.imdbUrl)
             }
         }
     }
@@ -1575,9 +1619,7 @@ fun SubtitleResultCard(item: SubtitleResult, onResult: (String) -> Unit) {
                         tint = BeeColors.DeepAmber
                     )
                 }
-                IconButton(onClick = { openWithChooser(context, item.url) }) {
-                    Icon(Icons.Default.Launch, L(R.string.cd_open_with), tint = BeeColors.FoundGreen)
-                }
+                OpenWithButton(item.url)
             }
         }
     }
@@ -2327,14 +2369,7 @@ fun BookmarkCard(
                             modifier = Modifier.size(15.dp)
                         )
                     }
-                    IconButton(onClick = { openWithChooser(context, bm.imdbUrl) }, modifier = Modifier.size(28.dp)) {
-                        Icon(
-                            Icons.Default.Launch,
-                            L(R.string.cd_open_with),
-                            tint = BeeColors.FoundGreen,
-                            modifier = Modifier.size(15.dp)
-                        )
-                    }
+                    OpenWithButton(bm.imdbUrl, Modifier.size(28.dp), 15.dp)
                 }
                 Spacer(Modifier.height(4.dp))
 

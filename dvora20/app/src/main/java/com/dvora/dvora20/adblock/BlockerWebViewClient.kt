@@ -5,6 +5,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.net.http.SslError
+import android.view.View
 import android.webkit.SslErrorHandler
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -198,6 +199,19 @@ class BlockerChromeClient : WebChromeClient() {
     var onIcon: (Bitmap?) -> Unit = {}
     var onFileChooser: ((ValueCallback<Array<Uri>>, WebChromeClient.FileChooserParams) -> Unit)? = null
 
+    /** fullscreen video enter / exit (onShowCustomView) */
+    var onVideo: ((View, WebChromeClient.CustomViewCallback) -> Unit)? = null
+    var onVideoExited: (() -> Unit)? = null
+
+    private fun enterFullscreen(v: View, cb: WebChromeClient.CustomViewCallback) {
+        val up = onVideo
+        if (up != null) up(v, cb) else cb.onCustomViewHidden()
+    }
+
+    private fun exitFullscreen() {
+        onVideoExited?.invoke()
+    }
+
     override fun onReceivedTitle(view: WebView?, title: String?) {
         onTitle(title ?: "")
     }
@@ -221,5 +235,15 @@ class BlockerChromeClient : WebChromeClient() {
         }
         cb(filePathCallback, fileInputParams)
         return true
+    }
+
+    /** fullscreen video entered — the page entered fullscreen mode */
+    override fun onShowCustomView(view: View?, callback: WebChromeClient.CustomViewCallback?) {
+        if (view != null && callback != null) enterFullscreen(view, callback) else callback?.onCustomViewHidden()
+    }
+
+    /** fullscreen video ended — the page exited fullscreen mode */
+    override fun onHideCustomView() {
+        exitFullscreen()
     }
 }

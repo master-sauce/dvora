@@ -14,6 +14,10 @@
     <string name="cd_home">חזרה לתפריט הראשי</string>
     <string name="cd_bar_hide">הסר את סרגל הכלים</string>
     <string name="cd_bar_show">הצג את סרגל הכלים</string>
+    <string name="owb_title">לפתוח את הקישור באמצעות…</string>
+    <string name="owb_apps">בחר אפליקציה (דפדפנים)</string>
+    <string name="owb_stremio">פתח ב־Stremio</string>
+    <string name="rs_copied">הכתובת הועתקה למטבען</string>
     <string name="cd_shield">בקשות שנחסמו — פרטים</string>
     <string name="cd_close">סגירה</string>
     <string name="cd_refresh">עדכון רשימה זו עכשיו</string>

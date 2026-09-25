@@ -14,6 +14,10 @@
     <string name="cd_home">back to main menu</string>
     <string name="cd_bar_hide">hide toolbar</string>
     <string name="cd_bar_show">show toolbar</string>
+    <string name="owb_title">open link with…</string>
+    <string name="owb_apps">choose app (browsers)</string>
+    <string name="owb_stremio">open in Stremio</string>
+    <string name="rs_copied">URL copied to clipboard</string>
     <string name="cd_shield">Blocked requests — details</string>
     <string name="cd_close">Close</string>
     <string name="cd_refresh">Update this list now</string>

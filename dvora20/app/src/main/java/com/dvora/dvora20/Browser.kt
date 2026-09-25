@@ -9,6 +9,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.view.View
 import android.webkit.CookieManager
 import android.webkit.DownloadListener
 import android.webkit.SslErrorHandler
@@ -96,6 +97,7 @@ fun BrowserScreen(
     var resTick by remember { mutableIntStateOf(0) }                           // bumps live while the panel is open
     var barVisible by remember { mutableStateOf(true) }                         // hide/show the bottom toolbar
     var hasStorage by remember { mutableStateOf(Build.VERSION.SDK_INT >= 29) }
+    var video by remember { mutableStateOf<Pair<View, WebChromeClient.CustomViewCallback>?>(null) }   // fullscreen video overlay
 
     // the whole site's whitelist — kept live; the interceptor reads this supplier per request
     var allowed by remember { mutableStateOf(Whitelist.hosts(context)) }
@@ -202,11 +204,17 @@ fun BrowserScreen(
         })
 
         chrome.onFileChooser = { cb, params -> pendingChooser = cb; pickFile(params) }
+        chrome.onVideo = { v, cb -> video = (v to cb) }
+        chrome.onVideoExited = { video = null }
         chrome.onTitle = { pageTitle = it }
         chrome.onProgress = { progress = it }
         chrome.onIcon = { favicon = it }
         client.onUrl = { address = it }
         client.onPageStart = { host, url ->
+            if (video != null) {                           // page changed → leave fullscreen video
+                video?.let { it.second.onCustomViewHidden() }
+                video = null
+            }
             pageHost = host
             pageTitle = ""
             favicon = null
@@ -234,7 +242,12 @@ fun BrowserScreen(
     BackHandler {
         if (sheetVisible) {
             sheetVisible = false; return@BackHandler
-        }   // shield panel closes first
+        }   // resources panel closes first
+        if (video != null) {                                 // then leave fullscreen video
+            video?.let { it.second.onCustomViewHidden() }
+            video = null
+            return@BackHandler
+        }
         if (webView.canGoBack()) webView.goBack() else onBack()          // then page history, then exit
     }
 
@@ -419,6 +432,20 @@ fun BrowserScreen(
                 )
             }
         }
+
+        // fullscreen video overlay (onShowCustomView) with its own close button
+        video?.let { (v, cb) ->
+            Box(Modifier.fillMaxSize().background(Color.Black)) {
+                AndroidView(factory = { v }, modifier = Modifier.fillMaxSize())
+                IconButton(
+                    onClick = { video = null; cb.onCustomViewHidden() },
+                    modifier = Modifier.statusBarsPadding().align(Alignment.TopEnd).padding(8.dp),
+                    colors = IconButtonDefaults.iconButtonColors(containerColor = Color.Black.copy(alpha = 0.55f))
+                ) {
+                    Icon(Icons.Default.Close, contentDescription = L(R.string.cd_close), tint = Color.White)
+                }
+            }
+        }
     }
 }
 
@@ -438,6 +465,8 @@ private fun ResourceSheet(
     val textColor = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
     val subColor = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.7f))
     val rowBg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkStripe)
+    val context = LocalContext.current
+    val copied = L(R.string.rs_copied)
     var filter by remember { mutableStateOf("all") }
 
     val shown = remember(log, filter) {
@@ -515,6 +544,10 @@ private fun ResourceSheet(
                                 if (rec.blocked) BeeColors.NotFoundRed.copy(alpha = 0.18f) else rowBg,
                                 RoundedCornerShape(8.dp)
                             )
+                            .clickable {
+                                copyToClipboard(context, rec.url)
+                                Toast.makeText(context, copied, Toast.LENGTH_SHORT).show()
+                            }
                             .padding(8.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
