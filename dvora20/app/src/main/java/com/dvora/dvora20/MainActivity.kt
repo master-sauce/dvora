@@ -299,8 +299,7 @@ val LocalDarkMode = compositionLocalOf { mutableStateOf(false) }
 val LocalUiLang = compositionLocalOf { mutableStateOf("en") }
 
 /** stored UI language — for non-Composable code (toasts, notifications, workers). */
-fun appLang(context: Context): String =
-    context.getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE).getString("ui_lang", "en") ?: "en"
+fun appLang(context: Context): String = "en"   // UI language is fixed to English now
 
 /** localized lookup that follows the in-app language (works without a process reload). */
 private fun localeOf(ctx: Context, lang: String): android.content.res.Resources {
@@ -350,22 +349,16 @@ class MainActivity : ComponentActivity() {
         setContent {
             val prefs = getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE)
             val darkModeState = remember { mutableStateOf(prefs.getBoolean("dark_mode", false)) }
-            val langState = remember { mutableStateOf(prefs.getString("ui_lang", "en") ?: "en") }
             CompositionLocalProvider(
                 LocalDarkMode provides darkModeState,
-                LocalUiLang provides langState,
-                LocalLayoutDirection provides LayoutDirection.Ltr   // Hebrew swaps the strings only — layout stays unchanged
+                LocalUiLang provides remember { mutableStateOf("en") },   // UI language fixed to English
+                LocalLayoutDirection provides LayoutDirection.Ltr   // layout is always LTR
             ) {
                 MaterialTheme(colorScheme = if (darkModeState.value) BeeDarkScheme else BeeLightScheme) {
                     DvoraApp(
                         onToggleDarkMode = {
                             darkModeState.value = !darkModeState.value
                             prefs.edit().putBoolean("dark_mode", darkModeState.value).apply()
-                        },
-                        onToggleLang = {
-                            val next = if (langState.value == "he") "en" else "he"
-                            langState.value = next
-                            prefs.edit().putString("ui_lang", next).apply()
                         }
                     )
                 }
@@ -508,78 +501,6 @@ fun openCard(context: Context, url: String, onBrowser: (String) -> Unit) {
     if (prefs.getBoolean("use_dvora_browser", false)) onBrowser(cleanUrl) else openUrl(context, cleanUrl)
 }
 
-/** chooser over every app that can open the link (the browsers, IDM, …). */
-fun fireChooser(context: Context, url: String) {
-    val clean = if (url.startsWith("http")) url else "https://$url"
-    try {
-        val view = Intent(Intent.ACTION_VIEW, Uri.parse(clean)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        context.startActivity(Intent.createChooser(view, context.getString(R.string.cd_open_with)))
-    } catch (_: Exception) {
-        Toast.makeText(context, localeStr(context, R.string.toast_open_url_failed), Toast.LENGTH_SHORT).show()
-    }
-}
-
-/**
- * The small per-card button: asks where to open the link — a chooser of ALL
- * apps that can (browsers, downloaders, …), and when the link is a Stremio
- * detail page a direct "open in Stremio app" option as well.
- */
-@Composable
-fun OpenWithButton(url: String, modifier: Modifier = Modifier, iconSize: Dp = 20.dp) {
-    val context = LocalContext.current
-    val textColor = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
-    val dl = remember(url) {
-        val clean = if (url.startsWith("http")) url else "https://$url"
-        stremioDeepLink(clean)?.takeIf {
-            try {
-                Intent(Intent.ACTION_VIEW, Uri.parse(it)).resolveActivity(context.packageManager) != null
-            } catch (_: Exception) {
-                false   // Stremio not installed → plain chooser like anything else
-            }
-        }
-    }
-    var ask by remember { mutableStateOf(false) }
-
-    if (ask) {
-        AlertDialog(
-            onDismissRequest = { ask = false },
-            title = { Text(L(R.string.owb_title), color = BeeColors.HoneyGold) },
-            text = {
-                Text(url, color = textColor, fontSize = 11.sp, maxLines = 2)
-            },
-            confirmButton = {
-                TextButton(onClick = { ask = false; fireChooser(context, url) }) {
-                    Text(L(R.string.owb_apps), color = BeeColors.DeepAmber, fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                if (dl != null) {
-                    TextButton(onClick = {
-                        ask = false
-                        try {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(dl)))
-                        } catch (_: Exception) {
-                        }
-                    }) {
-                        Text(L(R.string.owb_stremio), color = BeeColors.FoundGreen, fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        )
-    }
-
-    IconButton(
-        onClick = { if (dl != null) ask = true else fireChooser(context, url) },
-        modifier = modifier
-    ) {
-        Icon(
-            Icons.Default.Launch,
-            L(R.string.cd_open_with),
-            tint = BeeColors.FoundGreen,
-            modifier = Modifier.size(iconSize)
-        )
-    }
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN APP
@@ -587,7 +508,7 @@ fun OpenWithButton(url: String, modifier: Modifier = Modifier, iconSize: Dp = 20
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DvoraApp(onToggleDarkMode: () -> Unit, onToggleLang: () -> Unit) {
+fun DvoraApp(onToggleDarkMode: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val scanner = remember { DvoraScanner() }
@@ -751,7 +672,6 @@ fun DvoraApp(onToggleDarkMode: () -> Unit, onToggleLang: () -> Unit) {
                 repo = repo,
                 shows = shows, movies = movies, manualChecks = manualChecks,
                 apiSites = apiSites, exclusions = exclusions,
-                onToggleLang = onToggleLang,
                 onUpdate = { type, newList ->
                     when (type) {
                         SourceType.SHOW -> {
@@ -1001,7 +921,6 @@ fun DvoraApp(onToggleDarkMode: () -> Unit, onToggleLang: () -> Unit) {
                                             color = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface),
                                             modifier = Modifier.weight(1f)
                                         )
-                                        OpenWithButton(link, Modifier.size(36.dp), 18.dp)
                                     }
                                 }
                             }
@@ -1174,7 +1093,6 @@ fun ResultItem(result: SearchResult, showDetails: Boolean = false, onResult: (St
             if (result.found) IconButton(onClick = { copyToClipboard(context, result.url) }) {
                 Icon(Icons.Default.ContentCopy, "Copy", tint = BeeColors.DeepAmber)
             }
-            OpenWithButton(result.url, Modifier.size(40.dp), 20.dp)
         }
     }
 }
@@ -1286,8 +1204,6 @@ fun ImdbResultItem(item: ImdbResult, onResult: (String) -> Unit) {
                         tint = if (isBookmarked) BeeColors.HoneyGold else BeeColors.DeepAmber
                     )
                 }
-
-                OpenWithButton(item.imdbUrl)
             }
         }
     }
@@ -1619,7 +1535,6 @@ fun SubtitleResultCard(item: SubtitleResult, onResult: (String) -> Unit) {
                         tint = BeeColors.DeepAmber
                     )
                 }
-                OpenWithButton(item.url)
             }
         }
     }
@@ -2369,7 +2284,6 @@ fun BookmarkCard(
                             modifier = Modifier.size(15.dp)
                         )
                     }
-                    OpenWithButton(bm.imdbUrl, Modifier.size(28.dp), 15.dp)
                 }
                 Spacer(Modifier.height(4.dp))
 
@@ -3115,7 +3029,6 @@ fun SettingsScreen(
     shows: List<String>, movies: List<String>, manualChecks: List<String>,
     apiSites: List<String>, exclusions: List<String>,
     onUpdate: (SourceType, List<String>) -> Unit,
-    onToggleLang: () -> Unit,
     onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modifier = Modifier
 ) {
     BackHandler { onBack() }
@@ -3195,7 +3108,7 @@ fun SettingsScreen(
             )
 
             6 -> VerboseLogsScreen()
-            7 -> BrowserTab(repo = repo, onToggleLang = onToggleLang)
+            7 -> BrowserTab(repo = repo)
         }
     }
 }

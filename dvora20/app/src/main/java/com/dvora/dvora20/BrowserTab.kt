@@ -38,7 +38,7 @@ import java.util.Locale
  * the EN/HE app language, and browsing-data clearing.
  */
 @Composable
-fun BrowserTab(repo: ListRepo, onToggleLang: () -> Unit) {
+fun BrowserTab(repo: ListRepo) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE) }
@@ -58,7 +58,6 @@ fun BrowserTab(repo: ListRepo, onToggleLang: () -> Unit) {
     var master by remember { mutableStateOf(repo.isMaster()) }
     var listOn by remember { mutableStateOf(ListInfo.all.map { repo.isEnabled(it) }) }
     var useDvora by remember { mutableStateOf(prefs.getBoolean("use_dvora_browser", false)) }
-    val lang = LocalUiLang.current.value
 
     fun statusLine(l: ListInfo): String {
         val msg = repo.statuses[l] ?: ""
@@ -195,32 +194,6 @@ fun BrowserTab(repo: ListRepo, onToggleLang: () -> Unit) {
                 {
                     useDvora = true
                     prefs.edit().putBoolean("use_dvora_browser", true).apply()
-                },
-                Modifier.weight(1f)
-            )
-        }
-        Spacer(Modifier.height(14.dp))
-
-        // ── UI language ───────────────────────────────────────────────────────
-        Text(L(R.string.btab_lang), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textColor)
-        Spacer(Modifier.height(4.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            BeeRadioOption(
-                "EN",
-                lang == "en",
-                {
-                    prefs.edit().putString("ui_lang", "en").apply()
-                    onToggleLang()
-                },
-                Modifier.weight(1f)
-            )
-            Spacer(Modifier.width(8.dp))
-            BeeRadioOption(
-                "עברית",
-                lang == "he",
-                {
-                    prefs.edit().putString("ui_lang", "he").apply()
-                    onToggleLang()
                 },
                 Modifier.weight(1f)
             )
