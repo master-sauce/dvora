@@ -58,6 +58,10 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.ui.text.withStyle
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.annotation.StringRes
+import java.util.Locale
+import com.dvora.dvora20.adblock.ListRepo
+import com.dvora.dvora20.adblock.Repo
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -290,6 +294,44 @@ private val BeeDarkScheme = darkColorScheme(
 
 val LocalDarkMode = compositionLocalOf { mutableStateOf(false) }
 
+/** "en" / "he" — the whole UI language, independent of the system locale. */
+val LocalUiLang = compositionLocalOf { mutableStateOf("en") }
+
+/** stored UI language — for non-Composable code (toasts, notifications, workers). */
+fun appLang(context: Context): String =
+    context.getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE).getString("ui_lang", "en") ?: "en"
+
+/** localized lookup that follows the in-app language (works without a process reload). */
+private fun localeOf(ctx: Context, lang: String): android.content.res.Resources {
+    val conf = android.content.res.Configuration(ctx.resources.configuration)
+    conf.setLocale(Locale.forLanguageTag(if (lang == "he") "he" else "en"))
+    return try {
+        ctx.createConfigurationContext(conf).resources
+    } catch (_: Exception) {
+        ctx.resources
+    }
+}
+
+/** non-Composable localized lookup (uses the stored language). */
+fun localeStr(context: Context, @StringRes id: Int): String =
+    try {
+        localeOf(context, appLang(context)).getString(id)
+    } catch (_: Exception) {
+        context.getString(id)
+    }
+
+/** Composable localized lookup — follows the live language toggle. */
+@Composable
+fun L(@StringRes id: Int): String {
+    val ctx = LocalContext.current
+    val lang = LocalUiLang.current.value
+    return try {
+        localeOf(ctx, lang).getString(id)
+    } catch (_: Exception) {
+        ctx.getString(id)
+    }
+}
+
 @Composable
 fun beeAdapt(light: Color, dark: Color): Color =
     if (LocalDarkMode.current.value) dark else light
@@ -307,15 +349,24 @@ class MainActivity : ComponentActivity() {
         setContent {
             val prefs = getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE)
             val darkModeState = remember { mutableStateOf(prefs.getBoolean("dark_mode", false)) }
+            val langState = remember { mutableStateOf(prefs.getString("ui_lang", "en") ?: "en") }
             CompositionLocalProvider(
                 LocalDarkMode provides darkModeState,
-                LocalLayoutDirection provides LayoutDirection.Ltr
+                LocalUiLang provides langState,
+                LocalLayoutDirection provides if (langState.value == "he") LayoutDirection.Rtl else LayoutDirection.Ltr
             ) {
                 MaterialTheme(colorScheme = if (darkModeState.value) BeeDarkScheme else BeeLightScheme) {
-                    DvoraApp(onToggleDarkMode = {
-                        darkModeState.value = !darkModeState.value
-                        prefs.edit().putBoolean("dark_mode", darkModeState.value).apply()
-                    })
+                    DvoraApp(
+                        onToggleDarkMode = {
+                            darkModeState.value = !darkModeState.value
+                            prefs.edit().putBoolean("dark_mode", darkModeState.value).apply()
+                        },
+                        onToggleLang = {
+                            val next = if (langState.value == "he") "en" else "he"
+                            langState.value = next
+                            prefs.edit().putString("ui_lang", next).apply()
+                        }
+                    )
                 }
             }
         }
@@ -394,26 +445,36 @@ private fun tryOpenInBrave(context: Context, url: String): Boolean {
     return false
 }
 
+/**
+ * If [url] is a Stremio WEB detail page and the Stremio APP is installed,
+ * open it there via its deep link — the same route the default browser would
+ * have used. Returns true when handled; the caller then stops.
+ */
+private fun tryOpenInStremio(context: Context, url: String): Boolean {
+    if (!url.contains("web.stremio.com") || !url.contains("/detail/")) return false
+    val match = Regex("detail/(movie|series)/([^/]+)").find(url) ?: return false
+    val type = match.groupValues[1]
+    val id = match.groupValues[2]
+    val deepLink = "stremio:///detail/$type/$id"
+    return try {
+        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(deepLink))
+        if (intent.resolveActivity(context.packageManager) != null) {
+            context.startActivity(intent)
+            true
+        } else {
+            false                                   // Stremio not installed → caller falls back
+        }
+    } catch (_: Exception) {
+        false
+    }
+}
+
 fun openUrl(context: Context, url: String) {
     try {
         val cleanUrl = if (url.startsWith("http")) url else "https://$url"
 
         // 1) Stremio web URLs go to the Stremio app (NOT a download manager).
-        if (cleanUrl.contains("web.stremio.com") && cleanUrl.contains("/detail/")) {
-            val regex = Regex("detail/(movie|series)/([^/]+)")
-            val match = regex.find(cleanUrl)
-            if (match != null) {
-                val type = match.groupValues[1]
-                val id = match.groupValues[2]
-                val deepLink = "stremio:///detail/$type/$id"
-                try {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(deepLink)))
-                    return
-                } catch (_: Exception) {
-                    // Stremio not installed, fall through to IDM / browser
-                }
-            }
-        }
+        if (tryOpenInStremio(context, cleanUrl)) return
 
         // 2) Try IDM apps (download manager) first.
         if (tryOpenInIdm(context, cleanUrl)) return
@@ -424,8 +485,23 @@ fun openUrl(context: Context, url: String) {
         // 4) Fall back to the default browser
         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(cleanUrl)))
     } catch (_: Exception) {
-        Toast.makeText(context, "Could not open URL", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, localeStr(context, R.string.toast_open_url_failed), Toast.LENGTH_SHORT).show()
     }
+}
+
+/**
+ * Click handler of every result card in the app.
+ *
+ * A Stremio detail page ALWAYS goes to the Stremio app when installed — in
+ * both link-handler modes. Otherwise: "use Dvora browser" (settings, pref
+ * `use_dvora_browser`) → deep-link the in-app ad-blocking browser; else the
+ * classic external chain (Stremio → IDM → Brave → default browser).
+ */
+fun openCard(context: Context, url: String, onBrowser: (String) -> Unit) {
+    val cleanUrl = if (url.startsWith("http")) url else "https://$url"
+    if (tryOpenInStremio(context, cleanUrl)) return
+    val prefs = context.getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE)
+    if (prefs.getBoolean("use_dvora_browser", false)) onBrowser(cleanUrl) else openUrl(context, cleanUrl)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -434,7 +510,7 @@ fun openUrl(context: Context, url: String) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DvoraApp(onToggleDarkMode: () -> Unit) {
+fun DvoraApp(onToggleDarkMode: () -> Unit, onToggleLang: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val scanner = remember { DvoraScanner() }
@@ -488,6 +564,19 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
     var showSubtitles by remember { mutableStateOf(false) }
     var showImdb by remember { mutableStateOf(false) }
     var showBookmarks by remember { mutableStateOf(false) }
+    var showBrowser by remember { mutableStateOf(false) }
+    var browserUrl by remember { mutableStateOf("") }
+
+    // kicks the ad-block list load (cache/asset, then background refresh) at startup
+    val repo = remember { Repo.get(context) }
+
+    /** every clickable result card routes through here → in-app browser (per settings) or the external chain. */
+    val onResult: (String) -> Unit = { u ->
+        openCard(context, u) { url ->
+            showBookmarks = false; showSubtitles = false; showImdb = false; showSettings = false
+            browserUrl = url; showBrowser = true
+        }
+    }
 
     val headerBg = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
     val scaffoldBg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
@@ -545,6 +634,13 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                         }
                     }
                     IconButton(onClick = {
+                        browserUrl = "https://www.globes.co.il/"
+                        showBrowser = true; showSubtitles = false; showSettings = false; showImdb =
+                        false; showBookmarks = false
+                    }) {
+                        Icon(Icons.Default.Public, L(R.string.cd_browser), tint = BeeColors.HoneyGold)
+                    }
+                    IconButton(onClick = {
                         showSettings = true; showSubtitles = false; showImdb = false; showBookmarks = false
                     }) {
                         Icon(Icons.Default.Settings, "Settings", tint = BeeColors.HoneyGold)
@@ -557,14 +653,25 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
     ) { innerPadding ->
         when {
             showBookmarks -> BookmarksScreen(
+                onResult = onResult,
                 onBack = { showBookmarks = false },
                 onToggleDark = onToggleDarkMode,
                 modifier = Modifier.padding(innerPadding)
             )
 
+            showBrowser -> BrowserScreen(
+                initialUrl = browserUrl,
+                repo = repo,
+                onBack = { showBrowser = false },
+                onToggleDark = onToggleDarkMode,
+                modifier = Modifier.padding(innerPadding)
+            )
+
             showSettings -> SettingsScreen(
+                repo = repo,
                 shows = shows, movies = movies, manualChecks = manualChecks,
                 apiSites = apiSites, exclusions = exclusions,
+                onToggleLang = onToggleLang,
                 onUpdate = { type, newList ->
                     when (type) {
                         SourceType.SHOW -> {
@@ -595,6 +702,7 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
 
             showSubtitles -> SubtitlesScreen(
                 scanner = scanner,
+                onResult = onResult,
                 onBack = { showSubtitles = false },
                 onToggleDark = onToggleDarkMode,
                 modifier = Modifier.padding(innerPadding)
@@ -602,6 +710,7 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
 
             showImdb -> ImdbScreen(
                 scanner = scanner,
+                onResult = onResult,
                 onBack = { showImdb = false },
                 onToggleDark = onToggleDarkMode,
                 modifier = Modifier.padding(innerPadding)
@@ -784,19 +893,19 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                         }
                         if (fr.isNotEmpty()) {
                             item { BeesSectionHeader("🍯 Results") }
-                            items(fr.sortedByDescending { it.found }) { ResultItem(it, true) }
+                            items(fr.sortedByDescending { it.found }) { ResultItem(it, true, onResult) }
                         }
 
                         if (fa.isNotEmpty()) {
                             item { Spacer(Modifier.height(8.dp)); BeesSectionHeader("🍯🍯 API Results") }
-                            items(fa) { ResultItem(it, true) }
+                            items(fa) { ResultItem(it, true, onResult) }
                         }
                         if (fm.isNotEmpty()) {
                             item { Spacer(Modifier.height(16.dp)); BeesSectionHeader("🔍 Manual Checks") }
                             items(fm) { link ->
                                 Card(
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                                        .clickable { openUrl(context, link) },
+                                        .clickable { onResult(link) },
                                     colors = CardDefaults.cardColors(containerColor = cardBg),
                                     shape = RoundedCornerShape(10.dp)
                                 ) {
@@ -934,10 +1043,10 @@ fun BeesSectionHeader(title: String) {
 }
 
 @Composable
-fun ResultItem(result: SearchResult, showDetails: Boolean = false) {
+fun ResultItem(result: SearchResult, showDetails: Boolean = false, onResult: (String) -> Unit) {
     val context = LocalContext.current
     Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { openUrl(context, result.url) },
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { onResult(result.url) },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (result.found) beeAdapt(
@@ -988,13 +1097,13 @@ fun ResultItem(result: SearchResult, showDetails: Boolean = false) {
 }
 
 @Composable
-fun ImdbResultItem(item: ImdbResult) {
+fun ImdbResultItem(item: ImdbResult, onResult: (String) -> Unit) {
     val context = LocalContext.current
     val isBookmarked = BookmarksManager.isBookmarked(item.imdbId)
     val cardBg = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
 
     Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { openUrl(context, item.imdbUrl) },
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable { onResult(item.imdbUrl) },
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = cardBg),
         elevation = CardDefaults.cardElevation(2.dp)
@@ -1201,6 +1310,7 @@ fun ImdbSuggestionItem(
 @Composable
 fun SubtitlesScreen(
     scanner: DvoraScanner,
+    onResult: (String) -> Unit,
     onBack: () -> Unit,
     onToggleDark: () -> Unit,
     modifier: Modifier = Modifier
@@ -1304,20 +1414,20 @@ fun SubtitlesScreen(
             modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
         ) {
-            items(results) { SubtitleResultCard(it) }
+            items(results) { SubtitleResultCard(it, onResult) }
         }
     }
 }
 
 @Composable
-fun SubtitleResultCard(item: SubtitleResult) {
+fun SubtitleResultCard(item: SubtitleResult, onResult: (String) -> Unit) {
     val context = LocalContext.current
     val cardBg = beeAdapt(Color(0xFFF1F8E9), Color(0xFF1B2A10))
     val textColor = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
     val subColor = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.7f))
 
     Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp).clickable { openUrl(context, item.url) },
+        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp).clickable { onResult(item.url) },
         shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = cardBg),
         elevation = CardDefaults.cardElevation(3.dp),
         border = androidx.compose.foundation.BorderStroke(1.dp, BeeColors.FoundGreen.copy(alpha = 0.35f))
@@ -1410,7 +1520,7 @@ fun SubtitleResultCard(item: SubtitleResult) {
                 }
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                IconButton(onClick = { openUrl(context, item.url) }) {
+                IconButton(onClick = { onResult(item.url) }) {
                     Icon(
                         Icons.Default.OpenInNew,
                         "Open",
@@ -1434,7 +1544,13 @@ fun SubtitleResultCard(item: SubtitleResult) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 @Composable
-fun ImdbScreen(scanner: DvoraScanner, onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modifier = Modifier) {
+fun ImdbScreen(
+    scanner: DvoraScanner,
+    onResult: (String) -> Unit,
+    onBack: () -> Unit,
+    onToggleDark: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     val context = LocalContext.current
     val isDark = LocalDarkMode.current.value
     val headerBg = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
@@ -1514,13 +1630,13 @@ fun ImdbScreen(scanner: DvoraScanner, onBack: () -> Unit, onToggleDark: () -> Un
             modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp)
         ) {
-            items(results) { ImdbResultCard(it) }
+            items(results) { ImdbResultCard(it, onResult) }
         }
     }
 }
 
 @Composable
-fun ImdbResultCard(item: ImdbResult) {
+fun ImdbResultCard(item: ImdbResult, onResult: (String) -> Unit) {
     val context = LocalContext.current
     val cardBg = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
     val textColor = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
@@ -1528,7 +1644,7 @@ fun ImdbResultCard(item: ImdbResult) {
     val isBookmarked = BookmarksManager.isBookmarked(item.imdbId)
 
     Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp).clickable { openUrl(context, item.imdbUrl) },
+        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp).clickable { onResult(item.imdbUrl) },
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = cardBg),
         elevation = CardDefaults.cardElevation(3.dp)
@@ -1646,7 +1762,12 @@ fun ImdbResultCard(item: ImdbResult) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modifier = Modifier) {
+fun BookmarksScreen(
+    onResult: (String) -> Unit,
+    onBack: () -> Unit,
+    onToggleDark: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     val context = LocalContext.current
     val isDark = LocalDarkMode.current.value
     val headerBg = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
@@ -1990,6 +2111,7 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
                     BookmarkCard(
                         bm = bm,
                         context = context,
+                        onResult = onResult,
                         onSetReminder = { pref -> requestReminder(bm.imdbId, pref) },
                         onEditReminder = { editReminder(bm) },
                         onClearReminder = { BookmarksManager.clearReminder(context, bm.imdbId) })
@@ -2017,6 +2139,7 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
                 BookmarkCard(
                     bm = bm,
                     context = context,
+                    onResult = onResult,
                     onSetReminder = { pref -> requestReminder(bm.imdbId, pref) },
                     onEditReminder = { editReminder(bm) },
                     onClearReminder = { BookmarksManager.clearReminder(context, bm.imdbId) })
@@ -2029,6 +2152,7 @@ fun BookmarksScreen(onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modi
 fun BookmarkCard(
     bm: Bookmark,
     context: Context,
+    onResult: (String) -> Unit,
     onSetReminder: (java.time.LocalDate?) -> Unit,
     onEditReminder: () -> Unit,
     onClearReminder: () -> Unit
@@ -2109,7 +2233,7 @@ fun BookmarkCard(
     }
 
     Card(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp).clickable { openUrl(context, bm.imdbUrl) },
+        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp).clickable { onResult(bm.imdbUrl) },
         shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = cardBg),
         elevation = CardDefaults.cardElevation(2.dp),
         border = if (hasReminder) androidx.compose.foundation.BorderStroke(
@@ -2900,14 +3024,25 @@ fun BackupScreen(
 
 @Composable
 fun SettingsScreen(
+    repo: ListRepo,
     shows: List<String>, movies: List<String>, manualChecks: List<String>,
     apiSites: List<String>, exclusions: List<String>,
     onUpdate: (SourceType, List<String>) -> Unit,
+    onToggleLang: () -> Unit,
     onBack: () -> Unit, onToggleDark: () -> Unit, modifier: Modifier = Modifier
 ) {
     BackHandler { onBack() }
     var selectedTab by remember { mutableIntStateOf(0) }
-    val tabs = listOf("Shows", "Movies", "APIs", "Manual", "Exclusions", "Backup", "Logs")
+    val tabs = listOf(
+        L(R.string.tab_shows),
+        L(R.string.tab_movies),
+        L(R.string.tab_apis),
+        L(R.string.tab_manual),
+        L(R.string.tab_exclusions),
+        L(R.string.tab_backup),
+        L(R.string.tab_logs),
+        L(R.string.tab_browser)
+    )
     val isDark = LocalDarkMode.current.value
     val headerBg = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
     val bgColor = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
@@ -2973,6 +3108,7 @@ fun SettingsScreen(
             )
 
             6 -> VerboseLogsScreen()
+            7 -> BrowserTab(repo = repo, onToggleLang = onToggleLang)
         }
     }
 }

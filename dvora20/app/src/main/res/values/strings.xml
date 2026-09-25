@@ -1,3 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">dvora2.0</string>
+
+    <!-- icon / button content descriptions -->
+    <string name="cd_back">Back</string>
+    <string name="cd_theme">Toggle dark mode</string>
+    <string name="cd_browser">Browser</string>
+    <string name="cd_back_page">Back in page history</string>
+    <string name="cd_fwd_page">Forward in page history</string>
+    <string name="cd_reload">Reload page</string>
+    <string name="cd_go">Go</string>
+    <string name="cd_shield">Blocked requests — details</string>
+    <string name="cd_close">Close</string>
+    <string name="cd_refresh">Update this list now</string>
+
+    <!-- settings tabs -->
+    <string name="tab_shows">Shows</string>
+    <string name="tab_movies">Movies</string>
+    <string name="tab_apis">APIs</string>
+    <string name="tab_manual">Manual</string>
+    <string name="tab_exclusions">Exclusions</string>
+    <string name="tab_backup">Backup</string>
+    <string name="tab_logs">Logs</string>
+    <string name="tab_browser">Browser</string>
+
+    <!-- SSL error dialog -->
+    <string name="ssl_title">Unknown certificate</string>
+    <string name="ssl_body">This page uses a certificate that isn\'t trusted. Only continue if you expect this site to have such a certificate (or if a proxy/MITM is in front of it).</string>
+    <string name="ssl_proceed">Continue once</string>
+    <string name="ssl_cancel">Go back</string>
+
+    <!-- downloads -->
+    <string name="dl_started">Download started</string>
+    <string name="dl_started_desc">Dvora download</string>
+    <string name="dl_failed">Could not start download</string>
+
+    <!-- shield bottom sheet -->
+    <string name="sheet_blocked_page">blocked on this page</string>
+    <string name="sheet_lifetime">blocked since install</string>
+    <string name="sheet_allowed">Allowed site — blocking OFF for this domain</string>
+    <string name="sheet_log">Blocked on this page</string>
+    <string name="sheet_log_empty">Nothing blocked on this page so far</string>
+
+    <!-- settings › browser tab -->
+    <string name="btab_title">Ads &amp; tracker blocking</string>
+    <string name="btab_hint">EasyList, EasyPrivacy, EasyList Hebrew, EasyList Cookie — official HTTPS sources, weekly auto-refresh, bundled offline fallback</string>
+    <string name="btab_lists">FILTER LISTS</string>
+    <string name="btab_never">never fetched</string>
+    <string name="btab_rules">active rules</string>
+    <string name="btab_lifetime">blocked since install</string>
+    <string name="btab_linkmode">Result cards open in:</string>
+    <string name="btab_link_ext">external apps (existing chain)</string>
+    <string name="btab_link_dvora">the in-app Dvora browser</string>
+    <string name="btab_lang">LANGUAGE</string>
+    <string name="btab_clear">CLEAR BROWSING DATA</string>
+    <string name="btab_clear_q">Clear browsing data?</string>
+    <string name="btab_clear_msg">The in-app browser cache, cookies and history will be wiped.</string>
+    <string name="btab_cleared">Browsing data cleared</string>
+
+    <!-- dialogs / toasts (shared) -->
+    <string name="toast_open_url_failed">Could not open URL</string>
+    <string name="ok">OK</string>
+    <string name="cancel">Cancel</string>
 </resources>

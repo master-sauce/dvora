@@ -61,12 +61,15 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)
-    
+
     // Networking and Parsing
     implementation(libs.okhttp)
     implementation(libs.jsoup)
     implementation(libs.gson)
     implementation(libs.coil.compose)
+
+    // In-app browser: async list downloads
+    implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
