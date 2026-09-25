@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider roots for sharing media to external apps -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- every file on the primary external volume — Download/dvora and any
+         user-picked folder alike -->
+    <external-path name="dvora_media" path="." />
+    <!-- the app-private fallback when external is not writable -->
+    <external-files-path name="dvora_app_media" path="." />
+</paths>
