@@ -1,5 +1,6 @@
 package com.dvora.dvora20.adblock
 
+import android.util.Log
 import kotlin.collections.ArrayDeque
 
 /**
@@ -83,6 +84,10 @@ class BlockerEngine {
             reqLog.addLast(ReqRecord(url, tag, blocked, rule))
             if (reqLog.size > 800) reqLog.removeFirst()
         }
+        if (tag == "media") Log.i(
+            "dvora-yt",
+            "capture [$blocked] $url"
+        )     // visible in logcat — what the downloads picker offers
     }
 
     /**

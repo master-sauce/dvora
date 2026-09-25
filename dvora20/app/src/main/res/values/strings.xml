@@ -74,6 +74,7 @@
     <string name="yt_cancelled">download cancelled</string>
     <string name="yt_dl_fail">yt-dlp download failed</string>
     <string name="yt_err_title">media download failed</string>
+    <string name="yt_seg_hint">segment fragment only — pick the playlist/master (.m3u8 / .mpd) row on top for the full video</string>
     <string name="yt_folder_lbl">MEDIA DOWNLOAD FOLDER</string>
     <string name="yt_folder_pick">where captured media gets saved</string>
     <string name="yt_folder_title">save captured media to:</string>

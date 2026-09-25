@@ -11,6 +11,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.util.Log
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -202,8 +203,9 @@ fun BrowserScreen(
     // ── yt-dlp ────────────────────────────────────────────────────────────────────
 
     /** run yt-dlp on [url], saving into the downloads dir — tracked by the in-app status row and a notification. */
-    fun startYt(url: String) {
+    fun startYt(given: String) {
         if (ytProg >= 0) return
+        val url = given.substringBefore('#')     // page hash fragments are noise for yt-dlp
         ytPicker = false
         ytErr = null
         // old APIs need the write grant on the chosen public folder first — ask, then retry
@@ -227,13 +229,32 @@ fun BrowserScreen(
         YtNotify.progress(context, 0, url)
         // blocking download — must not run on the UI thread
         ytScope.launch(Dispatchers.IO) {
+            // rolling tail of yt-dlp's own stdout/stderr — shown in the failure dialog, logged under tag dvora-yt
+            val out = StringBuilder()
+            fun note(line: String?) {
+                if (line.isNullOrBlank()) return
+                out.append(line).append('\n')
+                if (out.length > 6000) out.delete(0, out.indexOf('\n').takeIf { it > 0 } ?: 0)
+                Log.i("dvora-yt", line.takeLast(400))
+            }
+
+            val started = System.currentTimeMillis()
             try {
                 val dir = ytSaveDir(context) ?: error("no writable media folder")
                 if (!dir.exists() && !dir.mkdirs()) error("cannot create folder ${dir.path}")
                 val req = YoutubeDLRequest(url)
                 req.addOption("-o", "${dir.path}/%(title)s.%(ext)s")
-                req.addOption("-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best")
-                YoutubeDL.execute(req, "dvora-media") { p, _, _ ->
+                // best video + separate best audio when offered, else single best — merged to one mp4 by ffmpeg
+                req.addOption("-f", "bv*+ba/b")
+                req.addOption("--merge-output-format", "mp4")
+                // stale yt-dlp from a previously crashed / cancelled run under our fixed id
+                try {
+                    YoutubeDL.getInstance().destroyProcessById("dvora-media")
+                } catch (_: Exception) {
+                }
+                note("yt-dlp $url")
+                YoutubeDL.execute(req, "dvora-media") { p, _, line ->
+                    note(line)
                     val pct = p.toInt()
                     if (pct >= 100) {
                         ytProg = -1
@@ -248,14 +269,37 @@ fun BrowserScreen(
                         if (pct % 5 == 0) YtNotify.progress(context, pct, url)
                     }
                 }
-            } catch (e: Exception) {
-                YtNotify.dismiss(context)
-                // a user cancel (stopYt / notification action) already reset ytProg — no failure dialog then
-                if (ytProg >= 0) {
-                    ytErr = (e.message ?: e.toString()).take(2000)
-                    Toast.makeText(context, localeStr(context, R.string.yt_dl_fail), Toast.LENGTH_SHORT).show()
+                // the process ended without ever reporting ≥100 — did it still land a fresh file?
+                if (ytProg in 0..99) {
+                    val newest = dir.listFiles()?.filter { f -> f.isFile }?.maxByOrNull { f -> f.lastModified() }
+                    if (newest != null && newest.lastModified() >= started) {
+                        ytProg = -1
+                        YtNotify.done(context, newest.name)
+                        Handler(Looper.getMainLooper()).post {
+                            Toast.makeText(context, "⬇ ${newest.name} → ${dir.path}", Toast.LENGTH_LONG).show()
+                        }
+                    } else {
+                        // nothing fresh on disk — a silent failure; surface what yt-dlp said
+                        YtNotify.dismiss(context)
+                        ytErr = out.toString().takeLast(2000)
+                        ytProg = -1
+                        Handler(Looper.getMainLooper()).post {
+                            Toast.makeText(context, localeStr(context, R.string.yt_dl_fail), Toast.LENGTH_SHORT).show()
+                        }
+                    }
                 }
-                ytProg = -1
+            } catch (e: Exception) {
+                note("EXCEPTION: ${e.stackTraceToString().takeLast(1500)}")
+                YtNotify.dismiss(context)
+                // a user cancel (stopYt / notification action) already reset ytProg — no failure toast then
+                if (ytProg >= 0) {
+                    ytErr = "${e.message ?: e}\n${out.toString().takeLast(1200)}".take(2000)
+                    ytProg = -1
+                    // toast is main-thread only — the worker coroutine crashed the app before this was fixed
+                    Handler(Looper.getMainLooper()).post {
+                        Toast.makeText(context, localeStr(context, R.string.yt_dl_fail), Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
         }
     }
@@ -455,12 +499,16 @@ fun BrowserScreen(
         }
     }
     if (ytPicker) {
-        // the same rows the panel's "media" filter shows — nothing captured may be missing here
+        // the same rows the panel's "media" filter shows — nothing captured may be missing here.
+        // playlists / direct videos on top, bare fragments at the bottom
         val cands = remember(ytTick) {
             repo.engine.reqLog
-                .filter { it.tag == "media" }
+                .filter { !it.blocked }
                 .map { it.url }
-                .distinctBy { Media.normalize(it) }    // query-stripped dedup — one row per stream, not per segment
+                .filter { !it.contains("/api/", true) }   // json api endpoints are not yt-dlp inputs
+                .filter { Media.sniff(it) != null }       // playlists / manifests / direct files / fragments only
+                .distinctBy { Media.normalize(it) }       // query-stripped dedup — one row per stream, not per segment
+                .sortedBy { mediaRank(it) }               // playlists / masters on top — one fragment at the bottom is not the movie
         }
         AlertDialog(
             onDismissRequest = { ytPicker = false },
@@ -473,15 +521,32 @@ fun BrowserScreen(
                         LazyColumn {
                             items(cands) { u ->
                                 Column(
-                                    Modifier.fillMaxWidth().clickable { startYt(u) }.padding(vertical = 6.dp)
+                                    Modifier.fillMaxWidth().clickable {
+                                        if (isSegment(u)) {
+                                            // one fragment ≠ the movie — yt-dlp needs the stream's MASTER PLAYLIST:
+                                            // captured one → guessed sibling file of the fragment → else the page url
+                                            val pl = cands.firstOrNull { isPlaylistCandidate(it) }
+                                                ?: if (u.lowercase().contains(".mp4/")) {
+                                                    u.substringBeforeLast('/') + "/index.m3u8"
+                                                } else null
+                                            startYt(pl ?: address)
+                                        } else {
+                                            startYt(u)
+                                        }
+                                    }.padding(vertical = 6.dp)
                                 ) {
                                     Text(
-                                        (Media.sniff(u) ?: "media").uppercase(),
+                                        if (isSegment(u)) "SEGMENT" else (Media.sniff(u) ?: "media").uppercase(),
                                         fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = BeeColors.HoneyGold
+                                        color = if (isSegment(u)) BeeColors.DeepAmber else BeeColors.HoneyGold
                                     )
-                                    Text(u, fontSize = 10.sp, color = textColor, maxLines = 2)
+                                    Text(
+                                        u,
+                                        fontSize = 10.sp,
+                                        color = textColor,
+                                        maxLines = 2
+                                    )
                                 }
                             }
                         }
@@ -845,6 +910,30 @@ private fun ResourceSheet(
     }
 }
 
+
+/** bare .ts/.m4s fragment file — yt-dlp can't turn one segment back into the full video/show; the master playlist row is the entry point. */
+private fun isSegment(u: String): Boolean {
+    val p = u.substringBefore('?').lowercase()
+    return p.endsWith(".ts") || p.endsWith(".m4s")
+}
+
+/**
+ * a genuinely playable playlist/master URL — JSON api endpoints such as
+ * /api/v2/download/episode/manifest?id=… sniff as MPD by url but hand yt-dlp
+ * a plain JSON blob instead of the stream.
+ */
+private fun isPlaylistCandidate(u: String): Boolean {
+    val ul = u.lowercase()
+    if (ul.contains("/api/", true) || ul.contains("manifest?id=", true)) return false
+    return Media.isM3U8(u) || Media.isMPD(u)
+}
+
+/** picker row rank — playlists/masters first, full container files next, fragments last. */
+private fun mediaRank(u: String): Int = when {
+    isPlaylistCandidate(u) -> 0
+    isSegment(u) -> 2
+    else -> 1
+}
 
 /** yt-dlp download notification — progress + cancel action, mirrors the in-app status row. */
 object YtNotify {

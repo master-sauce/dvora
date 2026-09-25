@@ -46,6 +46,7 @@ import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -352,6 +353,14 @@ class MainActivity : ComponentActivity() {
         try {
             YoutubeDL.getInstance().init(this)
             FFmpeg.getInstance().init(this)
+            // keep the bundled yt-dlp binary current — silent self-update on every app start
+            // (newest nightly channel = newest extractors for streaming sites)
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    YoutubeDL.getInstance().updateYoutubeDL(this@MainActivity, YoutubeDL.UpdateChannel.NIGHTLY)
+                } catch (_: Exception) {
+                }
+            }
         } catch (_: Exception) {
         }
         setContent {

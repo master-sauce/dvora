@@ -72,20 +72,30 @@ class BlockerWebViewClient(
     // ── filtering ─────────────────────────────────────────────────────────────
 
     override fun shouldInterceptRequest(view: WebView?, request: WebResourceRequest): WebResourceResponse? {
-        if (!repo.isMaster()) return null
         val uri = request.url
         val scheme = (uri.scheme ?: "").lowercase()
         if (scheme != "http" && scheme != "https") return null
         val host = uri.host?.lowercase() ?: return null
         if (host.isEmpty()) return null
-        for (a in allowedHosts()) if (host == a || host.endsWith(".$a")) return null    // per-site whitelist
 
         val engine = repo.engine
-        if (engine.totalRules + engine.totalException == 0) return null                  // lists still loading
-
         val kind = kindOf(request)
         val tag = tagOf(request, kind)
         val url = uri.toString()
+
+        // every http(s) sub-resource is logged to the media picker even while the block engine is
+        // still compiling or globally off — otherwise the page's very early requests (the video
+        // playlist arrives within milliseconds of the document) would never reach the downloads list.
+        if (!repo.isMaster()) {
+            if (tag == "media") engine.noteReq(tag, url, false, "")
+            return null
+        }
+        for (a in allowedHosts()) if (host == a || host.endsWith(".$a")) return null    // per-site whitelist
+        if (engine.totalRules + engine.totalException == 0) {                                       // lists still loading
+            if (tag == "media") engine.noteReq(tag, url, false, "")
+            return null
+        }
+
         val rule = engine.match(url, host, kind, docHost)        // null = allow / exception wins
         when {
             rule != null -> {
@@ -118,19 +128,24 @@ class BlockerWebViewClient(
     }
 
     /** display tag for the resources panel: page / js / css / img / frame / api / media / req */
-    private fun tagOf(req: WebResourceRequest, kind: ResourceKind): String = when (kind) {
-        ResourceKind.DOCUMENT -> "page"
-        ResourceKind.SUBDOCUMENT -> "frame"
-        ResourceKind.SCRIPT -> "js"
-        ResourceKind.STYLESHEET -> "css"
-        ResourceKind.IMAGE -> "img"
-        ResourceKind.XHR -> "api"
-        else -> {
-            val url = req.url.toString()
-            val accept = (req.requestHeaders["Accept"] ?: "").lowercase()
-            // the sniffer decides which requests are downloadable media
-            // (playlists / manifests / direct videos / segments), header hint kept
-            if (Media.sniff(url) != null || accept.contains("video/") || accept.contains("audio/")) "media" else "req"
+    private fun tagOf(req: WebResourceRequest, kind: ResourceKind): String {
+        // sniffable urls (playlists / manifests / direct files / fragments) are always media rows,
+        // whatever resource type the request was sent as (xhr playlists must not hide in "api")
+        if (!req.isForMainFrame && Media.sniff(req.url.toString()) != null) return "media"
+        return when (kind) {
+            ResourceKind.DOCUMENT -> "page"
+            ResourceKind.SUBDOCUMENT -> "frame"
+            ResourceKind.SCRIPT -> "js"
+            ResourceKind.STYLESHEET -> "css"
+            ResourceKind.IMAGE -> "img"
+            ResourceKind.XHR -> "api"
+            else -> {
+                val url = req.url.toString()
+                val accept = (req.requestHeaders["Accept"] ?: "").lowercase()
+                // the sniffer decides which requests are downloadable media
+                // (playlists / manifests / direct videos / segments), header hint kept
+                if (Media.sniff(url) != null || accept.contains("video/") || accept.contains("audio/")) "media" else "req"
+            }
         }
     }
 
@@ -146,7 +161,14 @@ class BlockerWebViewClient(
         val headers = HashMap<String, String>()
         headers["Cache-Control"] = "no-store"
         headers["Access-Control-Allow-Origin"] = "*"
-        return WebResourceResponse(mime, "UTF-8", 204, "Blocked by Dvora", headers, ByteArrayInputStream(ByteArray(0)))
+        return WebResourceResponse(
+            mime,
+            "UTF-8",
+            204,
+            "Blocked by Dvora",
+            headers,
+            ByteArrayInputStream(ByteArray(0))
+        )
     }
 
     // ── page lifecycle ────────────────────────────────────────────────────────────────
