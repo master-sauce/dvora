@@ -545,18 +545,44 @@ fun BrowserScreen(
     // ── yt-dlp failure reason ─────────────────────────────────────────────────
     ytErr?.let { msg ->
         AlertDialog(
-            onDismissRequest = { ytErr = null },
+
+            // close AND drop the source so the poll loop can't re-pop the same failure
+            onDismissRequest = { ytErr = null; YtCtl.err = null },
+
             title = { Text(L(R.string.yt_err_title), color = BeeColors.HoneyGold) },
+
             text = {
+
                 Column {
+
                     Text(msg, color = textColor, fontSize = 11.sp)
+
                     Spacer(Modifier.height(6.dp))
+
                     Text(ytUrl, color = subColor, fontSize = 9.sp, maxLines = 3)
+
                 }
+
             },
+
             confirmButton = {
-                TextButton(onClick = { ytErr = null }) {
+
+                TextButton(onClick = {
+                    ytErr = null; YtCtl.err = null
+                }) {
+
                     Text(L(R.string.ok), color = BeeColors.DeepAmber)
+
+                }
+
+            },
+
+            dismissButton = {
+                TextButton(onClick = {
+                    copyToClipboard(context, "$msg\n$ytUrl")
+                    Toast.makeText(context, localeStr(context, R.string.rs_copied), Toast.LENGTH_SHORT).show()
+                }) {
+                    Text(L(R.string.yt_copy_err), color = BeeColors.HoneyGold)
                 }
             }
         )
