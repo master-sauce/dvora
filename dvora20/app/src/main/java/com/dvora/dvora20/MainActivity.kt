@@ -619,6 +619,13 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                     ),
                     actions = {
                         IconButton(onClick = {
+                            browserUrl = "https://duckduckgo.com/"
+                            showBrowser = true; showSubtitles = false; showSettings = false; showImdb =
+                            false; showBookmarks = false
+                        }) {
+                            Icon(Icons.Default.Public, L(R.string.cd_browser), tint = BeeColors.HoneyGold)
+                        }
+                        IconButton(onClick = {
                             showSubtitles = true; showSettings = false; showImdb = false; showBookmarks = false
                         }) {
                             Icon(Icons.Default.Subtitles, "Subtitles", tint = BeeColors.HoneyGold)
@@ -649,13 +656,6 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
                                     )
                                 }
                             }
-                        }
-                        IconButton(onClick = {
-                            browserUrl = "https://duckduckgo.com/"
-                            showBrowser = true; showSubtitles = false; showSettings = false; showImdb =
-                            false; showBookmarks = false
-                        }) {
-                            Icon(Icons.Default.Public, L(R.string.cd_browser), tint = BeeColors.HoneyGold)
                         }
                         IconButton(onClick = {
                             showSettings = true; showSubtitles = false; showImdb = false; showBookmarks = false
