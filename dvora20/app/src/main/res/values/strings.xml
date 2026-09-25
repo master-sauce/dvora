@@ -78,9 +78,9 @@
     <string name="rs_empty">nothing requested on this page yet</string>
 
     <!-- yt-dlp media download -->
-    <string name="yt_picker">media to download (yt-dlp)</string>
-    <string name="yt_none">start a video first — nothing captured yet</string>
-    <string name="yt_cd">captured media — download with yt-dlp</string>
+    <string name="yt_picker">media to download</string>
+    <string name="yt_none">start a video first, nothing captured yet</string>
+    <string name="yt_cd">captured media, download with yt-dlp</string>
     <string name="yt_down">media download</string>
     <string name="yt_cancel">cancel download</string>
     <string name="yt_done">media saved</string>
