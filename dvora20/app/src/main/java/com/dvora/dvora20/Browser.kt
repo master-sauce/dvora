@@ -639,6 +639,51 @@ fun BrowserScreen(
     // edge-to-edge; the toolbar is a collapsible row at the bottom of the screen
     Box(modifier = modifier.fillMaxSize().background(pageBg)) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
+            // ── top row: live url / search — toggleable by the toolbar button ──
+            if (urlBar) {
+                LaunchedEffect(Unit) {
+                    urlEditing = false
+                    urlDraft = address
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                        .background(headerBg)
+                ) {
+                    Icon(
+                        Icons.Default.Link,
+                        null,
+                        tint = if (urlEditing) BeeColors.FoundGreen else BeeColors.HoneyGold,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    OutlinedTextField(
+                        value = if (urlEditing) urlDraft else address,
+                        onValueChange = { urlEditing = true; urlDraft = it },
+                        modifier = Modifier.weight(1f).focusRequester(urlFocus),
+                        singleLine = true,
+                        textStyle = TextStyle(fontSize = 12.sp, color = textColor),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = textColor,
+                            unfocusedTextColor = textColor,
+                            focusedBorderColor = BeeColors.HoneyGold,
+                            unfocusedBorderColor = BeeColors.HoneyGold.copy(alpha = 0.25f),
+                            focusedContainerColor = headerBg,
+                            unfocusedContainerColor = headerBg
+                        ),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
+                        keyboardActions = KeyboardActions(onGo = { submitUrl() }, onDone = { submitUrl() }),
+                        placeholder = {
+                            Text("https://… or search term", fontSize = 12.sp, color = textColor.copy(alpha = 0.35f))
+                        }
+                    )
+                    IconButton(onClick = { submitUrl() }, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.PlayArrow, L(R.string.nav_go), tint = BeeColors.HoneyGold)
+                    }
+                }
+            }
+
             AndroidView(
                 factory = { webView },
                 modifier = Modifier.weight(1f).fillMaxWidth()
@@ -780,53 +825,6 @@ fun BrowserScreen(
                         )
                     }
                 }
-
-                // url / search row — tracks the page url live; editable, Enter submits
-                // (a plain word becomes a duckduckgo search, anything url-like is navigated to)
-                if (urlBar) {
-                    LaunchedEffect(Unit) {
-                        urlEditing = false
-                        urlDraft = address
-                        delay(80)                            // row must be laid out before the IME is requested
-                        urlFocus.requestFocus()
-                    }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                            .padding(horizontal = 10.dp, vertical = 3.dp).background(headerBg)
-                    ) {
-                        Icon(
-                            Icons.Default.Link,
-                            null,
-                            tint = if (urlEditing) BeeColors.FoundGreen else BeeColors.HoneyGold,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        OutlinedTextField(
-                            value = if (urlEditing) urlDraft else address,
-                            onValueChange = { urlEditing = true; urlDraft = it },
-                            modifier = Modifier.weight(1f).focusRequester(urlFocus),
-                            singleLine = true,
-                            textStyle = TextStyle(fontSize = 11.sp, color = textColor),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = textColor,
-                                unfocusedTextColor = textColor,
-                                focusedBorderColor = BeeColors.HoneyGold,
-                                unfocusedBorderColor = BeeColors.HoneyGold.copy(alpha = 0.25f),
-                                focusedContainerColor = headerBg,
-                                unfocusedContainerColor = headerBg
-                            ),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
-                            keyboardActions = KeyboardActions(onGo = { submitUrl() }, onDone = { submitUrl() }),
-                            placeholder = {
-                                Text("https://… or search term", fontSize = 11.sp, color = textColor.copy(alpha = 0.35f))
-                            }
-                        )
-                        IconButton(onClick = ::submitUrl, modifier = Modifier.size(30.dp)) {
-                            Icon(Icons.Default.PlayArrow, L(R.string.nav_go), tint = BeeColors.HoneyGold)
-                        }
-                    }
-                }
                 }
             } else {
                 // bar hidden — slim strip with one button that brings it back
@@ -854,7 +852,7 @@ fun BrowserScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(bottom = if (barVisible) (if (urlBar) 96.dp else 62.dp) else 0.dp)
+                .padding(bottom = if (barVisible) 62.dp else 0.dp)
         ) {
             Box(
                 Modifier.navigationBarsPadding().fillMaxWidth().background(
