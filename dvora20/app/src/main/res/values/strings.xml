@@ -55,6 +55,12 @@
     <string name="med_move_title">move to folder?</string>
     <string name="med_move_empty">no folders yet — create one with the + button above, then retry</string>
     <string name="med_moved">moved to folder</string>
+    <string name="med_rename">rename?</string>
+    <string name="med_renamed">renamed</string>
+    <string name="med_action_fail">action failed</string>
+    <string name="med_file_del">delete file?</string>
+    <string name="med_file_del_msg">the file will be wiped from disk</string>
+    <string name="med_file_deleted">file deleted</string>
     <string name="med_move_fail">file move failed</string>
 
     <!-- SSL error dialog -->

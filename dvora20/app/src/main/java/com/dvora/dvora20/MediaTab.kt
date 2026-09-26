@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileMove
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Refresh
@@ -222,12 +223,23 @@ fun MediaTab() {
     var folderToDelete by remember { mutableStateOf<File?>(null) }
     // which file awaits a destination subfolder — the "move to folder" dialog target
     var moveTarget by remember { mutableStateOf<File?>(null) }
+    // which file awaits its wipe confirmation / which file OR folder awaits its new name
+    var fileToDelete by remember { mutableStateOf<File?>(null) }
+    var rename by remember { mutableStateOf<File?>(null) }
+    var renameName by remember { mutableStateOf("") }
     val folderFocus = remember { FocusRequester() }
+    val renameFocus = remember { FocusRequester() }
     // the AlertDialog opens ~before the field can hold focus — short settle, then the keyboard
     LaunchedEffect(newFolder) {
         if (newFolder) {
             delay(300)
             folderFocus.requestFocus()
+        }
+    }
+    LaunchedEffect(rename) {
+        if (rename != null) {
+            delay(300)
+            renameFocus.requestFocus()
         }
     }
 
@@ -304,6 +316,46 @@ fun MediaTab() {
                 Log.e("dvora-yt", "share failed: ${chooser.message} | ${e.message}", e)
                 Toast.makeText(context, localeStr(context, R.string.med_no_sharer), Toast.LENGTH_LONG).show()
             }
+        }
+    }
+
+    fun deleteFile() {
+        val f = fileToDelete ?: return
+        fileToDelete = null
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) { runCatching { f.delete() }.getOrDefault(false) }
+            Toast.makeText(
+                context,
+                localeStr(context, if (ok) R.string.med_file_deleted else R.string.med_action_fail),
+                Toast.LENGTH_SHORT
+            ).show()
+            if (ok) scan()
+        }
+    }
+
+    /** file and folder alike — same-directory rename, illegal chars sanitized. */
+    fun doRename() {
+        val src = rename ?: return
+        val raw = renameName.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
+        if (raw.isEmpty() || raw == src.name) return
+        rename = null
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    src.renameTo(
+                        File(
+                            src.parentFile,
+                            raw
+                        )
+                    )
+                }.getOrDefault(false)
+            }
+            Toast.makeText(
+                context,
+                localeStr(context, if (ok) R.string.med_renamed else R.string.med_action_fail),
+                Toast.LENGTH_SHORT
+            ).show()
+            if (ok) scan()
         }
     }
 
@@ -425,6 +477,14 @@ fun MediaTab() {
                         Icon(Icons.Default.Folder, null, tint = BeeColors.HoneyGold, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(10.dp))
                         Text(f.name, fontSize = 12.sp, color = textColor, maxLines = 1, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { rename = f; renameName = f.name }) {
+                            Icon(
+                                Icons.Default.Edit,
+                                L(R.string.med_rename),
+                                tint = BeeColors.HoneyGold,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                         IconButton(onClick = { folderToDelete = f }) {
                             Icon(
                                 Icons.Default.Delete,
@@ -463,6 +523,12 @@ fun MediaTab() {
                         }
                         IconButton(onClick = { moveTarget = f }) {
                             Icon(Icons.Default.DriveFileMove, L(R.string.med_move), tint = BeeColors.FoundGreen)
+                        }
+                        IconButton(onClick = { fileToDelete = f }) {
+                            Icon(Icons.Default.Delete, L(R.string.med_file_del), tint = BeeColors.NotFoundRed)
+                        }
+                        IconButton(onClick = { rename = f; renameName = f.name }) {
+                            Icon(Icons.Default.Edit, L(R.string.med_rename), tint = BeeColors.HoneyGold)
                         }
                     }
                 }
@@ -579,6 +645,53 @@ fun MediaTab() {
             },
             dismissButton = {
                 TextButton(onClick = { folderToDelete = null }) {
+                    Text(L(R.string.cancel), color = BeeColors.DeepAmber)
+                }
+            }
+        )
+    }
+
+    // ── wipe one listed file ────────────────────────────────────────────────
+    fileToDelete?.let { f ->
+        AlertDialog(
+            onDismissRequest = { fileToDelete = null },
+            title = { Text(L(R.string.med_file_del), color = BeeColors.HoneyGold) },
+            text = { Text("${f.name}\n\n" + L(R.string.med_file_del_msg), color = textColor) },
+            confirmButton = {
+                TextButton(onClick = { deleteFile() }) {
+                    Text(L(R.string.ok), color = BeeColors.NotFoundRed, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { fileToDelete = null }) {
+                    Text(L(R.string.cancel), color = BeeColors.DeepAmber)
+                }
+            }
+        )
+    }
+
+    // ── new name for the picked file or folder ────────────────────────────────
+    rename?.let { src ->
+        AlertDialog(
+            onDismissRequest = { rename = null },
+            title = { Text(L(R.string.med_rename), color = BeeColors.HoneyGold) },
+            text = {
+                OutlinedTextField(
+                    value = renameName,
+                    onValueChange = { renameName = it },
+                    modifier = Modifier.focusRequester(renameFocus),
+                    label = { Text(src.name) },
+                    singleLine = true,
+                    colors = beeTextFieldColors()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { doRename() }) {
+                    Text(L(R.string.ok), color = BeeColors.HoneyGold, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { rename = null }) {
                     Text(L(R.string.cancel), color = BeeColors.DeepAmber)
                 }
             }
