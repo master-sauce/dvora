@@ -54,6 +54,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -134,6 +141,10 @@ fun BrowserScreen(
     var crossNav by remember { mutableStateOf<Pair<String, String>?>(null) }   // (url, host) awaiting confirm
     var resTick by remember { mutableIntStateOf(0) }                           // bumps live while the panel is open
     var barVisible by remember { mutableStateOf(true) }                         // hide/show the bottom toolbar
+    var urlBar by remember { mutableStateOf(false) }                             // editable url/search row below the toolbar
+    var urlDraft by remember { mutableStateOf("") }                               // field text while the user edits
+    var urlEditing by remember { mutableStateOf(false) }                           // true once the row text is user-owned
+    val urlFocus = remember { FocusRequester() }
     var hasStorage by remember { mutableStateOf(Build.VERSION.SDK_INT >= 29) }
     var video by remember { mutableStateOf<Pair<View, WebChromeClient.CustomViewCallback>?>(null) }   // fullscreen video overlay
 
@@ -294,6 +305,28 @@ fun BrowserScreen(
             }.getOrDefault(0)
             if (n != ytBadge) ytBadge = n
         }
+    }
+
+    /**
+     * submits the url/search row: url-like input navigates directly, anything else
+     * becomes a duckduckgo search. `address` snaps to the target so the row reflects
+     * what is loading even if the page client reports nothing yet.
+     */
+    fun submitUrl() {
+        val raw = if (urlEditing) urlDraft.trim() else address.trim()
+        if (raw.isEmpty()) return
+        // a url must carry a scheme or a dotted host — bare words / phrases are searches
+        val host = raw.substringBefore('/').substringBefore('?').substringBefore('#')
+        val looksLikeUrl = raw.contains("://") || (host.contains('.') && host.isNotEmpty())
+        val target = if (looksLikeUrl) {
+            if (raw.startsWith("http://", true) || raw.startsWith("https://", true)) raw else "https://$raw"
+        } else {
+            "https://duckduckgo.com/?q=" + Uri.encode(raw, "")
+        }
+        urlEditing = false
+        urlDraft = ""
+        address = target
+        webView.loadUrl(target)
     }
 
     /** opens the folder the newest download landed in — the same target the done-notification uses. */
@@ -662,11 +695,12 @@ fun BrowserScreen(
             }
 
             if (barVisible) {
-                // toolbar (bottom) — back / fwd / reload / home / page resources / hide bar
+                Column(Modifier.navigationBarsPadding().fillMaxWidth()) {
+                // toolbar (bottom) — back / fwd / reload / home / page resources / url row toggle
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    modifier = Modifier.navigationBarsPadding().fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth()
                         .padding(horizontal = 2.dp, vertical = 4.dp).background(headerBg)
                 ) {
                     IconButton(onClick = { if (webView.canGoBack()) webView.goBack() }, enabled = webView.canGoBack()) {
@@ -738,9 +772,61 @@ fun BrowserScreen(
                             }
                         }
                     }
-                    IconButton(onClick = { barVisible = false }) {
-                        Icon(Icons.Default.ExpandLess, L(R.string.cd_bar_hide), tint = BeeColors.HoneyGold)
+                    IconButton(onClick = { urlBar = !urlBar }) {
+                        Icon(
+                            if (urlBar) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            L(R.string.cd_bar_hide),
+                            tint = BeeColors.HoneyGold
+                        )
                     }
+                }
+
+                // url / search row — tracks the page url live; editable, Enter submits
+                // (a plain word becomes a duckduckgo search, anything url-like is navigated to)
+                if (urlBar) {
+                    LaunchedEffect(Unit) {
+                        urlEditing = false
+                        urlDraft = address
+                        delay(80)                            // row must be laid out before the IME is requested
+                        urlFocus.requestFocus()
+                    }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 3.dp).background(headerBg)
+                    ) {
+                        Icon(
+                            Icons.Default.Link,
+                            null,
+                            tint = if (urlEditing) BeeColors.FoundGreen else BeeColors.HoneyGold,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        OutlinedTextField(
+                            value = if (urlEditing) urlDraft else address,
+                            onValueChange = { urlEditing = true; urlDraft = it },
+                            modifier = Modifier.weight(1f).focusRequester(urlFocus),
+                            singleLine = true,
+                            textStyle = TextStyle(fontSize = 11.sp, color = textColor),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = textColor,
+                                unfocusedTextColor = textColor,
+                                focusedBorderColor = BeeColors.HoneyGold,
+                                unfocusedBorderColor = BeeColors.HoneyGold.copy(alpha = 0.25f),
+                                focusedContainerColor = headerBg,
+                                unfocusedContainerColor = headerBg
+                            ),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Go),
+                            keyboardActions = KeyboardActions(onGo = { submitUrl() }, onDone = { submitUrl() }),
+                            placeholder = {
+                                Text("https://… or search term", fontSize = 11.sp, color = textColor.copy(alpha = 0.35f))
+                            }
+                        )
+                        IconButton(onClick = ::submitUrl, modifier = Modifier.size(30.dp)) {
+                            Icon(Icons.Default.PlayArrow, L(R.string.nav_go), tint = BeeColors.HoneyGold)
+                        }
+                    }
+                }
                 }
             } else {
                 // bar hidden — slim strip with one button that brings it back
@@ -768,7 +854,7 @@ fun BrowserScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(bottom = if (barVisible) 62.dp else 0.dp)
+                .padding(bottom = if (barVisible) (if (urlBar) 96.dp else 62.dp) else 0.dp)
         ) {
             Box(
                 Modifier.navigationBarsPadding().fillMaxWidth().background(
