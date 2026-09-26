@@ -34,7 +34,7 @@
     <string name="tab_media">Media</string>
 
     <!-- downloaded-media viewer tab -->
-    <string name="med_folder_pick">captured media — tap to open the folder</string>
+    <string name="med_folder_pick">tap to change media location</string>
     <string name="med_open">open folder</string>
     <string name="med_play">play</string>
     <string name="med_share">share</string>

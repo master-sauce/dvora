@@ -115,7 +115,7 @@ fun MediaTab() {
     val context = LocalContext.current
     val textColor = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
     val subColor = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.7f))
-    val rowBg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkStripe)
+    val rowBg = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe)
 
     var files by remember { mutableStateOf<List<File>>(emptyList()) }
     var folders by remember { mutableStateOf<List<File>>(emptyList()) }
@@ -146,6 +146,7 @@ fun MediaTab() {
             }
         }
     }
+
     /** one directory up — never above the base media folder. */
     fun up() {
         val d = cur ?: return
@@ -337,7 +338,7 @@ fun MediaTab() {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().height(46.dp)
-                .background(beeAdapt(BeeColors.WaxWhite, BeeColors.DarkStripe), RoundedCornerShape(10.dp))
+                .background(beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe), RoundedCornerShape(10.dp))
                 .clickable { ytFolderDlg = true }
                 .padding(horizontal = 12.dp)
         ) {
