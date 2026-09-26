@@ -51,6 +51,11 @@
     <string name="med_folder_fail">folder action failed</string>
     <string name="med_folder_del">delete folder?</string>
     <string name="med_folder_del_msg">the folder and everything inside it will be wiped from disk</string>
+    <string name="med_move">move to folder</string>
+    <string name="med_move_title">move to folder?</string>
+    <string name="med_move_empty">no folders yet — create one with the + button above, then retry</string>
+    <string name="med_moved">moved to folder</string>
+    <string name="med_move_fail">file move failed</string>
 
     <!-- SSL error dialog -->
     <string name="ssl_title">Unknown certificate</string>

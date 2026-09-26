@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Refresh
@@ -87,6 +88,20 @@ private fun fmtSize(b: Long): String {
         u = n
     }
     return String.format(Locale.getDefault(), "%.1f %s", v, u)
+}
+
+/** destination path with a "(n)" suffix appended on every clash — never overwrites. */
+private fun uniqueDest(src: File, dest: File): File {
+    val base = File(dest, src.name)
+    if (!base.exists()) return base
+    val b = src.nameWithoutExtension
+    val e = src.extension
+    var n = 1
+    while (true) {
+        val cand = File(dest, if (e.isEmpty()) "$b ($n)" else "$b ($n).$e")
+        if (!cand.exists()) return cand
+        n++
+    }
 }
 
 /**
@@ -183,6 +198,8 @@ fun MediaTab() {
     var newFolder by remember { mutableStateOf(false) }
     var newFolderName by remember { mutableStateOf("") }
     var folderToDelete by remember { mutableStateOf<File?>(null) }
+    // which file awaits a destination subfolder — the "move to folder" dialog target
+    var moveTarget by remember { mutableStateOf<File?>(null) }
     val folderFocus = remember { FocusRequester() }
     // the AlertDialog opens ~before the field can hold focus — short settle, then the keyboard
     LaunchedEffect(newFolder) {
@@ -265,6 +282,28 @@ fun MediaTab() {
                 Log.e("dvora-yt", "share failed: ${chooser.message} | ${e.message}", e)
                 Toast.makeText(context, localeStr(context, R.string.med_no_sharer), Toast.LENGTH_LONG).show()
             }
+        }
+    }
+
+    /** move a listed file into one of its sibling subfolders — "(n)" suffix on a name clash. */
+    fun moveFile(f: File, dest: File) {
+        val target = uniqueDest(f, dest)
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    if (!f.renameTo(target)) {          // cross-fs → copy + delete fallback
+                        f.copyTo(target, overwrite = true)
+                        f.delete()
+                    }
+                    !f.exists() && target.exists()
+                }.getOrDefault(false)
+            }
+            Toast.makeText(
+                context,
+                localeStr(context, if (ok) R.string.med_moved else R.string.med_move_fail),
+                Toast.LENGTH_SHORT
+            ).show()
+            if (ok) scan()
         }
     }
 
@@ -389,6 +428,9 @@ fun MediaTab() {
                         IconButton(onClick = { share(f) }) {
                             Icon(Icons.Default.Share, L(R.string.med_share), tint = BeeColors.DeepAmber)
                         }
+                        IconButton(onClick = { moveTarget = f }) {
+                            Icon(Icons.Default.DriveFileMove, L(R.string.med_move), tint = BeeColors.FoundGreen)
+                        }
                     }
                 }
             }
@@ -503,6 +545,52 @@ fun MediaTab() {
             },
             dismissButton = {
                 TextButton(onClick = { folderToDelete = null }) {
+                    Text(L(R.string.cancel), color = BeeColors.DeepAmber)
+                }
+            }
+        )
+    }
+
+    // ── which subfolder of the media directory shall receive this file ────────
+    moveTarget?.let { f ->
+        AlertDialog(
+            onDismissRequest = { moveTarget = null },
+            title = { Text(L(R.string.med_move_title), color = BeeColors.HoneyGold) },
+            text = {
+                Column {
+                    Text(
+                        f.name,
+                        fontSize = 11.sp,
+                        color = textColor,
+                        maxLines = 1,
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    if (folders.isEmpty()) {
+                        Text(L(R.string.med_move_empty), fontSize = 11.sp, color = subColor)
+                    } else {
+                        folders.forEach { d ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                                    .clickable { moveTarget = null; moveFile(f, d) }
+                                    .padding(vertical = 8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Folder,
+                                    null,
+                                    tint = BeeColors.HoneyGold,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Text(d.name, fontSize = 13.sp, color = textColor)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { moveTarget = null }) {
                     Text(L(R.string.cancel), color = BeeColors.DeepAmber)
                 }
             }
