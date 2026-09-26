@@ -108,11 +108,17 @@ fun BrowserScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val isDark = LocalDarkMode.current.value
-    val headerBg = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkComb)
-    val pageBg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
-    val textColor = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
-    val subColor = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.7f))
+
+    // the in-app browser UI is always rendered in the dark theme — the light
+    // variants of these surfaces look broken (odd whites) against the webview
+
+    val headerBg = BeeColors.DarkComb
+
+    val pageBg = BeeColors.DarkComb
+
+    val textColor = BeeColors.DarkOnSurface
+
+    val subColor = BeeColors.DarkOnSurface.copy(alpha = 0.7f)
 
     // ── screen state ──────────────────────────────────────────────────────────
     var address by remember { mutableStateOf(initialUrl.ifBlank { BROWSER_HOME }) }
@@ -156,7 +162,7 @@ fun BrowserScreen(
             settings.cacheMode = WebSettings.LOAD_DEFAULT
             settings.mediaPlaybackRequiresUserGesture = false
             settings.setGeolocationEnabled(false)
-            setBackgroundColor(if (isDark) 0xFF1C1500.toInt() else 0xFFFFFDE7.toInt())
+            setBackgroundColor(0xFF1C1500.toInt())
         }
     }
     val client = remember { BlockerWebViewClient(context, repo) { allowed.toSet() } }
@@ -387,9 +393,7 @@ fun BrowserScreen(
         webView.loadUrl(address)
     }
 
-    LaunchedEffect(isDark) {
-        webView.setBackgroundColor(if (isDark) 0xFF1C1500.toInt() else 0xFFFFFDE7.toInt())
-    }
+
 
     BackHandler {
         if (sheetVisible) {
@@ -407,7 +411,9 @@ fun BrowserScreen(
     ssl?.let { (uri, handler) ->
         AlertDialog(
             onDismissRequest = { ssl = null; handler.cancel() },
-            title = { Text("🔒 " + L(R.string.ssl_title), color = BeeColors.HoneyGold) },
+
+            containerColor = BeeColors.DarkComb,
+            title = { Text("\ud83d\udd12 " + L(R.string.ssl_title), color = BeeColors.HoneyGold) },
             text = {
                 Column {
                     Text(L(R.string.ssl_body), color = textColor)
@@ -438,6 +444,8 @@ fun BrowserScreen(
     crossNav?.let { (url, host) ->
         AlertDialog(
             onDismissRequest = { crossNav = null; address = webView.url ?: "" },
+
+            containerColor = BeeColors.DarkComb,
             title = { Text(L(R.string.nav_title), color = BeeColors.HoneyGold) },
             text = {
                 Column {
@@ -492,6 +500,8 @@ fun BrowserScreen(
         }
         AlertDialog(
             onDismissRequest = { ytPicker = false },
+
+            containerColor = BeeColors.DarkComb,
             title = { Text(L(R.string.yt_picker), color = BeeColors.HoneyGold) },
             text = {
                 Box(Modifier.heightIn(max = 420.dp)) {
@@ -547,7 +557,11 @@ fun BrowserScreen(
         AlertDialog(
 
             // close AND drop the source so the poll loop can't re-pop the same failure
+
             onDismissRequest = { ytErr = null; YtCtl.err = null },
+
+            containerColor = BeeColors.DarkComb,
+
 
             title = { Text(L(R.string.yt_err_title), color = BeeColors.HoneyGold) },
 
@@ -758,8 +772,11 @@ fun BrowserScreen(
         ) {
             Box(
                 Modifier.navigationBarsPadding().fillMaxWidth().background(
-                    beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell),
+
+                    BeeColors.DarkCell,
+
                     RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+
                 )
             ) {
                 ResourceSheet(
@@ -803,10 +820,14 @@ private fun ResourceSheet(
     onMedia: (String) -> Unit,
     onClose: () -> Unit
 ) {
-    val textColor = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
-    val subColor = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.7f))
-    val rowBg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkStripe)
+    val textColor = BeeColors.DarkOnSurface
+
+    val subColor = BeeColors.DarkOnSurface.copy(alpha = 0.7f)
+
+    val rowBg = BeeColors.DarkStripe
+
     val context = LocalContext.current
+
     val copied = L(R.string.rs_copied)
     var filter by remember { mutableStateOf("all") }
 
@@ -856,7 +877,7 @@ private fun ResourceSheet(
                         .weight(1f)
                         .height(30.dp)
                         .background(
-                            if (active) BeeColors.HoneyGold else beeAdapt(BeeColors.WaxWhite, BeeColors.DarkStripe),
+                            if (active) BeeColors.HoneyGold else BeeColors.DarkStripe,
                             RoundedCornerShape(9.dp)
                         )
                         .clickable { filter = key },
