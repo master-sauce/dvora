@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.VideoLibrary
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.core.content.FileProvider
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -105,9 +106,9 @@ private fun uniqueDest(src: File, dest: File): File {
 }
 
 /**
- * Settings tab listing everything yt-dlp saved into the media folder:
- * play-in-app-of-choice (ACTION_VIEW chooser) and share (ACTION_SEND),
- * no need to wander into the folder.
+ * The media folder as a browsable directory: every subfolder can be opened
+ * in-place — same cards / play / share / move / folder buttons at every depth,
+ * folders creatable inside folders, files movable between siblings.
  */
 @Composable
 fun MediaTab() {
@@ -118,25 +119,44 @@ fun MediaTab() {
 
     var files by remember { mutableStateOf<List<File>>(emptyList()) }
     var folders by remember { mutableStateOf<List<File>>(emptyList()) }
+    // currently browsed directory — the base media dir at startup, any subfolder afterwards
+    var cur by remember { mutableStateOf<File?>(ytSaveDir(context)) }
+    val root = ytSaveDir(context)
+    val atRoot = (cur?.let { root != null && it.path == root.path }) ?: true
     val scope = rememberCoroutineScope()
 
-    // watch the folder — anything added there (downloads, external apps, file managers)
-    // shows up within ~2s; subfolders ride along so they can be created / wiped right here
-    suspend fun scan() {
+
+    // watch the browsed directory — anything added there (downloads, external apps,
+    // file managers) shows up within ~2s; subfolders ride along so they can be
+    // opened / created / wiped right here, at every depth
+    fun scan() {
         val prev = files
         val prevFolders = folders
-        withContext(Dispatchers.IO) {
-            val base = ytSaveDir(context)?.takeIf { it.exists() }
-            val list = base
-                ?.listFiles { f -> f.isFile && f.extension.lowercase() in MEDIA_EXTS }
-                ?.sortedByDescending { it.lastModified() } ?: emptyList()
-            val dirs = base
-                ?.listFiles { f -> f.isDirectory }
-                ?.sortedBy { it.name.lowercase() } ?: emptyList()
-            if (list != prev) files = list
-            if (dirs != prevFolders) folders = dirs
+        val d = cur?.takeIf { it.exists() } ?: return
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                val list = d
+                    ?.listFiles { f -> f.isFile && f.extension.lowercase() in MEDIA_EXTS }
+                    ?.sortedByDescending { it.lastModified() } ?: emptyList()
+                val dirs = d
+                    ?.listFiles { f -> f.isDirectory }
+                    ?.sortedBy { it.name.lowercase() } ?: emptyList()
+                if (list != prev) files = list
+                if (dirs != prevFolders) folders = dirs
+            }
         }
     }
+    /** one directory up — never above the base media folder. */
+    fun up() {
+        val d = cur ?: return
+        val base = ytSaveDir(context) ?: return
+        val p = d.parentFile ?: return
+        cur = if (p.absolutePath.length < base.absolutePath.length) base else p
+        scan()
+    }
+
+
+
     LaunchedEffect(Unit) {
         scan()
         while (true) {
@@ -163,6 +183,7 @@ fun MediaTab() {
                 .putString(
                     "yt_dir", if (p.startsWith("/storage/")) p
                     else p.substringAfter("primary:", "").let { if (it.startsWith("/")) it else "/$it" }).apply()
+            cur = ytSaveDir(context)                       // the tree was redirected — browse from its new root
             // a picked folder is only reachable via direct File IO once the
             // one-time "all files" grant exists — ask for it if not yet
             if (Build.VERSION.SDK_INT >= 30 && !Environment.isExternalStorageManager())
@@ -182,7 +203,7 @@ fun MediaTab() {
     val dateFmt = remember { SimpleDateFormat("d MMM yyyy, HH:mm", Locale.getDefault()) }
 
     fun openFolder() {
-        val dir = ytSaveDir(context) ?: return
+        val dir = cur ?: ytSaveDir(context) ?: return
         try {
             context.startActivity(
                 Intent(Intent.ACTION_VIEW)
@@ -211,7 +232,7 @@ fun MediaTab() {
 
     fun createFolder() {
         val raw = newFolderName.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
-        val base = ytSaveDir(context) ?: return
+        val base = cur ?: ytSaveDir(context) ?: return
         if (raw.isEmpty()) return
         newFolder = false
         scope.launch {
@@ -312,7 +333,7 @@ fun MediaTab() {
     Column(Modifier.fillMaxSize()) {
         Spacer(Modifier.height(10.dp))
 
-        // folder summary row — count + size + open folder
+        // folder summary row — current dir + count + size + open folder + step up when nested
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxWidth().height(46.dp)
@@ -320,12 +341,22 @@ fun MediaTab() {
                 .clickable { ytFolderDlg = true }
                 .padding(horizontal = 12.dp)
         ) {
+            if (!atRoot) {
+                IconButton(onClick = { up() }) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        "back",
+                        tint = BeeColors.HoneyGold,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
             Icon(Icons.Default.VideoLibrary, null, tint = BeeColors.HoneyGold, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(L(R.string.med_folder_pick), fontSize = 12.sp, color = textColor)
                 Text(
-                    "${ytSaveDir(context)?.path ?: ""} · ${files.size} files · ${folders.size} folders · ${fmtSize(total)}",
+                    "${cur?.path ?: ""} · ${files.size} files · ${folders.size} folders · ${fmtSize(total)}",
                     fontSize = 10.sp,
                     color = subColor,
                     maxLines = 1
@@ -387,6 +418,7 @@ fun MediaTab() {
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
                             .background(rowBg, RoundedCornerShape(10.dp))
+                            .clickable { cur = f; scan() }
                             .padding(horizontal = 10.dp, vertical = 8.dp)
                     ) {
                         Icon(Icons.Default.Folder, null, tint = BeeColors.HoneyGold, modifier = Modifier.size(18.dp))
@@ -471,6 +503,7 @@ fun MediaTab() {
                             .clickable {
                                 context.getSharedPreferences("dvora_prefs", android.content.Context.MODE_PRIVATE)
                                     .edit().putString("yt_dir", "").apply()
+                                cur = ytSaveDir(context)     // default back — leave any nested view
                                 ytFolderDlg = false
                             }
                             .padding(vertical = 8.dp)
