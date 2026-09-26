@@ -17,6 +17,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.Edit
@@ -712,9 +713,42 @@ fun MediaTab() {
                         maxLines = 1,
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
-                    if (folders.isEmpty()) {
+                    // every directory above cur up to the base — lets a file be moved OUT of the browsed folder
+                    val ups = remember(cur, root) {
+                        buildList {
+                            var p: File? = cur
+                            val base = root ?: return@buildList
+                            while (true) {
+                                if (p == null || p.path == base.path) break
+                                if (p.absolutePath.length < base.absolutePath.length) {
+                                    add(base); break
+                                }
+                                val np = p.parentFile ?: break
+                                p = np
+                                add(np)
+                            }
+                        }
+                    }
+                    if (ups.isEmpty() && folders.isEmpty()) {
                         Text(L(R.string.med_move_empty), fontSize = 11.sp, color = subColor)
                     } else {
+                        ups.forEach { d ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                                    .clickable { moveTarget = null; moveFile(f, d) }
+                                    .padding(vertical = 8.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.ArrowUpward,
+                                    null,
+                                    tint = BeeColors.HoneyGold,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Text(d.name, fontSize = 13.sp, color = textColor)
+                            }
+                        }
                         folders.forEach { d ->
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
