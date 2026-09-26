@@ -77,14 +77,16 @@ class YtDownloadService : Service() {
         private const val ID = 4241
         const val EXTRA_URL = "yt_url"
         const val EXTRA_DIR = "yt_dir"
+        const val EXTRA_NAME = "yt_name"
 
-        fun start(ctx: Context, url: String, dir: File) {
+        fun start(ctx: Context, url: String, dir: File, name: String? = null) {
             try {
                 ContextCompat.startForegroundService(
                     ctx,
                     Intent(ctx, YtDownloadService::class.java)
                         .putExtra(EXTRA_URL, url)
                         .putExtra(EXTRA_DIR, dir.path)
+                        .putExtra(EXTRA_NAME, name ?: "")
                 )
             } catch (_: Exception) {
             }
@@ -153,6 +155,7 @@ class YtDownloadService : Service() {
         val url = intent?.getStringExtra(EXTRA_URL) ?: run {
             stopSelf(); return START_NOT_STICKY
         }
+        val name = intent.getStringExtra(EXTRA_NAME)?.takeIf { it.isNotBlank() }
         val dir = File(intent.getStringExtra(EXTRA_DIR) ?: Environment.getExternalStorageDirectory().path)
         if (!dir.exists() && !dir.mkdirs()) {
             stopSelf(); return START_NOT_STICKY
@@ -168,7 +171,8 @@ class YtDownloadService : Service() {
         job = kotlinx.coroutines.CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
             try {
                 val req = YoutubeDLRequest(clean)
-                req.addOption("-o", "${dir.path}/%(title)s.%(ext)s")
+                // saved file takes the caller's window title — yt-dlp's own %title% only when none came in
+                req.addOption("-o", "${dir.path}/${name ?: "%(title)s"}.%(ext)s")
                 // best video + separate best audio when offered, else single best — merged to one mp4 by ffmpeg
                 req.addOption("-f", "bv*+ba/b")
                 req.addOption("--merge-output-format", "mp4")

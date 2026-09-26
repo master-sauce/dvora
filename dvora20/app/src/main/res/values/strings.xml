@@ -44,6 +44,13 @@
     <string name="med_grant">grant folder access (all files)</string>
     <string name="med_grant_q">grant folder access?</string>
     <string name="med_grant_msg">needed to list/save media in Download/dvora — a one-time system permission</string>
+    <string name="med_folder_new">new folder</string>
+    <string name="med_folder_name">folder name</string>
+    <string name="med_folder_created">folder created</string>
+    <string name="med_folder_deleted">folder deleted</string>
+    <string name="med_folder_fail">folder action failed</string>
+    <string name="med_folder_del">delete folder?</string>
+    <string name="med_folder_del_msg">the folder and everything inside it will be wiped from disk</string>
 
     <!-- SSL error dialog -->
     <string name="ssl_title">Unknown certificate</string>

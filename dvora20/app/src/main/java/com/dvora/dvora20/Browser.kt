@@ -266,7 +266,9 @@ fun BrowserScreen(
         YtCtl.dir = dir.path
         YtCtl.err = null
         YtCtl.last = null
-        YtDownloadService.start(context, url, dir)
+        // the saved file takes the current window title — every capture belongs to this page
+        val title = pageTitle.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().take(120).takeIf { it.isNotBlank() }
+        YtDownloadService.start(context, url, dir, title)
     }
 
 
@@ -741,90 +743,95 @@ fun BrowserScreen(
 
             if (barVisible) {
                 Column(Modifier.navigationBarsPadding().fillMaxWidth()) {
-                // toolbar (bottom) — back / fwd / reload / home / page resources / url row toggle
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(2.dp),
-                    modifier = Modifier.fillMaxWidth()
-                        .padding(horizontal = 2.dp, vertical = 4.dp).background(headerBg)
-                ) {
-                    IconButton(onClick = { if (webView.canGoBack()) webView.goBack() }, enabled = webView.canGoBack()) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack, L(R.string.cd_back_page),
-                            tint = if (webView.canGoBack()) BeeColors.HoneyGold else BeeColors.HoneyGold.copy(alpha = 0.3f)
-                        )
-                    }
-                    IconButton(
-                        onClick = { if (webView.canGoForward()) webView.goForward() },
-                        enabled = webView.canGoForward()
+                    // toolbar (bottom) — back / fwd / reload / home / page resources / url row toggle
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        modifier = Modifier.fillMaxWidth()
+                            .padding(horizontal = 2.dp, vertical = 4.dp).background(headerBg)
                     ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowForward, L(R.string.cd_fwd_page),
-                            tint = if (webView.canGoForward()) BeeColors.HoneyGold else BeeColors.HoneyGold.copy(alpha = 0.3f)
-                        )
-                    }
-                    IconButton(onClick = { webView.reload() }) {
-                        Icon(Icons.Default.Refresh, L(R.string.cd_reload), tint = BeeColors.HoneyGold)
-                    }
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Default.Home, L(R.string.cd_home), tint = BeeColors.HoneyGold)
-                    }
-                    IconButton(onClick = { sheetVisible = !sheetVisible }) {
-                        Icon(
-                            Icons.Default.Web,
-                            L(R.string.cd_network),
-                            tint = BeeColors.HoneyGold,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                    IconButton(onClick = {
-                        when {
-                            yt >= 100 -> {                   // done → open the downloads folder, then clear
-                                openDir()
-                                yt = -1; ytDone = null; YtCtl.reset()
-                            }
-
-                            yt in 0..99 -> stopYt()           // running → cancels
-                            else -> ytPicker = true           // idle → list captured media
+                        IconButton(
+                            onClick = { if (webView.canGoBack()) webView.goBack() },
+                            enabled = webView.canGoBack()
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowBack, L(R.string.cd_back_page),
+                                tint = if (webView.canGoBack()) BeeColors.HoneyGold else BeeColors.HoneyGold.copy(alpha = 0.3f)
+                            )
                         }
-                    }) {
-                        Box(Modifier.size(38.dp), contentAlignment = Alignment.Center) {
+                        IconButton(
+                            onClick = { if (webView.canGoForward()) webView.goForward() },
+                            enabled = webView.canGoForward()
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowForward, L(R.string.cd_fwd_page),
+                                tint = if (webView.canGoForward()) BeeColors.HoneyGold else BeeColors.HoneyGold.copy(
+                                    alpha = 0.3f
+                                )
+                            )
+                        }
+                        IconButton(onClick = { webView.reload() }) {
+                            Icon(Icons.Default.Refresh, L(R.string.cd_reload), tint = BeeColors.HoneyGold)
+                        }
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.Default.Home, L(R.string.cd_home), tint = BeeColors.HoneyGold)
+                        }
+                        IconButton(onClick = { sheetVisible = !sheetVisible }) {
+                            Icon(
+                                Icons.Default.Web,
+                                L(R.string.cd_network),
+                                tint = BeeColors.HoneyGold,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        IconButton(onClick = {
                             when {
-                                yt in 0..99 -> Text(
-                                    "$yt%", fontSize = 11.sp,
-                                    color = BeeColors.FoundGreen,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                yt >= 100 -> {                   // done → open the downloads folder, then clear
+                                    openDir()
+                                    yt = -1; ytDone = null; YtCtl.reset()
+                                }
 
-                                yt >= 100 -> Text(
-                                    "✓", fontSize = 13.sp,
-                                    color = BeeColors.FoundGreen,
-                                    fontWeight = FontWeight.Bold
-                                )
-
-                                else -> Icon(Icons.Default.Download, L(R.string.yt_cd), tint = BeeColors.FoundGreen)
+                                yt in 0..99 -> stopYt()           // running → cancels
+                                else -> ytPicker = true           // idle → list captured media
                             }
-                            if (yt < 0 && ytBadge > 0) {      // media urls captured on this page → count badge
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .background(BeeColors.FoundGreen, RoundedCornerShape(8.dp))
-                                        .padding(horizontal = 4.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text("$ytBadge", fontSize = 9.sp, color = Color.White, maxLines = 1)
+                        }) {
+                            Box(Modifier.size(38.dp), contentAlignment = Alignment.Center) {
+                                when {
+                                    yt in 0..99 -> Text(
+                                        "$yt%", fontSize = 11.sp,
+                                        color = BeeColors.FoundGreen,
+                                        fontWeight = FontWeight.Bold
+                                    )
+
+                                    yt >= 100 -> Text(
+                                        "✓", fontSize = 13.sp,
+                                        color = BeeColors.FoundGreen,
+                                        fontWeight = FontWeight.Bold
+                                    )
+
+                                    else -> Icon(Icons.Default.Download, L(R.string.yt_cd), tint = BeeColors.FoundGreen)
+                                }
+                                if (yt < 0 && ytBadge > 0) {      // media urls captured on this page → count badge
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .background(BeeColors.FoundGreen, RoundedCornerShape(8.dp))
+                                            .padding(horizontal = 4.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text("$ytBadge", fontSize = 9.sp, color = Color.White, maxLines = 1)
+                                    }
                                 }
                             }
                         }
+                        IconButton(onClick = { urlBar = !urlBar }) {
+                            Icon(
+                                if (urlBar) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                L(R.string.cd_bar_hide),
+                                tint = BeeColors.HoneyGold
+                            )
+                        }
                     }
-                    IconButton(onClick = { urlBar = !urlBar }) {
-                        Icon(
-                            if (urlBar) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                            L(R.string.cd_bar_hide),
-                            tint = BeeColors.HoneyGold
-                        )
-                    }
-                }
                 }
             } else {
                 // bar hidden — slim strip with one button that brings it back

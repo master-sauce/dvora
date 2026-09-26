@@ -16,6 +16,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Refresh
@@ -27,6 +29,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -34,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
@@ -97,16 +102,24 @@ fun MediaTab() {
     val rowBg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkStripe)
 
     var files by remember { mutableStateOf<List<File>>(emptyList()) }
+    var folders by remember { mutableStateOf<List<File>>(emptyList()) }
+    val scope = rememberCoroutineScope()
 
     // watch the folder — anything added there (downloads, external apps, file managers)
-    // shows up within ~2s
+    // shows up within ~2s; subfolders ride along so they can be created / wiped right here
     suspend fun scan() {
         val prev = files
+        val prevFolders = folders
         withContext(Dispatchers.IO) {
-            val list = ytSaveDir(context)?.takeIf { it.exists() }
+            val base = ytSaveDir(context)?.takeIf { it.exists() }
+            val list = base
                 ?.listFiles { f -> f.isFile && f.extension.lowercase() in MEDIA_EXTS }
                 ?.sortedByDescending { it.lastModified() } ?: emptyList()
+            val dirs = base
+                ?.listFiles { f -> f.isDirectory }
+                ?.sortedBy { it.name.lowercase() } ?: emptyList()
             if (list != prev) files = list
+            if (dirs != prevFolders) folders = dirs
         }
     }
     LaunchedEffect(Unit) {
@@ -163,6 +176,49 @@ fun MediaTab() {
             )
         } catch (_: Exception) {
             Toast.makeText(context, dir.path, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // ── subfolder management — hits the real directory the media folder lives in ──
+    var newFolder by remember { mutableStateOf(false) }
+    var newFolderName by remember { mutableStateOf("") }
+    var folderToDelete by remember { mutableStateOf<File?>(null) }
+    val folderFocus = remember { FocusRequester() }
+    // the AlertDialog opens ~before the field can hold focus — short settle, then the keyboard
+    LaunchedEffect(newFolder) {
+        if (newFolder) {
+            delay(300)
+            folderFocus.requestFocus()
+        }
+    }
+
+    fun createFolder() {
+        val raw = newFolderName.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim()
+        val base = ytSaveDir(context) ?: return
+        if (raw.isEmpty()) return
+        newFolder = false
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) { runCatching { File(base, raw).mkdirs() }.getOrDefault(false) }
+            Toast.makeText(
+                context,
+                localeStr(context, if (ok) R.string.med_folder_created else R.string.med_folder_fail),
+                Toast.LENGTH_SHORT
+            ).show()
+            scan()
+        }
+    }
+
+    fun deleteFolder() {
+        val f = folderToDelete ?: return
+        folderToDelete = null
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) { runCatching { f.deleteRecursively() }.getOrDefault(false) }
+            Toast.makeText(
+                context,
+                localeStr(context, if (ok) R.string.med_folder_deleted else R.string.med_folder_fail),
+                Toast.LENGTH_SHORT
+            ).show()
+            scan()
         }
     }
 
@@ -230,7 +286,7 @@ fun MediaTab() {
             Column(Modifier.weight(1f)) {
                 Text(L(R.string.med_folder_pick), fontSize = 12.sp, color = textColor)
                 Text(
-                    "${ytSaveDir(context)?.path ?: ""} · ${files.size} · ${fmtSize(total)}",
+                    "${ytSaveDir(context)?.path ?: ""} · ${files.size} files · ${folders.size} folders · ${fmtSize(total)}",
                     fontSize = 10.sp,
                     color = subColor,
                     maxLines = 1
@@ -241,6 +297,17 @@ fun MediaTab() {
                     Icons.Default.Folder,
                     L(R.string.med_open),
                     tint = BeeColors.DeepAmber,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            IconButton(onClick = {
+                newFolderName = ""
+                newFolder = true
+            }) {
+                Icon(
+                    Icons.Default.Add,
+                    L(R.string.med_folder_new),
+                    tint = BeeColors.HoneyGold,
                     modifier = Modifier.size(18.dp)
                 )
             }
@@ -264,7 +331,7 @@ fun MediaTab() {
             Spacer(Modifier.height(10.dp))
         }
 
-        if (files.isEmpty()) {
+        if (files.isEmpty() && folders.isEmpty()) {
             Text(
                 L(R.string.med_empty),
                 fontSize = 12.sp,
@@ -276,6 +343,26 @@ fun MediaTab() {
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                items(folders, key = { it.path }) { f ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                            .background(rowBg, RoundedCornerShape(10.dp))
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                    ) {
+                        Icon(Icons.Default.Folder, null, tint = BeeColors.HoneyGold, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(10.dp))
+                        Text(f.name, fontSize = 12.sp, color = textColor, maxLines = 1, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { folderToDelete = f }) {
+                            Icon(
+                                Icons.Default.Delete,
+                                L(R.string.med_folder_del),
+                                tint = BeeColors.NotFoundRed,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                }
                 items(files, key = { "${it.path}-${it.lastModified()}" }) { f ->
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -369,6 +456,53 @@ fun MediaTab() {
             confirmButton = {},
             dismissButton = {
                 TextButton(onClick = { ytFolderDlg = false }) {
+                    Text(L(R.string.cancel), color = BeeColors.DeepAmber)
+                }
+            }
+        )
+    }
+
+    // ── fresh subfolder inside the real media directory ───────────────────────
+    if (newFolder) {
+        AlertDialog(
+            onDismissRequest = { newFolder = false },
+            title = { Text(L(R.string.med_folder_new), color = BeeColors.HoneyGold) },
+            text = {
+                OutlinedTextField(
+                    value = newFolderName,
+                    onValueChange = { newFolderName = it },
+                    modifier = Modifier.focusRequester(folderFocus),
+                    label = { Text(L(R.string.med_folder_name)) },
+                    singleLine = true,
+                    colors = beeTextFieldColors()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { createFolder() }) {
+                    Text(L(R.string.ok), color = BeeColors.HoneyGold, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { newFolder = false }) {
+                    Text(L(R.string.cancel), color = BeeColors.DeepAmber)
+                }
+            }
+        )
+    }
+
+    // ── wipe a subfolder from the real media directory ────────────────────────
+    folderToDelete?.let { f ->
+        AlertDialog(
+            onDismissRequest = { folderToDelete = null },
+            title = { Text(L(R.string.med_folder_del), color = BeeColors.HoneyGold) },
+            text = { Text("${f.name}\n\n" + L(R.string.med_folder_del_msg), color = textColor) },
+            confirmButton = {
+                TextButton(onClick = { deleteFolder() }) {
+                    Text(L(R.string.ok), color = BeeColors.NotFoundRed, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { folderToDelete = null }) {
                     Text(L(R.string.cancel), color = BeeColors.DeepAmber)
                 }
             }
