@@ -197,11 +197,16 @@ func scanSite(siteURL, searchTerm string) (bool, string, []LogEntry, error) {
 	if len(words) == 0 {
 		return false, "", logs, nil
 	}
+	// Strip apostrophes and trailing punctuation (colons, etc.) from search
+	// words so titles like "Marvel's Daredevil" or "Daredevil: Born Again"
+	// match links that dropped them (e.g. "marvels-daredevil", "daredevil-born-again").
 	var pb strings.Builder
 	for i, w := range words {
 		if i > 0 {
-			pb.WriteString(`[\s\-\+\.\/]+`)
+			pb.WriteString(`(?:[\s\-_./+%:~&,]|%[0-9a-f]{2})*`)
 		}
+		w = strings.ReplaceAll(w, "'", "")
+		w = strings.TrimRight(w, `:.,;!?"`)
 		pb.WriteString(regexp.QuoteMeta(w))
 	}
 	pat := regexp.MustCompile(pb.String())
@@ -233,7 +238,7 @@ func scanSite(siteURL, searchTerm string) (bool, string, []LogEntry, error) {
 			skipped++
 			continue
 		}
-		if pat.MatchString(ll) {
+		if pat.MatchString(strings.ReplaceAll(ll, "'", "")) {
 			matched = append(matched, link)
 		}
 	}
