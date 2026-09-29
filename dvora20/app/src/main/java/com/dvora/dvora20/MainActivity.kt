@@ -42,6 +42,10 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.yausername.ffmpeg.FFmpeg
@@ -669,275 +673,307 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
         containerColor = scaffoldBg,
         modifier = Modifier.fillMaxSize()
     ) { innerPadding ->
-        when {
-            showBookmarks -> BookmarksScreen(
-                onResult = onResult,
-                onBack = { showBookmarks = false },
-                onToggleDark = onToggleDarkMode,
-                modifier = Modifier.padding(innerPadding)
-            )
+        // ⬇ page slide: direction follows the top-bar button order.
+        //   home(0) browser(1) subtitles(2) imdb(3) bookmarks(4) settings(5)
+        //   new screen to the right of current → slides in from right (Left direction)
+        //   new screen to the left  of current → slides in from left  (Right direction)
+        val screenKey = when {
+            showBookmarks -> "bookmarks"
+            showBrowser -> "browser"
+            showSettings -> "settings"
+            showSubtitles -> "subtitles"
+            showImdb -> "imdb"
+            else -> "home"
+        }
 
-            showBrowser -> BrowserScreen(
-                initialUrl = browserUrl,
-                repo = repo,
-                onBack = { showBrowser = false },
-                onToggleDark = onToggleDarkMode,
-                modifier = Modifier.fillMaxSize()
-            )
+        fun screenIndex(key: String) = when (key) {
+            "home" -> 0; "browser" -> 1; "subtitles" -> 2; "imdb" -> 3; "bookmarks" -> 4; "settings" -> 5; else -> 0
+        }
+        AnimatedContent(
+            targetState = screenKey,
+            transitionSpec = {
+                val forward = screenIndex(targetState) >= screenIndex(initialState)
+                val dir = if (forward) AnimatedContentTransitionScope.SlideDirection.Left
+                else AnimatedContentTransitionScope.SlideDirection.Right
+                slideIntoContainer(dir, tween(250)) togetherWith slideOutOfContainer(dir, tween(250))
+            },
+            label = "pageTransition"
+        ) {
+            when (it) {
+                "bookmarks" -> BookmarksScreen(
+                    onResult = onResult,
+                    onBack = { showBookmarks = false },
+                    onToggleDark = onToggleDarkMode,
+                    modifier = Modifier.padding(innerPadding)
+                )
 
-            showSettings -> SettingsScreen(
-                repo = repo,
-                shows = shows, movies = movies, manualChecks = manualChecks,
-                apiSites = apiSites, exclusions = exclusions,
-                onUpdate = { type, newList ->
-                    when (type) {
-                        SourceType.SHOW -> {
-                            shows = newList; saveSources(context, "shows", newList)
+                "browser" -> BrowserScreen(
+                    initialUrl = browserUrl,
+                    repo = repo,
+                    onBack = { showBrowser = false },
+                    onToggleDark = onToggleDarkMode,
+                    modifier = Modifier.fillMaxSize()
+                )
+
+                "settings" -> SettingsScreen(
+                    repo = repo,
+                    shows = shows, movies = movies, manualChecks = manualChecks,
+                    apiSites = apiSites, exclusions = exclusions,
+                    onUpdate = { type, newList ->
+                        when (type) {
+                            SourceType.SHOW -> {
+                                shows = newList; saveSources(context, "shows", newList)
+                            }
+
+                            SourceType.MOVIE -> {
+                                movies = newList; saveSources(context, "movies", newList)
+                            }
+
+                            SourceType.MANUAL -> {
+                                manualChecks = newList; saveSources(context, "manual_checks", newList)
+                            }
+
+                            SourceType.API -> {
+                                apiSites = newList; saveSources(context, "api_sites", newList)
+                            }
+
+                            SourceType.EXCLUSION -> {
+                                exclusions = newList; saveSources(context, "exclusions", newList)
+                            }
                         }
+                    },
+                    onBack = { showSettings = false },
+                    onToggleDark = onToggleDarkMode,
+                    modifier = Modifier.padding(innerPadding)
+                )
 
-                        SourceType.MOVIE -> {
-                            movies = newList; saveSources(context, "movies", newList)
-                        }
+                "subtitles" -> SubtitlesScreen(
+                    scanner = scanner,
+                    onResult = onResult,
+                    onBack = { showSubtitles = false },
+                    onToggleDark = onToggleDarkMode,
+                    modifier = Modifier.padding(innerPadding)
+                )
 
-                        SourceType.MANUAL -> {
-                            manualChecks = newList; saveSources(context, "manual_checks", newList)
-                        }
+                "imdb" -> ImdbScreen(
+                    scanner = scanner,
+                    onResult = onResult,
+                    onBack = { showImdb = false },
+                    onToggleDark = onToggleDarkMode,
+                    modifier = Modifier.padding(innerPadding)
+                )
 
-                        SourceType.API -> {
-                            apiSites = newList; saveSources(context, "api_sites", newList)
-                        }
+                else -> {
+                    val cardBg = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
+                    Column(modifier = Modifier.padding(innerPadding).padding(16.dp).fillMaxSize()) {
+                        Card(
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = cardBg),
+                            elevation = CardDefaults.cardElevation(4.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Column {
+                                    OutlinedTextField(
+                                        value = searchTerm,
+                                        onValueChange = { searchTerm = it },
+                                        label = { Text("🍯 Search Movie or Show") },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .focusRequester(searchFieldFocusRequester),
+                                        singleLine = true, colors = beeTextFieldColors()
+                                    )
 
-                        SourceType.EXCLUSION -> {
-                            exclusions = newList; saveSources(context, "exclusions", newList)
-                        }
-                    }
-                },
-                onBack = { showSettings = false },
-                onToggleDark = onToggleDarkMode,
-                modifier = Modifier.padding(innerPadding)
-            )
-
-            showSubtitles -> SubtitlesScreen(
-                scanner = scanner,
-                onResult = onResult,
-                onBack = { showSubtitles = false },
-                onToggleDark = onToggleDarkMode,
-                modifier = Modifier.padding(innerPadding)
-            )
-
-            showImdb -> ImdbScreen(
-                scanner = scanner,
-                onResult = onResult,
-                onBack = { showImdb = false },
-                onToggleDark = onToggleDarkMode,
-                modifier = Modifier.padding(innerPadding)
-            )
-
-            else -> {
-                val cardBg = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
-                Column(modifier = Modifier.padding(innerPadding).padding(16.dp).fillMaxSize()) {
-                    Card(
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = cardBg),
-                        elevation = CardDefaults.cardElevation(4.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Column {
-                                OutlinedTextField(
-                                    value = searchTerm,
-                                    onValueChange = { searchTerm = it },
-                                    label = { Text("🍯 Search Movie or Show") },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .focusRequester(searchFieldFocusRequester),
-                                    singleLine = true, colors = beeTextFieldColors()
-                                )
-
-                                // IMDb suggestions dropdown
-                                if (showImdbDropdown && imdbSuggestions.isNotEmpty() && searchTerm != dismissedForTerm) {
-                                    Card(
-                                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = CardDefaults.cardColors(containerColor = cardBg),
-                                        elevation = CardDefaults.cardElevation(4.dp)
-                                    ) {
-                                        Column {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth()
-                                                    .padding(horizontal = 12.dp, vertical = 4.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Text(
-                                                    "Suggestions",
-                                                    fontSize = 11.sp,
-                                                    color = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface),
-                                                    modifier = Modifier.weight(1f)
-                                                )
-                                                IconButton(
-                                                    onClick = { dismissedForTerm = searchTerm },
-                                                    modifier = Modifier.size(28.dp)
+                                    // IMDb suggestions dropdown
+                                    if (showImdbDropdown && imdbSuggestions.isNotEmpty() && searchTerm != dismissedForTerm) {
+                                        Card(
+                                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                            shape = RoundedCornerShape(12.dp),
+                                            colors = CardDefaults.cardColors(containerColor = cardBg),
+                                            elevation = CardDefaults.cardElevation(4.dp)
+                                        ) {
+                                            Column {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth()
+                                                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
                                                 ) {
-                                                    Icon(
-                                                        Icons.Default.Close,
-                                                        "Dismiss",
-                                                        tint = BeeColors.DeepAmber,
-                                                        modifier = Modifier.size(16.dp)
+                                                    Text(
+                                                        "Suggestions",
+                                                        fontSize = 11.sp,
+                                                        color = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface),
+                                                        modifier = Modifier.weight(1f)
                                                     )
+                                                    IconButton(
+                                                        onClick = { dismissedForTerm = searchTerm },
+                                                        modifier = Modifier.size(28.dp)
+                                                    ) {
+                                                        Icon(
+                                                            Icons.Default.Close,
+                                                            "Dismiss",
+                                                            tint = BeeColors.DeepAmber,
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                    }
                                                 }
-                                            }
-                                            LazyColumn(
-                                                modifier = Modifier.fillMaxWidth().heightIn(max = 200.dp)
-                                            ) {
-                                                items(imdbSuggestions.take(5)) { suggestion ->
-                                                    ImdbSuggestionItem(
-                                                        suggestion = suggestion,
-                                                        onSelect = {
-                                                            searchTerm = suggestion.title
-                                                            showImdbDropdown = false
-                                                            justSelectedSuggestion = true
-                                                            focusManager.clearFocus()
-                                                        }
-                                                    )
+                                                LazyColumn(
+                                                    modifier = Modifier.fillMaxWidth().heightIn(max = 200.dp)
+                                                ) {
+                                                    items(imdbSuggestions.take(5)) { suggestion ->
+                                                        ImdbSuggestionItem(
+                                                            suggestion = suggestion,
+                                                            onSelect = {
+                                                                searchTerm = suggestion.title
+                                                                showImdbDropdown = false
+                                                                justSelectedSuggestion = true
+                                                                focusManager.clearFocus()
+                                                            }
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
                                     }
                                 }
-                            }
-                            Spacer(Modifier.height(12.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                BeeRadioOption(
-                                    "📺 Shows",
-                                    searchType == SourceType.SHOW,
-                                    { searchType = SourceType.SHOW },
-                                    Modifier.weight(1f)
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                BeeRadioOption(
-                                    "🎬 Movies",
-                                    searchType == SourceType.MOVIE,
-                                    { searchType = SourceType.MOVIE },
-                                    Modifier.weight(1f)
-                                )
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Button(
-                        onClick = {
-                            if (searchTerm.isBlank()) return@Button
-                            isSearching = true; results = emptyList(); apiResults = emptyList(); imdbResults =
-                            emptyList(); domainFilter = ""
-                            scope.launch {
-                                val activeSources = if (searchType == SourceType.SHOW) shows else movies
-                                activeSources.forEach { source ->
-                                    results = results + scanner.scanSite(source, searchTerm, exclusions)
-                                }
-                                apiSites.forEach { site ->
-                                    val entry = parseApiEntry(site)
-                                    val newResults = when (entry.type) {
-                                        "stremio" -> scanner.scanStremio(entry.apiUrl, searchTerm, searchType)
-                                        else -> scanner.scanV1(
-                                            entry.apiUrl,
-                                            searchTerm,
-                                            entry.landingUrl,
-                                            entry.matchKeys
-                                        )
-                                    }
-                                    apiResults = apiResults + newResults
-                                }
-                                imdbResults = scanner.searchImdb(searchTerm)
-                                SearchLogs.lastLogs = results + apiResults
-                                manualLinks = manualChecks.map { scanner.getManualCheck(it) }
-                                isSearching = false
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth().height(52.dp), enabled = !isSearching,
-                        shape = RoundedCornerShape(12.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isDark) BeeColors.HoneyGold else headerBg,
-                            contentColor = if (isDark) Color.Black else BeeColors.HoneyGold,
-                            disabledContainerColor = if (isDark) BeeColors.HoneyGold.copy(alpha = 0.3f) else Color(
-                                0xFF4A3B00
-                            ),
-                            disabledContentColor = if (isDark) Color.Black.copy(alpha = 0.4f) else BeeColors.HoneyGold.copy(
-                                alpha = 0.4f
-                            )
-                        )
-                    ) {
-                        if (isSearching) CircularProgressIndicator(
-                            Modifier.size(24.dp),
-                            BeeColors.HoneyGold,
-                            strokeWidth = 2.dp
-                        )
-                        else Text(
-                            "🐝  BUZZ & SEARCH",
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 2.sp,
-                            color = if (isDark) Color.Black else BeeColors.HoneyGold
-                        )
-                    }
-                    Spacer(Modifier.height(16.dp))
-                    val hasAnyResults =
-                        results.isNotEmpty() || apiResults.isNotEmpty() || manualLinks.isNotEmpty() || imdbResults.isNotEmpty()
-                    if (hasAnyResults) {
-                        OutlinedTextField(
-                            value = domainFilter, onValueChange = { domainFilter = it },
-                            label = { Text("🔎 Search by Site") },
-                            modifier = Modifier.fillMaxWidth(), singleLine = true, colors = beeTextFieldColors(),
-                            trailingIcon = {
-                                if (domainFilter.isNotEmpty()) IconButton(onClick = { domainFilter = "" }) {
-                                    Icon(Icons.Default.Close, "Clear", tint = BeeColors.DeepAmber)
-                                }
-                            }
-                        )
-                        Spacer(Modifier.height(8.dp))
-                    }
-                    LazyColumn(modifier = Modifier.weight(1f)) {
-                        val filter = domainFilter.trim().lowercase()
-                        val fr =
-                            if (filter.isEmpty()) results else results.filter { it.url.lowercase().contains(filter) }
-                        val fa = if (filter.isEmpty()) apiResults else apiResults.filter {
-                            it.url.lowercase().contains(filter)
-                        }
-                        val fm = if (filter.isEmpty()) manualLinks else manualLinks.filter {
-                            it.lowercase().contains(filter)
-                        }
-                        val fi = if (filter.isEmpty()) imdbResults else imdbResults.filter {
-                            it.title.lowercase().contains(filter) ||
-                                    it.imdbId.lowercase().contains(filter)
-                        }
-                        if (fr.isNotEmpty()) {
-                            item { BeesSectionHeader("🍯 Results") }
-                            items(fr.sortedByDescending { it.found }) { ResultItem(it, true, onResult) }
-                        }
-
-                        if (fa.isNotEmpty()) {
-                            item { Spacer(Modifier.height(8.dp)); BeesSectionHeader("🍯🍯 API Results") }
-                            items(fa) { ResultItem(it, true, onResult) }
-                        }
-                        if (fm.isNotEmpty()) {
-                            item { Spacer(Modifier.height(16.dp)); BeesSectionHeader("🔍 Manual Checks") }
-                            items(fm) { link ->
-                                Card(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                                        .clickable { onResult(link) },
-                                    colors = CardDefaults.cardColors(containerColor = cardBg),
-                                    shape = RoundedCornerShape(10.dp)
+                                Spacer(Modifier.height(12.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.padding(10.dp)
+                                    BeeRadioOption(
+                                        "📺 Shows",
+                                        searchType == SourceType.SHOW,
+                                        { searchType = SourceType.SHOW },
+                                        Modifier.weight(1f)
+                                    )
+                                    Spacer(Modifier.width(8.dp))
+                                    BeeRadioOption(
+                                        "🎬 Movies",
+                                        searchType == SourceType.MOVIE,
+                                        { searchType = SourceType.MOVIE },
+                                        Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Button(
+                            onClick = {
+                                if (searchTerm.isBlank()) return@Button
+                                isSearching = true; results = emptyList(); apiResults = emptyList(); imdbResults =
+                                emptyList(); domainFilter = ""
+                                scope.launch {
+                                    val activeSources = if (searchType == SourceType.SHOW) shows else movies
+                                    activeSources.forEach { source ->
+                                        results = results + scanner.scanSite(source, searchTerm, exclusions)
+                                    }
+                                    apiSites.forEach { site ->
+                                        val entry = parseApiEntry(site)
+                                        val newResults = when (entry.type) {
+                                            "stremio" -> scanner.scanStremio(entry.apiUrl, searchTerm, searchType)
+                                            else -> scanner.scanV1(
+                                                entry.apiUrl,
+                                                searchTerm,
+                                                entry.landingUrl,
+                                                entry.matchKeys
+                                            )
+                                        }
+                                        apiResults = apiResults + newResults
+                                    }
+                                    imdbResults = scanner.searchImdb(searchTerm)
+                                    SearchLogs.lastLogs = results + apiResults
+                                    manualLinks = manualChecks.map { scanner.getManualCheck(it) }
+                                    isSearching = false
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().height(52.dp), enabled = !isSearching,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isDark) BeeColors.HoneyGold else headerBg,
+                                contentColor = if (isDark) Color.Black else BeeColors.HoneyGold,
+                                disabledContainerColor = if (isDark) BeeColors.HoneyGold.copy(alpha = 0.3f) else Color(
+                                    0xFF4A3B00
+                                ),
+                                disabledContentColor = if (isDark) Color.Black.copy(alpha = 0.4f) else BeeColors.HoneyGold.copy(
+                                    alpha = 0.4f
+                                )
+                            )
+                        ) {
+                            if (isSearching) CircularProgressIndicator(
+                                Modifier.size(24.dp),
+                                BeeColors.HoneyGold,
+                                strokeWidth = 2.dp
+                            )
+                            else Text(
+                                "🐝  BUZZ & SEARCH",
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 2.sp,
+                                color = if (isDark) Color.Black else BeeColors.HoneyGold
+                            )
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        val hasAnyResults =
+                            results.isNotEmpty() || apiResults.isNotEmpty() || manualLinks.isNotEmpty() || imdbResults.isNotEmpty()
+                        if (hasAnyResults) {
+                            OutlinedTextField(
+                                value = domainFilter, onValueChange = { domainFilter = it },
+                                label = { Text("🔎 Search by Site") },
+                                modifier = Modifier.fillMaxWidth(), singleLine = true, colors = beeTextFieldColors(),
+                                trailingIcon = {
+                                    if (domainFilter.isNotEmpty()) IconButton(onClick = { domainFilter = "" }) {
+                                        Icon(Icons.Default.Close, "Clear", tint = BeeColors.DeepAmber)
+                                    }
+                                }
+                            )
+                            Spacer(Modifier.height(8.dp))
+                        }
+                        LazyColumn(modifier = Modifier.weight(1f)) {
+                            val filter = domainFilter.trim().lowercase()
+                            val fr =
+                                if (filter.isEmpty()) results else results.filter {
+                                    it.url.lowercase().contains(filter)
+                                }
+                            val fa = if (filter.isEmpty()) apiResults else apiResults.filter {
+                                it.url.lowercase().contains(filter)
+                            }
+                            val fm = if (filter.isEmpty()) manualLinks else manualLinks.filter {
+                                it.lowercase().contains(filter)
+                            }
+                            val fi = if (filter.isEmpty()) imdbResults else imdbResults.filter {
+                                it.title.lowercase().contains(filter) ||
+                                        it.imdbId.lowercase().contains(filter)
+                            }
+                            if (fr.isNotEmpty()) {
+                                item { BeesSectionHeader("🍯 Results") }
+                                items(fr.sortedByDescending { it.found }) { ResultItem(it, true, onResult) }
+                            }
+
+                            if (fa.isNotEmpty()) {
+                                item { Spacer(Modifier.height(8.dp)); BeesSectionHeader("🍯🍯 API Results") }
+                                items(fa) { ResultItem(it, true, onResult) }
+                            }
+                            if (fm.isNotEmpty()) {
+                                item { Spacer(Modifier.height(16.dp)); BeesSectionHeader("🔍 Manual Checks") }
+                                items(fm) { link ->
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                            .clickable { onResult(link) },
+                                        colors = CardDefaults.cardColors(containerColor = cardBg),
+                                        shape = RoundedCornerShape(10.dp)
                                     ) {
-                                        Text("↗", fontSize = 16.sp, color = BeeColors.DeepAmber)
-                                        Spacer(Modifier.width(8.dp))
-                                        Text(
-                                            link,
-                                            fontSize = 12.sp,
-                                            color = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface),
-                                            modifier = Modifier.weight(1f)
-                                        )
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.padding(10.dp)
+                                        ) {
+                                            Text("↗", fontSize = 16.sp, color = BeeColors.DeepAmber)
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(
+                                                link,
+                                                fontSize = 12.sp,
+                                                color = beeAdapt(Color(0xFF4E3B00), BeeColors.DarkOnSurface),
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -1046,7 +1082,10 @@ fun BeeRadioOption(label: String, selected: Boolean, onClick: () -> Unit, modifi
 
 @Composable
 fun BeesSectionHeader(title: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+    ) {
         Box(Modifier.weight(1f).height(2.dp).background(BeeColors.HoneyGold))
         Text(
             title,
@@ -1252,7 +1291,10 @@ fun ImdbSuggestionItem(
         } else {
             Box(
                 modifier = Modifier.size(48.dp)
-                    .background(beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe), RoundedCornerShape(6.dp)),
+                    .background(
+                        beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe),
+                        RoundedCornerShape(6.dp)
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 Text(if (suggestion.mediaType?.contains("movie", true) == true) "🎬" else "📺", fontSize = 20.sp)
@@ -1459,7 +1501,9 @@ fun SubtitleResultCard(item: SubtitleResult, onResult: (String) -> Unit) {
             ) {
                 if (item.posterUrl != null) AsyncImage(
                     model = ImageRequest.Builder(context).data(item.posterUrl).crossfade(true).build(),
-                    contentDescription = item.title, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()
+                    contentDescription = item.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
                 ) else Text(if (item.type == "movie") "🎬" else "📺", fontSize = 26.sp)
             }
             Spacer(Modifier.width(12.dp))
@@ -1477,7 +1521,10 @@ fun SubtitleResultCard(item: SubtitleResult, onResult: (String) -> Unit) {
                     Surface(
                         shape = RoundedCornerShape(6.dp),
                         color = BeeColors.FoundGreen.copy(alpha = 0.15f),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, BeeColors.FoundGreen.copy(alpha = 0.5f))
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            BeeColors.FoundGreen.copy(alpha = 0.5f)
+                        )
                     ) {
                         Text(
                             "✓ SUBS",
@@ -1525,7 +1572,12 @@ fun SubtitleResultCard(item: SubtitleResult, onResult: (String) -> Unit) {
                     }
                 }
                 if (item.genres != null) {
-                    Spacer(Modifier.height(3.dp)); Text(item.genres, fontSize = 11.sp, color = subColor, maxLines = 1)
+                    Spacer(Modifier.height(3.dp)); Text(
+                        item.genres,
+                        fontSize = 11.sp,
+                        color = subColor,
+                        maxLines = 1
+                    )
                 }
                 Spacer(Modifier.height(3.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1671,7 +1723,10 @@ fun ImdbResultCard(item: ImdbResult, onResult: (String) -> Unit) {
             if (item.posterUrl != null) {
                 Box(
                     Modifier.width(70.dp).height(100.dp)
-                        .background(beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe), RoundedCornerShape(8.dp))
+                        .background(
+                            beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe),
+                            RoundedCornerShape(8.dp)
+                        )
                 ) {
                     AsyncImage(
                         model = ImageRequest.Builder(context).data(item.posterUrl).crossfade(true).build(),
@@ -1699,7 +1754,10 @@ fun ImdbResultCard(item: ImdbResult, onResult: (String) -> Unit) {
                         maxLines = 2,
                         modifier = Modifier.weight(1f)
                     )
-                    IconButton(onClick = { copyToClipboard(context, item.title) }, modifier = Modifier.size(28.dp)) {
+                    IconButton(
+                        onClick = { copyToClipboard(context, item.title) },
+                        modifier = Modifier.size(28.dp)
+                    ) {
                         Icon(
                             Icons.Default.ContentCopy,
                             "Copy title",
@@ -1737,7 +1795,10 @@ fun ImdbResultCard(item: ImdbResult, onResult: (String) -> Unit) {
                     ) { Text("IMDb", fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = Color.Black) }
                     Spacer(Modifier.width(5.dp))
                     Text(item.imdbId, fontSize = 11.sp, color = subColor, modifier = Modifier.weight(1f))
-                    IconButton(onClick = { copyToClipboard(context, item.imdbId) }, modifier = Modifier.size(28.dp)) {
+                    IconButton(
+                        onClick = { copyToClipboard(context, item.imdbId) },
+                        modifier = Modifier.size(28.dp)
+                    ) {
                         Icon(
                             Icons.Default.ContentCopy,
                             "Copy ID",
@@ -1793,16 +1854,22 @@ fun BookmarksScreen(
     val bookmarks = BookmarksManager.bookmarks
     var bookmarkSearch by remember { mutableStateOf("") }
 
-    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (!granted) Toast.makeText(context, "Notification permission needed for reminders", Toast.LENGTH_SHORT).show()
-    }
+    val permissionLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (!granted) Toast.makeText(
+                context,
+                "Notification permission needed for reminders",
+                Toast.LENGTH_SHORT
+            ).show()
+        }
 
     var datePickerTargetId by remember { mutableStateOf<String?>(null) }
     var timePickerTargetId by remember { mutableStateOf<String?>(null) }
     var selectedDateStr by remember { mutableStateOf("") }
     var selectedRecurrence by remember { mutableStateOf("ONCE") }
 
-    val datePickerState = rememberDatePickerState(initialSelectedDateMillis = System.currentTimeMillis() + 86_400_000L)
+    val datePickerState =
+        rememberDatePickerState(initialSelectedDateMillis = System.currentTimeMillis() + 86_400_000L)
     val timePickerState = rememberTimePickerState(initialHour = 9, initialMinute = 0, is24Hour = true)
 
     // ── Date Picker Dialog ────────────────────────────────────────────────────
@@ -1817,7 +1884,8 @@ fun BookmarksScreen(
                             .atZone(java.time.ZoneId.systemDefault()).toLocalDate()
                         val today = java.time.LocalDate.now()
                         if (selectedDate.isBefore(today)) {
-                            Toast.makeText(context, "Please select today or a future date", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Please select today or a future date", Toast.LENGTH_SHORT)
+                                .show()
                         } else {
                             selectedDateStr = selectedDate.toString()
                             timePickerTargetId = datePickerTargetId
@@ -1890,7 +1958,10 @@ fun BookmarksScreen(
                                     if (isSelected) BeeColors.DeepAmber else BeeColors.HoneyGold.copy(alpha = 0.5f)
                                 )
                             ) {
-                                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(vertical = 8.dp)) {
+                                Box(
+                                    contentAlignment = Alignment.Center,
+                                    modifier = Modifier.padding(vertical = 8.dp)
+                                ) {
                                     Text(
                                         label, fontSize = 11.sp,
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
@@ -1912,7 +1983,8 @@ fun BookmarksScreen(
 
                     val now = java.time.LocalDateTime.now()
                     val selectedDT =
-                        java.time.LocalDate.parse(selectedDateStr).atTime(timePickerState.hour, timePickerState.minute)
+                        java.time.LocalDate.parse(selectedDateStr)
+                            .atTime(timePickerState.hour, timePickerState.minute)
                     if (!selectedDT.isAfter(now)) {
                         Toast.makeText(context, "Please select a future time", Toast.LENGTH_SHORT).show()
                         return@TextButton
@@ -1920,14 +1992,20 @@ fun BookmarksScreen(
 
                     BookmarksManager.setReminder(context, targetId, selectedDateStr, timeStr, selectedRecurrence)
                     val formatted = java.time.LocalDate.parse(selectedDateStr)
-                        .format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.ENGLISH))
+                        .format(
+                            java.time.format.DateTimeFormatter.ofPattern(
+                                "d MMM yyyy",
+                                java.util.Locale.ENGLISH
+                            )
+                        )
                     val recLabel = when (selectedRecurrence) {
                         "DAILY" -> " · Repeats daily"
                         "WEEKLY" -> " · Repeats weekly"
                         "MONTHLY" -> " · Repeats monthly"
                         else -> ""
                     }
-                    Toast.makeText(context, "⏰ Reminder: $formatted at $timeStr $recLabel", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, "⏰ Reminder: $formatted at $timeStr $recLabel", Toast.LENGTH_LONG)
+                        .show()
                     timePickerTargetId = null
                 }) { Text("Set Reminder", color = BeeColors.DeepAmber, fontWeight = FontWeight.Bold) }
             },
@@ -2190,7 +2268,8 @@ fun BookmarkCard(
     val lookupScope = rememberCoroutineScope()
 
     // IMDb stores mediaType as "feature" for movies, "TV Movie"/"Video Movie" variants also possible
-    val isMovie = bm.mediaType?.let { it.equals("feature", true) || it.contains("movie", ignoreCase = true) } == true
+    val isMovie =
+        bm.mediaType?.let { it.equals("feature", true) || it.contains("movie", ignoreCase = true) } == true
 
     fun autoLookup() {
         if (nextBusy) return
@@ -2232,7 +2311,8 @@ fun BookmarkCard(
                             } catch (_: Exception) {
                                 date.toString()
                             }
-                            Toast.makeText(context, "⏰ A reminder is already set for $nice", Toast.LENGTH_LONG).show()
+                            Toast.makeText(context, "⏰ A reminder is already set for $nice", Toast.LENGTH_LONG)
+                                .show()
                         } else {
                             askDate = date   // popup: ask user whether to overwrite the existing reminder
                         }
@@ -2270,7 +2350,9 @@ fun BookmarkCard(
             ) {
                 if (bm.posterUrl != null) AsyncImage(
                     model = ImageRequest.Builder(context).data(bm.posterUrl).crossfade(true).build(),
-                    contentDescription = bm.title, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()
+                    contentDescription = bm.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
                 ) else Text(
                     if (bm.mediaType?.contains("movie", ignoreCase = true) == true) "🎬" else "📺",
                     fontSize = 22.sp
@@ -2331,7 +2413,12 @@ fun BookmarkCard(
                     Spacer(Modifier.height(5.dp))
                     val formattedDate = try {
                         val d = java.time.LocalDate.parse(bm.reminderDate)
-                        d.format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", java.util.Locale.ENGLISH))
+                        d.format(
+                            java.time.format.DateTimeFormatter.ofPattern(
+                                "d MMM yyyy",
+                                java.util.Locale.ENGLISH
+                            )
+                        )
                     } catch (_: Exception) {
                         bm.reminderDate ?: ""
                     }
@@ -2408,7 +2495,10 @@ fun BookmarkCard(
                     Surface(
                         shape = RoundedCornerShape(6.dp),
                         color = BeeColors.HoneyGold.copy(alpha = 0.15f),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, BeeColors.HoneyGold.copy(alpha = 0.5f)),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            BeeColors.HoneyGold.copy(alpha = 0.5f)
+                        ),
                         modifier = Modifier.clickable { showPlaybackEditor = true }
                     ) {
                         Row(
@@ -2865,7 +2955,9 @@ fun BackupScreen(
         }
     }
 
-    Column(modifier = modifier.fillMaxSize().background(bgColor).padding(16.dp).verticalScroll(rememberScrollState())) {
+    Column(
+        modifier = modifier.fillMaxSize().background(bgColor).padding(16.dp).verticalScroll(rememberScrollState())
+    ) {
         Text(
             "📦 Backup & Restore",
             fontSize = 18.sp,
@@ -3283,8 +3375,9 @@ fun ApiSourcesEditor(apiSites: List<String>, onUpdate: (List<String>) -> Unit) {
     val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let {
             try {
-                val lines = context.contentResolver.openInputStream(it)?.bufferedReader()?.use { r -> r.readLines() }
-                    ?: emptyList()
+                val lines =
+                    context.contentResolver.openInputStream(it)?.bufferedReader()?.use { r -> r.readLines() }
+                        ?: emptyList()
                 val clean = lines.map { l -> l.trim() }.filter { l -> l.isNotBlank() }
                 if (clean.isNotEmpty()) {
                     onUpdate((apiSites + clean).distinct())
@@ -3328,7 +3421,12 @@ fun ApiSourcesEditor(apiSites: List<String>, onUpdate: (List<String>) -> Unit) {
                     showTransferDialog = false
                     filePickerLauncher.launch("text/plain")
                 }) {
-                    Icon(Icons.Default.FileUpload, null, tint = BeeColors.DeepAmber, modifier = Modifier.size(18.dp))
+                    Icon(
+                        Icons.Default.FileUpload,
+                        null,
+                        tint = BeeColors.DeepAmber,
+                        modifier = Modifier.size(18.dp)
+                    )
                     Spacer(Modifier.width(6.dp))
                     Text("Import", color = BeeColors.DeepAmber, fontWeight = FontWeight.Bold)
                 }
@@ -3342,7 +3440,12 @@ fun ApiSourcesEditor(apiSites: List<String>, onUpdate: (List<String>) -> Unit) {
                         exportLauncher.launch("dvora_api_sources.txt")
                     }
                 }) {
-                    Icon(Icons.Default.FileDownload, null, tint = BeeColors.DeepAmber, modifier = Modifier.size(18.dp))
+                    Icon(
+                        Icons.Default.FileDownload,
+                        null,
+                        tint = BeeColors.DeepAmber,
+                        modifier = Modifier.size(18.dp)
+                    )
                     Spacer(Modifier.width(6.dp))
                     Text("Export", color = BeeColors.DeepAmber, fontWeight = FontWeight.Bold)
                 }
@@ -3637,12 +3740,18 @@ fun ApiSourceWizardDialog(
                                     modifier = Modifier.padding(12.dp)
                                 ) {
                                     RadioButton(
-                                        selected = selected, onClick = { apiType = type; selectedCustomTypeId = null },
+                                        selected = selected,
+                                        onClick = { apiType = type; selectedCustomTypeId = null },
                                         colors = RadioButtonDefaults.colors(selectedColor = BeeColors.DeepAmber)
                                     )
                                     Spacer(Modifier.width(8.dp))
                                     Column {
-                                        Text(label, fontWeight = FontWeight.Bold, color = textColor, fontSize = 13.sp)
+                                        Text(
+                                            label,
+                                            fontWeight = FontWeight.Bold,
+                                            color = textColor,
+                                            fontSize = 13.sp
+                                        )
                                         Text(desc, fontSize = 11.sp, color = textColor.copy(alpha = 0.65f))
                                     }
                                 }
@@ -3703,7 +3812,11 @@ fun ApiSourceWizardDialog(
                                             fontSize = 13.sp
                                         )
                                         Text(
-                                            "Custom API • ${custom.matchKeys.size} match key(s) • ${extractDomain(custom.apiUrl)}",
+                                            "Custom API • ${custom.matchKeys.size} match key(s) • ${
+                                                extractDomain(
+                                                    custom.apiUrl
+                                                )
+                                            }",
                                             fontSize = 11.sp, color = textColor.copy(alpha = 0.65f), maxLines = 1
                                         )
                                     }
@@ -4037,7 +4150,12 @@ fun ApiEndpointTesterDialog(
                     value = endpointUrl,
                     onValueChange = { endpointUrl = it },
                     label = { Text("API Endpoint URL  (use DVORA as placeholder)") },
-                    placeholder = { Text("https://example.com/search?q=DVORA", color = textColor.copy(alpha = 0.35f)) },
+                    placeholder = {
+                        Text(
+                            "https://example.com/search?q=DVORA",
+                            color = textColor.copy(alpha = 0.35f)
+                        )
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     colors = beeTextFieldColors()
@@ -4127,7 +4245,10 @@ fun ApiEndpointTesterDialog(
                         color = BeeColors.DeepAmber
                     )
                     Spacer(Modifier.height(4.dp))
-                    Card(shape = RoundedCornerShape(8.dp), colors = CardDefaults.cardColors(containerColor = cardBg)) {
+                    Card(
+                        shape = RoundedCornerShape(8.dp),
+                        colors = CardDefaults.cardColors(containerColor = cardBg)
+                    ) {
                         Text(
                             rawJson.take(2000) + if (rawJson.length > 2000) "\n... (truncated)" else "",
                             modifier = Modifier.padding(8.dp),
@@ -4157,7 +4278,8 @@ fun ApiEndpointTesterDialog(
                         Card(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
                                 .clickable {
-                                    selectedKeys = if (isSelected) selectedKeys - kp.path else selectedKeys + kp.path
+                                    selectedKeys =
+                                        if (isSelected) selectedKeys - kp.path else selectedKeys + kp.path
                                 },
                             shape = RoundedCornerShape(6.dp),
                             colors = CardDefaults.cardColors(
@@ -4289,7 +4411,11 @@ fun ApiEndpointTesterDialog(
                             CustomApiTypeManager.add(context, customType)
                             onSaveCustom(customType)
                             saveMsg = "✅ Saved! '${customType.name}' is now available as an API type."
-                            Toast.makeText(context, "Custom API type '${customType.name}' created", Toast.LENGTH_SHORT)
+                            Toast.makeText(
+                                context,
+                                "Custom API type '${customType.name}' created",
+                                Toast.LENGTH_SHORT
+                            )
                                 .show()
                         },
                         enabled = canSave,
@@ -4344,8 +4470,9 @@ fun SourceEditor(list: List<String>, dvoraHint: Boolean = false, onUpdate: (List
     val filePickerLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let {
             try {
-                val lines = context.contentResolver.openInputStream(it)?.bufferedReader()?.use { r -> r.readLines() }
-                    ?: emptyList()
+                val lines =
+                    context.contentResolver.openInputStream(it)?.bufferedReader()?.use { r -> r.readLines() }
+                        ?: emptyList()
                 val clean = lines.map { l -> l.trim() }.filter { l -> l.isNotBlank() }
                 if (clean.isNotEmpty()) {
                     onUpdate((list + clean).distinct())
@@ -4389,7 +4516,12 @@ fun SourceEditor(list: List<String>, dvoraHint: Boolean = false, onUpdate: (List
                     showTransferDialog = false
                     filePickerLauncher.launch("text/plain")
                 }) {
-                    Icon(Icons.Default.FileUpload, null, tint = BeeColors.DeepAmber, modifier = Modifier.size(18.dp))
+                    Icon(
+                        Icons.Default.FileUpload,
+                        null,
+                        tint = BeeColors.DeepAmber,
+                        modifier = Modifier.size(18.dp)
+                    )
                     Spacer(Modifier.width(6.dp))
                     Text("Import", color = BeeColors.DeepAmber, fontWeight = FontWeight.Bold)
                 }
@@ -4403,7 +4535,12 @@ fun SourceEditor(list: List<String>, dvoraHint: Boolean = false, onUpdate: (List
                         exportLauncher.launch("dvora_sources.txt")
                     }
                 }) {
-                    Icon(Icons.Default.FileDownload, null, tint = BeeColors.DeepAmber, modifier = Modifier.size(18.dp))
+                    Icon(
+                        Icons.Default.FileDownload,
+                        null,
+                        tint = BeeColors.DeepAmber,
+                        modifier = Modifier.size(18.dp)
+                    )
                     Spacer(Modifier.width(6.dp))
                     Text("Export", color = BeeColors.DeepAmber, fontWeight = FontWeight.Bold)
                 }
@@ -4587,7 +4724,8 @@ fun LogItem(log: SearchResult) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 fun saveSources(context: Context, key: String, sources: List<String>) {
-    context.getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE).edit().putStringSet(key, sources.toSet()).apply()
+    context.getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE).edit().putStringSet(key, sources.toSet())
+        .apply()
 }
 
 fun loadSources(context: Context, key: String): List<String> {
