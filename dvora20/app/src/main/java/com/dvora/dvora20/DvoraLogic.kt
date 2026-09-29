@@ -157,13 +157,21 @@ class DvoraScanner {
                     val doc = Jsoup.parse(body, fullUrl)
                     val links = doc.select("a[href]")
 
-                    val searchWords = searchTerm.split(" ").filter { it.isNotBlank() }
+                    // Mirrors desktop (Go) matcher: expanded separator class incl. %XX URL-encoded
+                    // bytes, '*' quantifier (glued forms like "breakingbad" match), apostrophes
+                    // optional ('? not stripped), trailing punctuation :.,;!?" stripped per word
+                    // BEFORE quoting so glued colons (Daredevil: Born Again → daredevil-born-again)
+                    // don't force a literal in the link.
+                    val searchWords = searchTerm.lowercase().trim().split(Regex("\\s+"))
+                        .filter { it.isNotBlank() }
                     if (searchWords.isEmpty()) return@withContext SearchResult(fullUrl, false)
 
                     val patternBuilder = StringBuilder()
                     searchWords.forEachIndexed { index, word ->
-                        if (index > 0) patternBuilder.append("[\\s\\-\\+\\.\\/]+")
-                        patternBuilder.append(Pattern.quote(word))
+                        if (index > 0) patternBuilder.append("(?:[\\s\\-_./+%:~&,]|%[0-9a-f]{2})*")
+                        val trimmed = word.trimEnd(':', '.', ',', ';', '!', '?', '"')
+                        val quoted = Pattern.quote(trimmed).replace("'", "'?")
+                        patternBuilder.append(quoted)
                     }
                     val searchPattern = Pattern.compile(patternBuilder.toString(), Pattern.CASE_INSENSITIVE)
 
@@ -332,16 +340,25 @@ class DvoraScanner {
         }
 
     private fun titleMatches(title: String, searchTerm: String): Boolean {
-        val seps = listOf(" ", "-", "+")
-        val t = title.lowercase()
-        for (qs in seps) {
-            val q = searchTerm.lowercase().replace(" ", qs)
-            for (ts in seps) {
-                val norm = t.replace(ts, qs)
-                if (norm.contains(q)) return true
+        // Mirrors the desktop (Go) matcher: build a pattern from the search term where each
+        // word is joined by an expanded separator class (incl. %XX URL-encoded bytes) with a
+        // '*' quantifier so glued forms like "breakingbad" also match. Apostrophes are made
+        // optional ('? NOT stripped) so Marvel's matches both marvels- and marvel's-. Trailing
+        // punctuation :.,;!?" is stripped from each search word BEFORE quoting so glued colons
+        // (e.g. Daredevil: Born Again → daredevil-born-again) don't force a literal in the link.
+        val words = searchTerm.lowercase().trim().split(Regex("\\s+"))
+        if (words.isEmpty()) return false
+        val pb = StringBuilder()
+        for ((i, w) in words.withIndex()) {
+            if (i > 0) {
+                pb.append("(?:[\\s\\-_./+%:~&,]|%[0-9a-f]{2})*")
             }
+            val trimmed = w.trimEnd(':', '.', ',', ';', '!', '?', '"')
+            val quoted = Regex.escape(trimmed).replace("'", "'?")
+            pb.append(quoted)
         }
-        return false
+        val pat = Regex(pb.toString())
+        return pat.containsMatchIn(title.lowercase())
     }
 
     suspend fun scanStremio(baseUrl: String, searchTerm: String, searchType: SourceType): List<SearchResult> =
