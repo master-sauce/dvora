@@ -13,6 +13,11 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.dvora.dvora20.adblock.CapturedMedia
+import com.dvora.dvora20.adblock.Sniff
+import com.dvora.dvora20.adblock.SniffName
+import com.dvora.dvora20.adblock.SnifferStore
+import com.dvora.dvora20.adblock.ResourceProbe
 import java.io.ByteArrayInputStream
 
 /**
@@ -80,6 +85,29 @@ class BlockerWebViewClient(
         if (scheme != "http" && scheme != "https") return null
         val host = uri.host?.lowercase() ?: return null
         if (host.isEmpty()) return null
+
+        // 1DM's localhost block-and-capture: the sniffer script rerouted a disallowed XHR/fetch
+        // to `https://localhost:<random>/?url=<btoa(url)>` — decode it, log it, return nothing.
+        // The page's player sees a failed/empty response while the real URL joins the capture list.
+        if (host == "localhost") {
+            val b64 = uri.getQueryParameter("url") ?: return empty(ResourceKind.OTHER)
+            val original = runCatching { String(android.util.Base64.decode(b64, android.util.Base64.DEFAULT)) }
+                .getOrNull() ?: return empty(ResourceKind.OTHER)
+            if (original.startsWith("http")) {
+                val kind = Sniff.kind(original, "", null, -1)
+                if (kind != null) {
+                    SnifferStore.add(
+                        CapturedMedia(
+                            url = original, kind = kind, mime = "", size = -1,
+                            filename = SniffName.resolve(original, "", null),
+                            referer = docHost?.let { "https://$it/" }, cookie = null
+                        )
+                    )
+                    SnifferStore.markProbe(original) { ResourceProbe.probeAsync(original, "https://$docHost/", null) }
+                }
+            }
+            return empty(ResourceKind.OTHER)
+        }
 
         val engine = repo.engine
         val kind = kindOf(request)

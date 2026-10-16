@@ -72,6 +72,7 @@ import com.dvora.dvora20.adblock.BlockerWebViewClient
 import com.dvora.dvora20.adblock.CapturedMedia
 import com.dvora.dvora20.adblock.ListRepo
 import com.dvora.dvora20.adblock.Media
+import com.dvora.dvora20.adblock.ResourceProbe
 import com.dvora.dvora20.adblock.SniffName
 import com.dvora.dvora20.adblock.SnifferJsInterface
 import com.dvora.dvora20.adblock.SnifferStore
@@ -179,10 +180,11 @@ fun BrowserScreen(
             settings.mediaPlaybackRequiresUserGesture = false
             settings.setGeolocationEnabled(false)
             setBackgroundColor(0xFF1C1500.toInt())
-            // the injected sniffer script talks to the app through this bridge (1DM's JSInterface pattern)
-            addJavascriptInterface(SnifferJsInterface(), "JSInterface")
         }
     }
+    // the injected sniffer script talks to the app through this bridge — built after the
+    // WebView so the UA provider can read the WebView's real User-Agent string
+    val jsInterface = remember { SnifferJsInterface(context) { webView.settings.userAgentString } }
     val client = remember { BlockerWebViewClient(context, repo) { allowed.toSet() } }.also { c ->
         c.injectSniffer = { wv -> runCatching { wv.evaluateJavascript(SnifferJsInterface.SCRIPT, null) } }
     }
@@ -300,11 +302,12 @@ fun BrowserScreen(
         val fromStore = SnifferStore.all().map { c ->
             SniffRow(
                 url = c.url,
-                label = c.kind.uppercase(),
+                label = if (c.kind == "blob") "BLOB" else c.kind.uppercase(),
                 size = c.size,
                 name = c.filename,
                 isSegment = isSegment(c.url),
-                isPlaylist = c.kind == "m3u8" || c.kind == "mpd"
+                isPlaylist = c.kind == "m3u8" || c.kind == "mpd",
+                isBlob = c.kind == "blob"
             )
         }
         val known = fromStore.mapTo(mutableSetOf()) { it.url.lowercase().substringBefore('#') }
@@ -315,9 +318,15 @@ fun BrowserScreen(
             .filter { Media.sniff(it) != null }
             .distinctBy { Media.normalize(it) }
             .filter { it.lowercase().substringBefore('#') !in known }
+            .onEach { u ->
+                // probe extras once per url per page — fills size/mime/filename after redirects
+                SnifferStore.markProbe(u) {
+                    ResourceProbe.probeAsync(u, address.takeIf { it.startsWith("http") }, CookieManager.getInstance().getCookie(u))
+                }
+            }
             .map { u ->
                 val k = Media.sniff(u) ?: "video"
-                SniffRow(u, k.uppercase(), -1L, null, isSegment(u), k == "m3u8" || k == "mpd")
+                SniffRow(u, k.uppercase(), -1L, null, isSegment(u), k == "m3u8" || k == "mpd", isBlob = false)
             }
             .toList()
         return (fromStore + extras)
@@ -436,6 +445,7 @@ fun BrowserScreen(
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
         if (Build.VERSION.SDK_INT < 29) dlPerm.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
 
+        webView.addJavascriptInterface(jsInterface, "JSInterface")     // 1DM's JSInterface bridge
         webView.webViewClient = client
         webView.webChromeClient = chrome
         webView.setDownloadListener(object : DownloadListener {
@@ -607,16 +617,24 @@ fun BrowserScreen(
                             items(rows) { r ->
                                 Column(
                                     Modifier.fillMaxWidth().clickable {
-                                        if (r.isSegment) {
-                                            // one fragment ≠ the movie — yt-dlp needs the MASTER PLAYLIST:
-                                            // captured one → guessed sibling file of the fragment → else the page url
-                                            val pl = rows.firstOrNull { it.isPlaylist }?.url
-                                                ?: if (r.url.lowercase().contains(".mp4/")) {
-                                                    r.url.substringBeforeLast('/') + "/index.m3u8"
-                                                } else null
-                                            startYt(pl ?: address)
-                                        } else {
-                                            startYt(r.url)
+                                        when {
+                                            r.isBlob -> {
+                                                // blob URLs can't go to yt-dlp — the JS side fetches the
+                                                // in-memory Blob, base64-chunks it to the bridge, native writes the file
+                                                val js = "(window.__dvoraSaveBlob && window.__dvoraSaveBlob('" + r.url + "'))"
+                                                runCatching { webView.evaluateJavascript(js, null) }
+                                                ytPicker = false
+                                            }
+                                            r.isSegment -> {
+                                                // one fragment ≠ the movie — yt-dlp needs the MASTER PLAYLIST:
+                                                // captured one → guessed sibling file of the fragment → else the page url
+                                                val pl = rows.firstOrNull { it.isPlaylist }?.url
+                                                    ?: if (r.url.lowercase().contains(".mp4/")) {
+                                                        r.url.substringBeforeLast('/') + "/index.m3u8"
+                                                    } else null
+                                                startYt(pl ?: address)
+                                            }
+                                            else -> startYt(r.url)
                                         }
                                     }.padding(vertical = 6.dp)
                                 ) {
