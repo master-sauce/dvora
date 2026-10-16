@@ -37,7 +37,10 @@ data class CapturedMedia(
     val filename: String?,   // resolved name, null when only a guess would be possible
     val referer: String?,    // exact referer the page used for this resource
     val cookie: String?,     // exact Cookie header the page used, when the page set one
-    val iv: String? = null   // HLS AES-128 IV (hex) — present only for kind == "aeskey"
+    val iv: String? = null,  // HLS AES-128 IV (hex) — present only for kind == "aeskey"
+    val duration: Double = -1.0,   // seconds, -1 unknown — #EXTINF sums of a playlist body
+    val parts: Int = -1,           // segment count (variant count for masters), -1 unknown
+    val finalUrl: String? = null   // redirect-resolved url (1DM's Connect follows to the end); the row keeps the original
 )
 
 /** row model for the media picker / badge */
@@ -48,7 +51,9 @@ data class SniffRow(
     val name: String?,
     val isSegment: Boolean,
     val isPlaylist: Boolean,
-    val isBlob: Boolean = false
+    val isBlob: Boolean = false,
+    val duration: Double = -1.0,
+    val parts: Int = -1
 )
 
 object SnifferStore {
@@ -59,11 +64,25 @@ object SnifferStore {
     private val lock = Any()
     private val captures = LinkedHashMap<String, CapturedMedia>()  // key = lowercase url (no fragment), first-seen order
     private val probed = HashSet<String>()                          // urls already handed to ResourceProbe
+    private val headerCache = HashMap<String, Map<String, String>>()  // url → the page's exact request headers
 
-    /** page navigation — drop every capture of the old page */
+    /** page navigation — drop every capture of the old page; the header cache survives —
+     *  downloads often start after the user already moved on to the next page. */
     fun newPage() {
         synchronized(lock) { captures.clear(); probed.clear() }
     }
+
+    /** 1DM's urlHeadersCache — the probe must look EXACTLY like the page's own request. */
+    fun noteHeaders(url: String, headers: Map<String, String>) {
+        if (headers.isEmpty()) return
+        synchronized(lock) {
+            if (headerCache.size >= 600) headerCache.clear()    // bounded — page caps it anyway
+            headerCache[url.lowercase().substringBefore('#')] = headers
+        }
+    }
+
+    fun headersFor(url: String): Map<String, String>? =
+        synchronized(lock) { headerCache[url.lowercase().substringBefore('#')] }
 
     /** returns false when the url was already captured on this page */
     fun add(c: CapturedMedia): Boolean = synchronized(lock) {
@@ -212,6 +231,93 @@ internal object Sniff {
     )
 
     internal fun extForMime(mime: String): String? = MIME_EXT[mime.substringBefore(';').trim()]?.let { ".$it" }
+
+    /**
+     * 1DM-style playlist metrics: the #EXTINF sum is the stream duration and the
+     * segment-line count its parts; a master playlist (no #EXTINF yet) returns
+     * its variant count instead of parts.
+     */
+    fun parsePlaylist(body: String): Pair<Double, Int> {
+        var dur = 0.0
+        var parts = 0
+        var variants = 0
+        for (line in body.lineSequence()) {
+            val t = line.trim()
+            when {
+                t.startsWith("#EXTINF:") -> {
+                    t.substring(8).substringBefore(',').trim().toDoubleOrNull()?.let { dur += it }
+                    parts++
+                }
+                t.isNotEmpty() && !t.startsWith("#") -> if (parts == 0) variants++
+            }
+        }
+        return if (parts > 0) dur to parts else -1.0 to variants
+    }
+
+    // ── 1DM body scanner (Extract's generic half) ────────────────────────────
+
+    /** 1DM's captureExtensions + subtitles — what the body scan looks for. */
+    internal val CAPTURE_EXT = Regex(
+        """\.(?:m3u8|mpd|mkv|flv|vob|avi|wmv|mp4|mpg|mp2|mpeg|mpe|mpv|m2v|m4v|3gp|3g2|vtt|srt|sub|ttml|sbv)(?![a-z0-9])""",
+        RegexOption.IGNORE_CASE
+    )
+
+    /** social-share junk — 1DM never captures these */
+    private val JUNK_LINK = Regex(
+        """facebook\.com/sharer\.php\?|twitter\.com/share\?|plus\.google\.com/share\?|whatsapp://send\?""",
+        RegexOption.IGNORE_CASE
+    )
+
+    fun isJunkLink(url: String): Boolean = JUNK_LINK.containsMatchIn(url)
+
+    /**
+     * `?url=http…` / `&subtitle=http…` / `?u=https…` → the wrapped media url
+     * (1DM's loadResource slice — proxied/aliased media endpoints).
+     */
+    fun embeddedUrl(url: String): String? {
+        val m = Regex("""[?&](?:subtitle|url|u|src|target|file|media|video)=(https?[^&]+)""", RegexOption.IGNORE_CASE).find(url)
+            ?: return null
+        return try {
+            java.net.URLDecoder.decode(m.groupValues[1].trim(), "UTF-8")
+        } catch (_: Exception) {
+            m.groupValues[1].trim()
+        }
+    }
+
+    /**
+     * 1DM's `getGenericVideoLink` — the token around an extension hit: walk back
+     * and forward to the nearest delimiter (quote / angle bracket / whitespace),
+     * reject anything over 4096 chars, unfold JSON/html escapes, resolve against
+     * [base]. [endRef] advances past the closing delimiter so the scan continues.
+     */
+    fun genericLink(base: String, body: String, start: Int, endRef: java.util.concurrent.atomic.AtomicInteger): String? {
+        var s = start
+        var i = start - 1
+        while (i >= 0) {
+            val c = body[i]
+            if (c == '"' || c == '\'' || c == '<' || c == '>' || c == '\n' || c == '\t' || c == ' ') {
+                s = i + 1
+                break
+            }
+            i--
+        }
+        var e = endRef.get()
+        while (e < body.length) {
+            val c = body[e]
+            if (c == '"' || c == '\'' || c == '<' || c == '>' || c == '\n' || c == '\t' || c == ' ') break
+            e++
+        }
+        if (e - s > 4096) return null
+        endRef.set(e + 1)
+        val raw = body.substring(s, e).trim()
+            .replace("\\u002F", "/")     // JSON-escaped slash / percent (literal \uXXXX text)
+            .replace("\\u002f", "/")
+            .replace("\\u0025", "%")
+            .replace("\\/", "/")
+            .replace("&amp;", "&")
+        if (raw.isEmpty()) return null
+        return resolveUrl(base, raw)
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -389,18 +495,10 @@ class SnifferJsInterface(
 
             // body-driven detection — the web already downloaded these bytes; never refetch
             val b = body ?: ""
-            if (kind == null && b.length in 7..250_000) {
+            if (kind == null && b.isNotEmpty()) {
                 val trimmed = b.trimStart()
-                when {
-                    trimmed.length >= 7 && trimmed.substring(0, 7).equals("#EXTM3U", true) ->
-                        kind = "m3u8"
-                    trimmed.startsWith("<") || trimmed.startsWith("{") ->
-                        // html page fragments and json player configs both carry direct media urls
-                        extractFromHtml(trimmed, resolved, pageUrl)
-                }
+                if (trimmed.length >= 7 && trimmed.substring(0, 7).equals("#EXTM3U", true)) kind = "m3u8"
             }
-            if (kind == null) return
-            if (kind !in setOf("m3u8", "mpd") && len in 1..10_239) return   // size gate
 
             var cookie: String? = null
             var referer: String? = null
@@ -416,6 +514,26 @@ class SnifferJsInterface(
                 }
             }
 
+            // 1DM's Extract — ANY body over 10 chars that isn't itself media gets scanned
+            // for embedded media urls: html fragments, json player configs, frame pages
+            if (b.length > 10 && kind != "m3u8" &&
+                !mime.startsWith("video/") && !mime.startsWith("audio/") && !mime.startsWith("image/")
+            ) {
+                scanBody(b, resolved, pageUrl, referer, cookie)
+            }
+
+            if (kind == null) return
+            if (kind !in setOf("m3u8", "mpd") && len in 1..10_239) return   // size gate
+
+            // playlist bodies carry their own metrics — #EXTINF sum = duration, line count = parts
+            var duration = -1.0
+            var parts = -1
+            if (kind == "m3u8" && b.isNotEmpty()) {
+                val pd = Sniff.parsePlaylist(b)
+                duration = pd.first
+                parts = pd.second
+            }
+
             val cap = CapturedMedia(
                 url = resolved,
                 kind = kind,
@@ -423,13 +541,15 @@ class SnifferJsInterface(
                 size = len,
                 filename = SniffName.resolve(resolved, mime, contentDisposition),
                 referer = referer,
-                cookie = cookie
+                cookie = cookie,
+                duration = duration,
+                parts = parts
             )
             if (SnifferStore.add(cap)) {
                 // playlists get their children captured too (master → media/audio/subtitle tracks)
                 if (kind == "m3u8" && b.isNotEmpty()) extractM3u8Children(b, resolved, pageUrl, referer, cookie)
                 // a probe re-requests with the page's own headers — fills size/mime/filename after redirects
-                SnifferStore.markProbe(resolved) { ResourceProbe.probeAsync(resolved, referer ?: pageUrl, cookie) }
+                SnifferStore.markProbe(resolved) { ResourceProbe.probeAsync(resolved, referer ?: pageUrl, cookie, uaProvider()) }
             }
         } catch (_: Throwable) {
         }
@@ -457,7 +577,7 @@ class SnifferJsInterface(
                 if (k != null && (k == "m3u8" || k == "mpd" || k in AUDIO_KINDS)) {
                     if (SnifferStore.add(CapturedMedia(child, k, "", -1, SniffName.resolve(child, "", null), pageUrl, cookie))) {
                         // audio/subtitle variant tracks get a probe too so the row shows real size
-                        SnifferStore.markProbe(child) { ResourceProbe.probeAsync(child, pageUrl, cookie) }
+                        SnifferStore.markProbe(child) { ResourceProbe.probeAsync(child, pageUrl, cookie, uaProvider()) }
                     }
                 }
             }
@@ -467,7 +587,7 @@ class SnifferJsInterface(
                 val k = Sniff.kind(child, "", null, -1)
                 if (k != null && k != "ts" && k != "aeskey") {
                     if (SnifferStore.add(CapturedMedia(child, k, "", -1, SniffName.resolve(child, "", null), pageUrl, cookie))) {
-                        SnifferStore.markProbe(child) { ResourceProbe.probeAsync(child, pageUrl, cookie) }
+                        SnifferStore.markProbe(child) { ResourceProbe.probeAsync(child, pageUrl, cookie, uaProvider()) }
                     }
                 }
             }
@@ -476,18 +596,78 @@ class SnifferJsInterface(
     }
 
     /** html/json body scan — absolute media urls only (conservative; 1DM uses Jsoup on the same idea) */
-    private fun extractFromHtml(body: String, baseUrl: String, pageUrl: String) {
+    /**
+     * 1DM's `Extract`, generic half — the capture-extension pattern runs over the
+     * WHOLE body and every hit becomes the token around it (1DM's getGenericVideoLink:
+     * relative urls resolve, JSON/html escapes unfold); `<video>/<source>/<audio>`
+     * src attributes are scanned too — media elements never touch XHR — and one
+     * level of iframe/frame targets gets fetched and scanned again.
+     */
+    private fun scanBody(body: String, baseUrl: String, pageUrl: String, referer: String?, cookie: String?, depth: Int = 0) {
         try {
-            Regex(
-                """https?://[^"'\\\s<>]+?\.(?:m3u8|mpd|mp4|webm|mkv|avi|mov|m4v|flv|mp3|m4a)(?:\?[^"'\\\s<>]*)?""",
-                RegexOption.IGNORE_CASE
-            ).findAll(body).forEach { m ->
-                val child = m.value
-                val k = Sniff.kind(child, "", null, -1) ?: return@forEach
-                if (k == "ts") return@forEach
-                SnifferStore.add(CapturedMedia(child, k, "", -1, SniffName.resolve(child, "", null), pageUrl, null))
+            val b = if (body.length > 250_000) body.substring(0, 250_000) else body
+            // 1) extension-pattern hits anywhere in the body
+            val endRef = java.util.concurrent.atomic.AtomicInteger(0)
+            for (m in Sniff.CAPTURE_EXT.findAll(b)) {
+                endRef.set(m.range.last + 1)
+                val link = Sniff.genericLink(baseUrl, b, m.range.first, endRef) ?: continue
+                captureScanned(link, pageUrl, referer, cookie)
+                // 1DM: a link ending in "?a=view" also captures its bare form
+                if (link.endsWith("?a=view", true)) {
+                    captureScanned(link.substring(0, link.length - 7), pageUrl, referer, cookie)
+                }
             }
-        } catch (_: Exception) {
+            // 2) media element src attributes — <video>/<source>/<audio> never go through XHR
+            for (m in Regex("""<(?:video|source|audio)\b[^>]*\bsrc\s*=\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE).findAll(b)) {
+                captureScanned(Sniff.resolveUrl(baseUrl, m.groupValues[1]), pageUrl, referer, cookie)
+            }
+            // 3) iframe/frame src — fetch the frame's own html and scan it too (one level)
+            if (depth == 0) {
+                for (m in Regex("""<(?:iframe|frame)\b[^>]*\bsrc\s*=\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE).findAll(b)) {
+                    val link = Sniff.resolveUrl(baseUrl, m.groupValues[1])
+                    if (!link.startsWith("http") || link.equals(pageUrl, true) || link.equals(baseUrl, true)) continue
+                    ResourceProbe.fetchBodyAsync(link, referer ?: pageUrl, cookie, uaProvider(), SnifferStore.headersFor(link)) { html ->
+                        if (html != null) scanBody(html, link, pageUrl, referer, cookie, 1)
+                    }
+                }
+            }
+        } catch (_: Throwable) {
+        }
+    }
+
+    /** one scanned candidate — junk-filtered, classified, stored, probed. */
+    private fun captureScanned(url: String, pageUrl: String, referer: String?, cookie: String?) {
+        try {
+            if (url.isBlank() || !url.startsWith("http")) return
+            if (Sniff.isJunkLink(url)) return
+            // proxied/wrapped media (proxy.php?u=https://cdn/x.mp4) — the wrapped url is the media
+            Sniff.embeddedUrl(url)?.let { if (it != url && it.length < url.length) captureScanned(it, pageUrl, referer, cookie) }
+            val k = Sniff.kind(url, "", null, -1) ?: return
+            if (SnifferStore.add(
+                    CapturedMedia(
+                        url = url, kind = k, mime = "", size = -1,
+                        filename = SniffName.resolve(url, "", null),
+                        referer = referer ?: pageUrl, cookie = cookie
+                    )
+                )
+            ) {
+                SnifferStore.markProbe(url) { ResourceProbe.probeAsync(url, referer ?: pageUrl, cookie, uaProvider()) }
+            }
+        } catch (_: Throwable) {
+        }
+    }
+
+    /**
+     * The page's own DOM — pushed at page end (outerHTML) so `<video>`/`<source>`
+     * elements and iframes that never issue an XHR still land in the capture list.
+     */
+    @JavascriptInterface
+    fun scanPage(html: String?, pageUrl: String?) {
+        try {
+            if (html.isNullOrBlank() || pageUrl.isNullOrBlank()) return
+            if (!pageUrl.startsWith("http")) return
+            scanBody(html, pageUrl, pageUrl, pageUrl, null)
+        } catch (_: Throwable) {
         }
     }
 
@@ -514,8 +694,13 @@ class SnifferJsInterface(
                   this.addEventListener('load', function() {
                     try {
                       var h = this.getAllResponseHeaders().toLowerCase();
+                      // body cap — shipping a huge response over the bridge can kill the app;
+                      // responseText also throws for non-text responseTypes, headers still matter
+                      var rb = '';
+                      try { rb = this.responseText || ''; } catch (eB) { rb = ''; }
+                      if (rb.length > 2000000) rb = rb.substring(0, 2000000);
                       window.JSInterface.handleM3u8Url(
-                        method, url, this.responseURL, this.responseText,
+                        method, url, this.responseURL, rb,
                         h.indexOf('content-type') >= 0 ? this.getResponseHeader('content-type') : '',
                         h.indexOf('content-disposition') >= 0 ? this.getResponseHeader('content-disposition') : '',
                         h.indexOf('content-length') >= 0 ? this.getResponseHeader('content-length') : '',
@@ -536,6 +721,7 @@ class SnifferJsInterface(
               function report(response, resource, method, init, data) {
                 try {
                   var rUrl = typeof resource === 'string' ? resource : (resource && resource.url ? resource.url : String(resource));
+                  if (data && data.length > 2000000) data = data.substring(0, 2000000);   // bridge-size cap
                   window.JSInterface.handleM3u8Url(
                     method, rUrl, response.url, data,
                     response && response.headers ? (response.headers.get('content-type') || '') : '',
@@ -692,57 +878,381 @@ object BlobSaver {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 object ResourceProbe {
-    data class Result(val finalUrl: String, val mime: String, val size: Long, val disposition: String?)
+    data class Result(
+        val finalUrl: String, val mime: String, val size: Long, val disposition: String?,
+        val duration: Double, val parts: Int
+    )
 
-    private val exec = Executors.newSingleThreadExecutor { r -> Thread(r, "dvora-probe").apply { isDaemon = true } }
+    private val exec = Executors.newFixedThreadPool(3) { r -> Thread(r, "dvora-probe").apply { isDaemon = true } }
 
-    fun probeAsync(url: String, referer: String?, cookie: String?) {
+    fun probeAsync(url: String, referer: String?, cookie: String?, ua: String? = null) {
         exec.execute {
-            val r = runCatching { probe(url, referer, cookie) }.getOrNull() ?: return@execute
-            SnifferStore.update(url) { c ->
-                val mime = r.mime.ifBlank { c.mime }
-                val kind = Sniff.kind(r.finalUrl, mime, null, r.size) ?: c.kind
-                c.copy(
-                    url = r.finalUrl,
-                    mime = mime,
-                    size = if (r.size > 0) r.size else c.size,
-                    filename = SniffName.resolve(r.finalUrl, mime, r.disposition) ?: c.filename,
-                    kind = kind
+            val cached = SnifferStore.headersFor(url)     // 1DM's urlHeadersCache — exact replay
+            val r = runCatching { probe(url, referer, cookie, ua, cached) }.getOrNull() ?: return@execute
+            val existing = SnifferStore.byUrl(url)
+            if (existing != null) {
+                SnifferStore.update(url) { c ->
+                    val mime = r.mime.ifBlank { c.mime }
+                    val kind = Sniff.kind(r.finalUrl, mime, null, r.size) ?: c.kind
+                    c.copy(
+                        mime = mime,
+                        size = if (r.size > 0) r.size else c.size,
+                        filename = SniffName.resolve(r.finalUrl, mime, r.disposition) ?: c.filename,
+                        kind = kind,
+                        duration = if (r.duration > 0) r.duration else c.duration,
+                        parts = if (r.parts > 0) r.parts else c.parts,
+                        // 1DM's Connect resolves redirects to the END — the engine gets the final url
+                        finalUrl = if (!r.finalUrl.equals(url, ignoreCase = true)) r.finalUrl else c.finalUrl
+                    )
+                }
+            } else {
+                // reqLog-derived rows are not in the store — promote them to full captures with
+                // real size / name / duration (the row keeps its url so the dedup stays clean)
+                val kind = Sniff.kind(r.finalUrl, r.mime, null, r.size) ?: return@execute
+                if (r.size in 1..10_239 && kind != "m3u8" && kind != "mpd") return@execute   // ≥10KB gate
+                SnifferStore.add(
+                    CapturedMedia(
+                        url = url, kind = kind, mime = r.mime, size = r.size,
+                        filename = SniffName.resolve(r.finalUrl, r.mime, r.disposition),
+                        referer = referer, cookie = cookie,
+                        duration = r.duration, parts = r.parts,
+                        finalUrl = if (!r.finalUrl.equals(url, ignoreCase = true)) r.finalUrl else null
+                    )
                 )
             }
         }
     }
 
-    private fun probe(url: String, referer: String?, cookie: String?): Result? {
-        if (!url.startsWith("http")) return null
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 8000
-            readTimeout = 8000
+    /** page/frame fetch for the body scanner — capped at 256KB, replaying the page's headers. */
+    fun fetchBodyAsync(url: String, referer: String?, cookie: String?, ua: String?, cached: Map<String, String>? = null, cb: (String?) -> Unit) {
+        exec.execute {
+            val body = runCatching {
+                val conn = openConn(url, referer, cookie, null, ua, cached)
+                try {
+                    if (conn.responseCode !in 200..299) return@runCatching null
+                    val mime = (conn.contentType ?: "").substringBefore(';').trim().lowercase()
+                    if (mime.startsWith("video/") || mime.startsWith("audio/") || mime.startsWith("image/")) {
+                        return@runCatching null
+                    }
+                    String(readCapped(conn, 262_144), Charsets.UTF_8)
+                } finally {
+                    conn.disconnect()
+                }
+            }.getOrNull()
+            cb(body)
+        }
+    }
+
+    private fun openConn(
+        url: String, referer: String?, cookie: String?, range: String?, ua: String?,
+        cached: Map<String, String>? = null
+    ): HttpURLConnection =
+        (URL(url).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 15000
+            readTimeout = 15000
             instanceFollowRedirects = true
             requestMethod = "GET"
-            setRequestProperty("Range", "bytes=0-0")          // 206 + Content-Range gives total
+            // 1DM's urlHeadersCache — the probe must look EXACTLY like the page's own request.
+            // Accept-Encoding dies here: HttpURLConnection auto-unzips only ITS OWN encoding —
+            // replaying the page's would deliver raw gzip bytes to every parser.
+            cached?.forEach { (k, v) ->
+                if (!k.equals("Range", true) && !k.equals("Host", true) &&
+                    !k.equals("Accept-Encoding", true) && !k.equals("Content-Length", true) &&
+                    v.isNotEmpty()
+                ) setRequestProperty(k, v)
+            }
+            range?.let { setRequestProperty("Range", it) }
+            // no UA → instant 403 on most CDNs — always replay one (the WebView's own when known)
+            ua?.let { setRequestProperty("User-Agent", it) }
             referer?.let { setRequestProperty("Referer", it) }
             cookie?.let { setRequestProperty("Cookie", it) }
         }
+
+    /** reads at most [cap] bytes — the parse window — and kills whatever the server keeps streaming. */
+    private fun readCapped(conn: HttpURLConnection, cap: Int): ByteArray {
+        val out = java.io.ByteArrayOutputStream()
+        runCatching {
+            conn.inputStream.use { ins ->
+                val buf = ByteArray(8192)
+                while (out.size() < cap) {
+                    val n = ins.read(buf, 0, minOf(buf.size, cap - out.size()))
+                    if (n < 0) break
+                    out.write(buf, 0, n)
+                }
+            }
+        }
+        return out.toByteArray()
+    }
+
+    private fun probe(url: String, referer: String?, cookie: String?, ua: String?, cached: Map<String, String>?): Result? {
+        if (!url.startsWith("http")) return null
+        val path = url.substringBefore('?').lowercase()
+        val looksPlaylist = path.endsWith(".m3u8") || path.endsWith(".mpd")
+        // playlists → full body (#EXTINF lines run through the whole file); files → a 64KB head window
+        var conn = openConn(url, referer, cookie, if (looksPlaylist) null else "bytes=0-65535", ua, cached)
         try {
-            val code = conn.responseCode
+            var code = conn.responseCode
             if (code < 200 || code >= 400) return null
-            val mime = (conn.contentType ?: "").substringBefore(';').trim()
+            var mime = (conn.contentType ?: "").substringBefore(';').trim()
             val disp = conn.getHeaderField("Content-Disposition")
             var size = conn.getHeaderField("Content-Length")?.trim()?.toLongOrNull() ?: -1L
-            // 206 partial → Content-Range "bytes 0-0/12345" carries the full size
+            // 206 partial → Content-Range "bytes 0-65535/12345678" carries the full size
             conn.getHeaderField("Content-Range")?.let { cr ->
                 Regex("""bytes\s+\S+/(\d+)""", RegexOption.IGNORE_CASE).find(cr)?.let {
                     size = it.groupValues[1].toLongOrNull() ?: size
                 }
             }
-            // kill any body the server might start streaming — we only wanted headers
-            try { conn.inputStream.close() } catch (_: Exception) {}
-            return Result(conn.url.toString(), mime, size, disp)
+            var finalUrl = conn.url.toString()
+            // an extension-less playlist endpoint asked with a Range — reconnect for the whole body
+            if (!looksPlaylist && (mime.contains("mpegurl", true) || mime.contains("dash+xml", true))) {
+                conn.disconnect()
+                conn = openConn(finalUrl, referer, cookie, null, ua, cached)
+                code = conn.responseCode
+                if (code < 200 || code >= 400) return null
+                mime = (conn.contentType ?: "").substringBefore(';').trim().ifBlank { mime }
+                finalUrl = conn.url.toString()
+            }
+            var duration = -1.0
+            var parts = -1
+            val fPath = finalUrl.substringBefore('?').lowercase()
+            if (looksPlaylist || fPath.endsWith(".m3u8") || fPath.endsWith(".mpd") ||
+                mime.contains("mpegurl", true) || mime.contains("dash+xml", true)
+            ) {
+                val body = String(readCapped(conn, 524_288), Charsets.UTF_8)
+                if ("#EXTINF" in body) {
+                    val pd = Sniff.parsePlaylist(body)
+                    duration = pd.first
+                    parts = pd.second
+                }
+            } else {
+                val head = readCapped(conn, 65_536)
+                val trimmedHead = String(head, Charsets.UTF_8).trimStart()
+                if (trimmedHead.length >= 7 && trimmedHead.substring(0, 7).equals("#EXTM3U", true)) {
+                    // extension-less endpoint answering with a playlist body under a text/plain
+                    // mime — refetch the whole body and parse it like the playlist branch
+                    conn.disconnect()
+                    val c2 = openConn(finalUrl, referer, cookie, null, ua, cached)
+                    try {
+                        if (c2.responseCode in 200..299) {
+                            mime = (c2.contentType ?: "").substringBefore(';').trim()
+                                .ifBlank { "application/vnd.apple.mpegurl" }
+                            val body = String(readCapped(c2, 524_288), Charsets.UTF_8)
+                            val pd = Sniff.parsePlaylist(body)
+                            duration = pd.first
+                            parts = pd.second
+                        }
+                    } finally {
+                        c2.disconnect()
+                    }
+                } else {
+                    val kind = Sniff.kind(finalUrl, mime, null, size) ?: ""
+                    if (MediaMeta.handles(kind) || mime.startsWith("video/") || mime.startsWith("audio/")) {
+                        duration = MediaMeta.duration(kind, mime, head, size) { range ->
+                            // mp4 with the moov box at the end — the tail window carries mvhd
+                            runCatching {
+                                val c3 = openConn(finalUrl, referer, cookie, range, ua, cached)
+                                try {
+                                    if (c3.responseCode in 200..299) readCapped(c3, 262_144) else ByteArray(0)
+                                } finally {
+                                    c3.disconnect()
+                                }
+                            }.getOrDefault(ByteArray(0))
+                        }
+                    }
+                }
+            }
+            return Result(finalUrl, mime, size, disp, duration, parts)
         } catch (_: Exception) {
             return null
         } finally {
             conn.disconnect()
         }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MediaMeta — duration (seconds) from a container's own header bytes, 1DM-style,
+// for every captured url. Only the head/tail window of the file is ever fetched.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+internal object MediaMeta {
+
+    private val MP4_KINDS = setOf(
+        "mp4", "m4v", "m4a", "m4b", "m4p", "mov", "3gp", "3g2",
+        "f4v", "f4p", "f4a", "f4b", "mxf", "qt"
+    )
+    private val WEBM_KINDS = setOf("webm", "mkv")
+
+    /** true when a duration can be parsed from the header bytes of this kind. */
+    fun handles(kind: String): Boolean = kind in MP4_KINDS || kind in WEBM_KINDS || kind == "mp3"
+
+    /**
+     * duration in seconds or -1. [tail] lazily fetches a window of the file's end —
+     * only used for mp4s whose moov box sits at the end of the file.
+     */
+    fun duration(
+        kind: String, mime: String, head: ByteArray, totalSize: Long,
+        tail: (String) -> ByteArray
+    ): Double {
+        val m = mime.lowercase()
+        return when {
+            kind in MP4_KINDS || m.startsWith("video/mp4") || m == "audio/mp4" ||
+                m.contains("isoformat") || m.startsWith("video/quicktime") -> {
+                val d = mp4(head) ?: if (totalSize > 262_144) {
+                    val from = totalSize - 262_144
+                    mp4(tail("bytes=$from-${totalSize - 1}"))
+                } else null
+                d ?: -1.0
+            }
+            kind in WEBM_KINDS || m.startsWith("video/webm") || m.contains("matroska") ->
+                webm(head) ?: -1.0
+            kind == "mp3" || m == "audio/mpeg" -> mp3(head, totalSize)
+            else -> -1.0
+        }
+    }
+
+    private fun be32(b: ByteArray, o: Int): Long =
+        ((b[o].toLong() and 0xFF) shl 24) or ((b[o + 1].toLong() and 0xFF) shl 16) or
+            ((b[o + 2].toLong() and 0xFF) shl 8) or (b[o + 3].toLong() and 0xFF)
+
+    private fun be64(b: ByteArray, o: Int): Long {
+        var v = 0L
+        for (i in 0 until 8) v = (v shl 8) or (b[o + i].toLong() and 0xFF)
+        return v
+    }
+
+    private fun indexOf(hay: ByteArray, needle: ByteArray): Int {
+        outer@ for (i in 0..hay.size - needle.size) {
+            for (j in needle.indices) if (hay[i + j] != needle[j]) continue@outer
+            return i
+        }
+        return -1
+    }
+
+    /** ISO-BMFF — scan the window for mvhd; duration = duration ÷ timescale. */
+    private fun mp4(b: ByteArray): Double? {
+        val needle = byteArrayOf('m'.code.toByte(), 'v'.code.toByte(), 'h'.code.toByte(), 'd'.code.toByte())
+        val i = indexOf(b, needle).takeIf { it >= 0 } ?: return null
+        val p = i + 4                                   // version/flags payload start
+        if (p + 20 > b.size) return null
+        return if (b[p].toInt() == 1) {                 // version 1 — 64-bit fields
+            if (p + 32 > b.size) return null
+            val ts = be32(b, p + 20)
+            val dur = be64(b, p + 24)
+            if (ts > 0) dur.toDouble() / ts else null
+        } else {
+            val ts = be32(b, p + 12)
+            val dur = be32(b, p + 16)
+            if (ts > 0) dur.toDouble() / ts else null
+        }
+    }
+
+    /** Matroska/WebM — EBML walk: Segment → Info → TimestampScale + Duration. */
+    private fun webm(b: ByteArray): Double? {
+        var pos = 0
+        fun vint(keepMarker: Boolean): Long {
+            if (pos >= b.size) return -1L
+            val first = b[pos].toInt() and 0xFF
+            if (first == 0) return -1L
+            var len = 1
+            while (len <= 8 && (first and (0x80 shr (len - 1))) == 0) len++
+            if (len > 8 || pos + len > b.size) return -1L
+            var v = if (keepMarker) first.toLong() else (first and (0xFF shr len)).toLong()
+            for (i in 1 until len) v = (v shl 8) or (b[pos + i].toLong() and 0xFF)
+            pos += len
+            return v
+        }
+        if (vint(true) != 0x1A45DFA3L) return null      // EBML header
+        val headSize = vint(false)
+        if (headSize < 0 || headSize > b.size) return null
+        pos += headSize.toInt()
+        if (vint(true) != 0x18538067L) return null      // Segment
+        val segSize = vint(false)
+        if (segSize < 0) return null
+        val segEnd = if (segSize > b.size.toLong()) b.size.toLong() else pos + segSize
+        var scale = 1_000_000L                          // TimestampScale default: 1ms
+        var dur: Double? = null
+        while (pos < segEnd && pos < b.size) {
+            val id = vint(true); if (id < 0) break
+            val sz = vint(false); if (sz < 0) break
+            val end = if (sz > b.size.toLong()) b.size.toLong() else pos + sz
+            if (id == 0x1549A966L) {                    // Info
+                val infoEnd = minOf(end, b.size.toLong()).toInt()
+                while (pos < infoEnd) {
+                    val iid = vint(true); if (iid < 0) break
+                    val isz = vint(false); if (isz < 0) break
+                    val iEnd = if (isz > b.size.toLong()) b.size.toLong() else pos + isz
+                    when (iid) {
+                        0x2AD7B1L -> {                  // TimestampScale (nanoseconds)
+                            var v = 0L
+                            val lim = minOf(iEnd, b.size.toLong()).toInt()
+                            for (k in pos until lim) v = (v shl 8) or (b[k].toLong() and 0xFF)
+                            if (v > 0) scale = v
+                        }
+                        0x4489L -> {                    // Duration (float, in TimestampScale units)
+                            dur = when {
+                                isz == 4L && pos + 4 <= b.size ->
+                                    java.lang.Float.intBitsToFloat(be32(b, pos).toInt()).toDouble()
+                                isz == 8L && pos + 8 <= b.size ->
+                                    java.lang.Double.longBitsToDouble(be64(b, pos))
+                                else -> null
+                            }
+                        }
+                    }
+                    pos = iEnd.toInt()
+                }
+                if (dur != null) break
+            }
+            pos = end.toInt()
+        }
+        val d = dur ?: return null
+        if (d <= 0 || d.isNaN() || d.isInfinite()) return null
+        return d * scale / 1_000_000_000.0
+    }
+
+    /** MP3 — Xing/Info VBR frame count when present, else a CBR estimate from the total size. */
+    private fun mp3(head: ByteArray, totalSize: Long): Double {
+        val BR_V1 = intArrayOf(0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320)
+        val BR_V2 = intArrayOf(0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160)
+        val RATES = intArrayOf(44100, 48000, 32000)
+        var o = 0
+        // skip an IDv2 tag
+        if (head.size >= 10 && head[0] == 0x49.toByte() && head[1] == 0x44.toByte() && head[2] == 0x33.toByte()) {
+            val sz = ((head[6].toInt() and 0x7F) shl 21) or ((head[7].toInt() and 0x7F) shl 14) or
+                ((head[8].toInt() and 0x7F) shl 7) or (head[9].toInt() and 0x7F)
+            o = 10 + sz
+        }
+        while (o + 4 <= head.size) {
+            if ((head[o].toInt() and 0xFF) != 0xFF || (head[o + 1].toInt() and 0xE0) != 0xE0) { o++; continue }
+            val b2 = head[o + 1].toInt() and 0xFF
+            val verBits = (b2 shr 3) and 0x03           // 11=MPEG1 · 10=MPEG2 · 00=MPEG2.5
+            val layBits = (b2 shr 1) and 0x03           // 01=Layer III
+            if (verBits == 1 || layBits != 1) { o++; continue }
+            val b3 = head[o + 2].toInt() and 0xFF
+            val brIdx = (b3 shr 4) and 0x0F
+            val srIdx = (b3 shr 2) and 0x03
+            if (brIdx == 0 || brIdx == 15 || srIdx == 3) { o++; continue }
+            val mpeg1 = verBits == 3
+            val bitrate = (if (mpeg1) BR_V1[brIdx] else BR_V2[brIdx]) * 1000
+            val rate = RATES[srIdx] / (if (mpeg1) 1 else 2)
+            val mono = ((b3 shr 6) and 0x03) == 3
+            // the Xing/Info VBR header sits right after the frame's side information
+            val x = o + 4 + (if (mpeg1) (if (mono) 17 else 32) else (if (mono) 9 else 17))
+            if (x + 12 <= head.size) {
+                val tag = String(head, x, 4, Charsets.US_ASCII)
+                if (tag == "Xing" || tag == "Info") {
+                    val flags = be32(head, x + 4)
+                    if (flags and 0x1L != 0L) {
+                        val frames = be32(head, x + 8)
+                        val spf = if (mpeg1) 1152 else 576
+                        if (frames > 0) return frames * spf.toDouble() / rate
+                    }
+                }
+            }
+            // CBR estimate — audio bytes × 8 ÷ bitrate
+            if (totalSize > o && bitrate > 0) return (totalSize - o) * 8.0 / bitrate
+            return -1.0
+        }
+        return -1.0
     }
 }

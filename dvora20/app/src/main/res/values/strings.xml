@@ -106,6 +106,14 @@
     <string name="yt_dl_fail">yt-dlp download failed</string>
     <string name="yt_err_title">media download failed</string>
     <string name="yt_copy_err">copy</string>
+    <string name="yt_queue_full">4 downloads already running — wait for a free slot</string>
+    <string name="yt_already">this media is already downloading</string>
+    <string name="yt_multi">%1$d downloads running</string>
+    <string name="yt_sheet_title">downloads</string>
+    <string name="yt_sheet_rest">more media on this page</string>
+    <string name="rs_search">search requests…</string>
+    <string name="dl_confirm_title">download this media?</string>
+    <string name="yt_parts">%1$d parts</string>
     <string name="yt_seg_hint">segment fragment only — pick the playlist/master (.m3u8 / .mpd) row on top for the full video</string>
     <string name="yt_folder_lbl">MEDIA DOWNLOAD LOCATION</string>
     <string name="yt_folder_pick">saved folder for captured media — tap to change</string>

@@ -90,6 +90,11 @@ class BlockerEngine {
         )     // visible in logcat — what the downloads picker offers
     }
 
+    // ── thread-safe snapshots — the deques are mutated on WebView IO threads while
+    // Compose reads them on the main thread; every UI read MUST go through these ──
+    fun reqSnapshot(): List<ReqRecord> = synchronized(lock) { reqLog.toList() }
+    fun blockSnapshot(): List<BlockRecord> = synchronized(lock) { pageLog.toList() }
+
     /**
      * Decides whether [url] (host [host], resource [kind], document host
      * [docHost]) should be intercepted.

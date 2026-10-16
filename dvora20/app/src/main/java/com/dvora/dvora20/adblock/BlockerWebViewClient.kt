@@ -103,7 +103,9 @@ class BlockerWebViewClient(
                             referer = docHost?.let { "https://$it/" }, cookie = null
                         )
                     )
-                    SnifferStore.markProbe(original) { ResourceProbe.probeAsync(original, "https://$docHost/", null) }
+                    SnifferStore.markProbe(original) {
+                        ResourceProbe.probeAsync(original, "https://$docHost/", null, request.requestHeaders["User-Agent"])
+                    }
                 }
             }
             return empty(ResourceKind.OTHER)
@@ -113,6 +115,29 @@ class BlockerWebViewClient(
         val kind = kindOf(request)
         val tag = tagOf(request, kind)
         val url = uri.toString()
+
+        // 1DM's urlHeadersCache — the exact request headers per url, replayed by the probe
+        if (request.requestHeaders.isNotEmpty()) SnifferStore.noteHeaders(url, request.requestHeaders)
+
+        // 1DM's loadResource unwrap — media urls hidden behind ?url= / ?subtitle= proxy
+        // params (Akamai-style proxies, playlist subtitle carriers) get their own row
+        Sniff.embeddedUrl(url)?.let { embedded ->
+            val k = Sniff.kind(embedded, "", null, -1)
+            if (k != null) {
+                if (SnifferStore.add(
+                        CapturedMedia(
+                            url = embedded, kind = k, mime = "", size = -1,
+                            filename = SniffName.resolve(embedded, "", null),
+                            referer = "https://$host/", cookie = null
+                        )
+                    )
+                ) {
+                    SnifferStore.markProbe(embedded) {
+                        ResourceProbe.probeAsync(embedded, "https://$host/", null, request.requestHeaders["User-Agent"])
+                    }
+                }
+            }
+        }
 
         // every http(s) sub-resource is logged to the media picker even while the block engine is
         // still compiling or globally off — otherwise the page's very early requests (the video
@@ -143,16 +168,38 @@ class BlockerWebViewClient(
 
     private fun kindOf(req: WebResourceRequest): ResourceKind {
         if (req.isForMainFrame) return ResourceKind.DOCUMENT
+        val h = req.requestHeaders
+        val dest = (h["Sec-Fetch-Dest"] ?: "").lowercase()
+        val mode = (h["Sec-Fetch-Mode"] ?: "").lowercase()
+        // Chromium states exactly what issued the request — trust it over URL-shape guesses.
+        // fetch()/XHR always send Sec-Fetch-Dest: empty; static assets name their type.
+        if (dest.isNotEmpty()) {
+            return when (dest) {
+                "script" -> ResourceKind.SCRIPT
+                "style" -> ResourceKind.STYLESHEET
+                "image" -> ResourceKind.IMAGE
+                "iframe", "frame", "embed", "object", "document" -> ResourceKind.SUBDOCUMENT
+                "empty" -> ResourceKind.XHR
+                else -> ResourceKind.OTHER              // font / audio / video / worker / manifest …
+            }
+        }
+        if (mode == "cors" || mode == "same-origin") return ResourceKind.XHR
+        // no Sec-Fetch-* (old WebView) → method / Accept / path fallbacks
         val path = (req.url.path ?: "").lowercase()
-        val accept = (req.requestHeaders["Accept"] ?: "").lowercase()
+        val accept = (h["Accept"] ?: "").lowercase()
         val method = req.method.uppercase()
         if (method in setOf("POST", "PUT", "PATCH", "DELETE")) return ResourceKind.XHR
-        val ext = path.substringAfterLast('.')
+        val ext = path.substringAfterLast('.', "")
         return when {
             accept.contains("text/css") || path.endsWith(".css") -> ResourceKind.STYLESHEET
             ext in setOf("png", "jpg", "jpeg", "gif", "webp", "svg", "avif", "bmp", "ico", "cur") -> ResourceKind.IMAGE
             path.endsWith(".js") || accept.contains("javascript") -> ResourceKind.SCRIPT
-            accept.contains("application/xml") || path.endsWith(".xml") || path.endsWith(".json") -> ResourceKind.XHR
+            accept.contains("application/json") || accept.contains("application/xml") ||
+                accept.contains("text/xml") || path.endsWith(".xml") -> ResourceKind.XHR
+            // fetch/XHR default header is `Accept: */*` — API GETs carry no file extension,
+            // static assets (.png/.woff/…) always do; a real extension never looks like a path
+            accept.trim() == "*/*" && (ext.isEmpty() || ext.length > 8 || '/' in ext) -> ResourceKind.XHR
+            path.endsWith(".json") -> ResourceKind.XHR
             accept.contains("text/html") -> ResourceKind.SUBDOCUMENT
             else -> ResourceKind.OTHER
         }

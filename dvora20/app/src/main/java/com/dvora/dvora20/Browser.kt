@@ -34,9 +34,11 @@ import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -73,6 +75,7 @@ import com.dvora.dvora20.adblock.CapturedMedia
 import com.dvora.dvora20.adblock.ListRepo
 import com.dvora.dvora20.adblock.Media
 import com.dvora.dvora20.adblock.ResourceProbe
+import com.dvora.dvora20.adblock.Sniff
 import com.dvora.dvora20.adblock.SniffName
 import com.dvora.dvora20.adblock.SnifferJsInterface
 import com.dvora.dvora20.adblock.SnifferStore
@@ -160,12 +163,14 @@ fun BrowserScreen(
     // ── yt-dlp: media download of what was captured on this page — owned by the
     // foreground service from here on; here its live state is polled for badge / row ──
     var ytPicker by remember { mutableStateOf(false) }   // dialog listing capturable media
-    var yt by remember { mutableIntStateOf(YtCtl.pct) }            // -1 idle · 0..99 % · >=100 done · -3 failed
+    var ytSheet by remember { mutableStateOf(false) }    // live downloads screen (running jobs + rest)
+    var yt by remember { mutableIntStateOf(YtCtl.pct) }            // -1 idle · 0..99 % (first running job)
+    var ytCount by remember { mutableIntStateOf(YtCtl.count) }     // how many downloads run concurrently
     var ytUrl by remember { mutableStateOf(YtCtl.url) }            // what is downloading now
     var ytBadge by remember { mutableIntStateOf(0) }               // captured media urls → button badge
-    var ytDone by remember { mutableStateOf<File?>(null) }         // newest merged file after a success
+    var ytDone by remember { mutableStateOf<File?>(null) }         // saved file awaiting its done dialog (queued)
     var ytPending by remember { mutableStateOf<String?>(null) }    // url to resume once the storage prompt is done
-    var ytErr by remember { mutableStateOf<String?>(null) }        // surfaced yt-dlp failure reason (dialog)
+    var ytErr by remember { mutableStateOf<Pair<String, String>?>(null) }  // (url, failure text) dialog queue
     var mgr by remember { mutableStateOf(Build.VERSION.SDK_INT < 30 || Environment.isExternalStorageManager()) }
 
     // ── one-time objects ──────────────────────────────────────────────────────
@@ -232,13 +237,18 @@ fun BrowserScreen(
 
     // ── yt-dlp ────────────────────────────────────────────────────────────────────
 
-    /** kick off the media download — a foreground service owns yt-dlp (survives the app closing). */
+    /** kick off a media download — the foreground service runs up to YtCtl.MAX of them concurrently. */
     fun startYt(given: String) {
-        if (yt >= 0) return
         val url = given.substringBefore('#')     // page hash fragments are noise for yt-dlp
-        ytPicker = false
-        ytErr = null
-        ytDone = null
+        // 1DM resolves media urls to the END (redirects already followed by the probe) before
+        // any engine sees them — the row keeps the original, the engine gets the final url
+        val cap = SnifferStore.byUrl(url)
+        val target = cap?.finalUrl?.takeIf { it.startsWith("http") } ?: url
+        if (YtCtl.contains(target)) {
+            Toast.makeText(context, localeStr(context, R.string.yt_already), Toast.LENGTH_SHORT).show()
+            return
+        }
+        // the picker stays open — tapping more rows queues more downloads side by side
         // old APIs need the legacy write grant; new ones the one-time "all files" grant — the default
         // folder /dvora sits outside the app sandbox
         if (Build.VERSION.SDK_INT < 30 &&
@@ -270,31 +280,65 @@ fun BrowserScreen(
             Toast.makeText(context, localeStr(context, R.string.yt_dl_fail), Toast.LENGTH_LONG).show()
             return
         }
+        // the saved file takes the current window title — every capture belongs to this page;
+        // '%' must die too — yt-dlp's -o is a template and a bare % breaks it
+        val title = pageTitle.replace(Regex("[\\\\/:*?\"<>|%]"), "_").trim().take(120).takeIf { it.isNotBlank() }
+        // registers the job (unique output name + own process id) — null = the queue is full
+        val job = YtCtl.add(target, dir, title) ?: run {
+            Toast.makeText(context, localeStr(context, R.string.yt_queue_full), Toast.LENGTH_SHORT).show()
+            return
+        }
         yt = 0
-        ytUrl = url
-        YtCtl.url = url
-        YtCtl.pct = 0
-        YtCtl.dir = dir.path
-        YtCtl.err = null
-        YtCtl.last = null
+        ytCount = YtCtl.count
+        ytUrl = target
         // 1DM-style header replay: prefer the exact referer/cookie the page used for this
         // resource (from the sniffer capture), fall back to the page itself + cookie jar
-        val cap = SnifferStore.byUrl(url)
         val referer = cap?.referer ?: address.takeIf { it.startsWith("http") }
         val cookie = cap?.cookie ?: CookieManager.getInstance().getCookie(url)
-        // the saved file takes the current window title — every capture belongs to this page
-        val title = pageTitle.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().take(120).takeIf { it.isNotBlank() }
-        YtDownloadService.start(context, url, dir, title, referer, webView.settings.userAgentString, cookie)
+        // the page's EXACT request headers for this url (urlHeadersCache) — the engines
+        // replay them verbatim, exactly like 1DM's Connect; Accept-Encoding stays out
+        // (raw gzip would corrupt everything that isn't yt-dlp)
+        val headersCsv = SnifferStore.headersFor(url)?.entries
+            ?.filter {
+                !it.key.equals("Range", true) && !it.key.equals("Host", true) &&
+                    !it.key.equals("Accept-Encoding", true) && it.value.isNotEmpty()
+            }
+            ?.joinToString("\n") { "${it.key}: ${it.value}" }
+        YtDownloadService.start(context, target, dir, job.baseName, referer, webView.settings.userAgentString, cookie, job.proc, headersCsv)
     }
 
 
-    /** abort a running yt-dlp process — from the in-app row or the notification action */
+    /** abort every running yt-dlp process — from the in-app row or the notification action */
     fun stopYt() {
-        if (yt < 0) return
+        if (YtCtl.count == 0) return
         YtCtl.cancel(context)
         yt = -1
+        ytCount = 0
         ytDone = null
         Toast.makeText(context, localeStr(context, R.string.yt_cancelled), Toast.LENGTH_SHORT).show()
+    }
+
+    /** a picker/sheet row tap → the right download route — shared by both dialogs. */
+    fun openRow(r: SniffRow, rows: List<SniffRow>, close: () -> Unit) {
+        when {
+            r.isBlob -> {
+                // blob URLs can't go to yt-dlp — the JS side fetches the in-memory Blob,
+                // base64-chunks it to the bridge, native writes the file
+                val js = "(window.__dvoraSaveBlob && window.__dvoraSaveBlob('" + r.url + "'))"
+                runCatching { webView.evaluateJavascript(js, null) }
+                close()
+            }
+            r.isSegment -> {
+                // one fragment ≠ the movie — yt-dlp needs the MASTER PLAYLIST:
+                // captured one → guessed sibling file of the fragment → else the page url
+                val pl = rows.firstOrNull { it.isPlaylist }?.url
+                    ?: if (r.url.lowercase().contains(".mp4/")) {
+                        r.url.substringBeforeLast('/') + "/index.m3u8"
+                    } else null
+                startYt(pl ?: address)
+            }
+            else -> startYt(r.url)
+        }
     }
 
     // ── sniffer merges — 1DM-style captures (JS bridge: real headers/body) + reqLog url-only rows ──
@@ -307,26 +351,67 @@ fun BrowserScreen(
                 name = c.filename,
                 isSegment = isSegment(c.url),
                 isPlaylist = c.kind == "m3u8" || c.kind == "mpd",
-                isBlob = c.kind == "blob"
+                isBlob = c.kind == "blob",
+                duration = c.duration,
+                parts = c.parts
             )
         }
         val known = fromStore.mapTo(mutableSetOf()) { it.url.lowercase().substringBefore('#') }
-        val extras = repo.engine.reqLog.asSequence()
+        // ── 1DM's Connect on the request log: candidates get probed (media-tagged
+        // first, then newest-first) and the RESPONSE decides — extension-less media
+        // endpoints never hide behind a weird url shape. Only a video/audio/playlist
+        // answer promotes into a capture row; static-file extensions never burn a slot. ──
+        val staticExts = setOf(
+            "js", "mjs", "css", "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico", "cur", "avif",
+            "woff", "woff2", "ttf", "otf", "eot", "xml", "txt", "html", "htm", "json", "map"
+        )
+        run {
+            val cands = repo.engine.reqSnapshot().filter { !it.blocked }
+                .filter { it.tag == "media" || it.tag == "api" || it.tag == "req" }
+            (cands.filter { it.tag == "media" } + cands.filter { it.tag != "media" }.asReversed())
+                .forEach { r ->
+                    if (SnifferStore.byUrl(r.url) != null) return@forEach
+                    val ext = r.url.substringBefore('?').substringAfterLast('.', "").lowercase()
+                    if (r.tag != "media" && ext in staticExts) return@forEach    // static file — no media there
+                    SnifferStore.markProbe(r.url) {
+                        ResourceProbe.probeAsync(
+                            r.url,
+                            address.takeIf { it.startsWith("http") },
+                            CookieManager.getInstance().getCookie(r.url),
+                            webView.settings.userAgentString
+                        )
+                    }
+                }
+        }
+        val extras = repo.engine.reqSnapshot().asSequence()
             .filter { !it.blocked }
+            .filter { r ->
+                // everything the page itself flagged as media (Accept: video/audio headers on
+                // extension-less CDN urls), everything the loose sniffer matches, and every
+                // downloadable file extension — /api/ noise only drops without a media signal
+                r.tag == "media" || Media.sniff(r.url) != null ||
+                    (!r.url.contains("/api/", true) && Sniff.kind(r.url, "", null, -1) != null)
+            }
             .map { it.url }
-            .filter { !it.contains("/api/", true) }
-            .filter { Media.sniff(it) != null }
             .distinctBy { Media.normalize(it) }
             .filter { it.lowercase().substringBefore('#') !in known }
             .onEach { u ->
-                // probe extras once per url per page — fills size/mime/filename after redirects
-                SnifferStore.markProbe(u) {
-                    ResourceProbe.probeAsync(u, address.takeIf { it.startsWith("http") }, CookieManager.getInstance().getCookie(u))
+                // probe extras once per url per page — fills size/name/duration after redirects;
+                // bare fragments can't enrich (Sniff.kind rejects them) so they burn no probe slot
+                if (!isSegment(u)) {
+                    SnifferStore.markProbe(u) {
+                        ResourceProbe.probeAsync(
+                            u,
+                            address.takeIf { it.startsWith("http") },
+                            CookieManager.getInstance().getCookie(u),
+                            webView.settings.userAgentString
+                        )
+                    }
                 }
             }
             .map { u ->
-                val k = Media.sniff(u) ?: "video"
-                SniffRow(u, k.uppercase(), -1L, null, isSegment(u), k == "m3u8" || k == "mpd", isBlob = false)
+                val k = Sniff.kind(u, "", null, -1) ?: Media.sniff(u) ?: "video"
+                SniffRow(u, k.uppercase(), -1L, SniffName.resolve(u, "", null), isSegment(u), k == "m3u8" || k == "mpd", isBlob = false)
             }
             .toList()
         return (fromStore + extras)
@@ -342,10 +427,19 @@ fun BrowserScreen(
         else -> "$bytes B"
     }
 
+    /** seconds → m:ss / h:mm:ss — the 1DM-style duration chip on every media row */
+    fun fmtDur(sec: Double): String {
+        if (sec <= 0) return ""
+        val t = sec.toInt()
+        val h = t / 3600
+        val m = (t % 3600) / 60
+        val s = t % 60
+        return if (h > 0) String.format("%d:%02d:%02d", h, m, s) else String.format("%d:%02d", m, s)
+    }
+
     // resume the yt download that waited on the storage prompt — after startYt is declared above it
     LaunchedEffect(mgr, hasStorage, ytPending) {
         val u = ytPending ?: return@LaunchedEffect
-        if (yt >= 0) return@LaunchedEffect
         ytPending = null
         startYt(u)
     }
@@ -354,10 +448,15 @@ fun BrowserScreen(
     LaunchedEffect(Unit) {
         while (true) {
             delay(400)
-            if (YtCtl.pct != yt) yt = YtCtl.pct
-            if (YtCtl.url != ytUrl) ytUrl = YtCtl.url
-            if (yt >= 100 && YtCtl.last != null && ytDone == null) ytDone = YtCtl.last
-            if (yt == -3 && YtCtl.err != null && ytErr == null) ytErr = YtCtl.err
+            val p = YtCtl.pct
+            if (p != yt) yt = p
+            val c = YtCtl.count
+            if (c != ytCount) ytCount = c
+            val u = YtCtl.url
+            if (u != ytUrl) ytUrl = u
+            // done/fail dialogs consume their queues one at a time — a multi-download batch loses none
+            if (ytDone == null) YtCtl.popDone()?.let { ytDone = it }
+            if (ytErr == null) YtCtl.popErr()?.let { ytErr = it }
             // badge = distinct captures (sniffer + reqLog), not raw request count
             val n = sniffRows().size
             if (n != ytBadge) ytBadge = n
@@ -386,17 +485,17 @@ fun BrowserScreen(
         webView.loadUrl(target)
     }
 
-    /** opens the folder the newest download landed in — the same target the done-notification uses. */
-    fun openDir() {
-        val dir = (YtCtl.last?.parentFile ?: ytSaveDir(context)) ?: return
+    /** opens the downloads folder — [dir] overrides (the done dialog passes the file's own folder). */
+    fun openDir(dir: File? = null) {
+        val d = dir ?: ytSaveDir(context) ?: return
         try {
             context.startActivity(
                 Intent(Intent.ACTION_VIEW)
-                    .setDataAndType(Uri.fromFile(dir), "resource/folder")
+                    .setDataAndType(Uri.fromFile(d), "resource/folder")
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
         } catch (_: Exception) {
-            Toast.makeText(context, dir.path, Toast.LENGTH_LONG).show()
+            Toast.makeText(context, d.path, Toast.LENGTH_LONG).show()
         }
     }
 
@@ -497,8 +596,17 @@ fun BrowserScreen(
         client.onActivity = { if (sheetVisible) resTick++ }
         client.onCrossNav = { url, host -> crossNav = url to host }
         client.onPageEnd = {
-            blockLog = repo.engine.pageLog.toList()
+            blockLog = repo.engine.blockSnapshot()
             blocked = repo.engine.pageBlocks
+            // 1DM scans every body it can reach — the page's own DOM too: <video>/<source>
+            // elements and iframes that never issue an XHR still carry captureable media
+            runCatching {
+                webView.evaluateJavascript(
+                    "(function(){try{var h=document.documentElement.outerHTML;" +
+                        "window.JSInterface.scanPage(h.length>2000000?h.substring(0,2000000):h,window.location.href)}catch(e){}})()",
+                    null
+                )
+            }
         }
         client.onBlocked = { blocked = repo.engine.pageBlocks }
         client.onSsl = { uri, handler -> ssl = (uri to handler) }
@@ -617,30 +725,14 @@ fun BrowserScreen(
                             items(rows) { r ->
                                 Column(
                                     Modifier.fillMaxWidth().clickable {
-                                        when {
-                                            r.isBlob -> {
-                                                // blob URLs can't go to yt-dlp — the JS side fetches the
-                                                // in-memory Blob, base64-chunks it to the bridge, native writes the file
-                                                val js = "(window.__dvoraSaveBlob && window.__dvoraSaveBlob('" + r.url + "'))"
-                                                runCatching { webView.evaluateJavascript(js, null) }
-                                                ytPicker = false
-                                            }
-                                            r.isSegment -> {
-                                                // one fragment ≠ the movie — yt-dlp needs the MASTER PLAYLIST:
-                                                // captured one → guessed sibling file of the fragment → else the page url
-                                                val pl = rows.firstOrNull { it.isPlaylist }?.url
-                                                    ?: if (r.url.lowercase().contains(".mp4/")) {
-                                                        r.url.substringBeforeLast('/') + "/index.m3u8"
-                                                    } else null
-                                                startYt(pl ?: address)
-                                            }
-                                            else -> startYt(r.url)
-                                        }
+                                        openRow(r, rows) { ytPicker = false }
                                     }.padding(vertical = 6.dp)
                                 ) {
                                     Text(
                                         listOfNotNull(
                                             r.label,
+                                            fmtDur(r.duration).takeIf { it.isNotEmpty() },
+                                            if (r.parts > 0) context.getString(R.string.yt_parts, r.parts) else null,
                                             fmtSize(r.size).takeIf { it.isNotEmpty() }
                                         ).joinToString(" · "),
                                         fontSize = 9.sp,
@@ -680,13 +772,118 @@ fun BrowserScreen(
         )
     }
 
+    // ── live downloads screen — every running job with its own progress + cancel,
+    // then the rest of this page's downloadables, tap to queue another ──────────
+    var dlTick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(ytSheet) {
+        if (!ytSheet) return@LaunchedEffect
+        while (true) {
+            delay(400); dlTick++
+        }
+    }
+    if (ytSheet) {
+        val jobs = remember(dlTick) { YtCtl.running().map { Triple(it.url, it.pct, it) } }
+        val restRows = remember(dlTick) { sniffRows() }
+        val liveUrls = jobs.mapTo(mutableSetOf()) { it.first.lowercase().substringBefore('#') }
+        val rest = restRows.filter { it.url.lowercase().substringBefore('#') !in liveUrls }
+        AlertDialog(
+            onDismissRequest = { ytSheet = false },
+            containerColor = BeeColors.DarkComb,
+            title = { Text("⬇ " + L(R.string.yt_sheet_title), color = BeeColors.HoneyGold) },
+            text = {
+                Box(Modifier.heightIn(max = 460.dp)) {
+                    LazyColumn {
+                        items(jobs) { t ->
+                            val (jurl, jpct, job) = t
+                            Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        jurl,
+                                        fontSize = 10.sp,
+                                        color = textColor,
+                                        maxLines = 1,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        "$jpct%",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = BeeColors.FoundGreen
+                                    )
+                                    IconButton(
+                                        onClick = {
+                                            YtCtl.cancel(context, job)     // this job only — the rest keep running
+                                            Toast.makeText(context, localeStr(context, R.string.yt_cancelled), Toast.LENGTH_SHORT).show()
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Close,
+                                            L(R.string.yt_cancel),
+                                            tint = BeeColors.NotFoundRed,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                }
+                                LinearProgressIndicator(
+                                    progress = { jpct / 100f },
+                                    modifier = Modifier.fillMaxWidth().height(6.dp),
+                                    color = BeeColors.FoundGreen,
+                                    trackColor = BeeColors.FoundGreen.copy(alpha = 0.15f)
+                                )
+                            }
+                        }
+                        if (rest.isNotEmpty()) {
+                            item {
+                                Text(
+                                    L(R.string.yt_sheet_rest),
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = subColor,
+                                    modifier = Modifier.padding(top = 10.dp, bottom = 2.dp)
+                                )
+                            }
+                            items(rest) { r ->
+                                Column(
+                                    Modifier.fillMaxWidth().clickable {
+                                        openRow(r, restRows) { ytSheet = false }
+                                    }.padding(vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        listOfNotNull(
+                                            r.label,
+                                            fmtDur(r.duration).takeIf { it.isNotEmpty() },
+                                            if (r.parts > 0) context.getString(R.string.yt_parts, r.parts) else null,
+                                            fmtSize(r.size).takeIf { it.isNotEmpty() }
+                                        ).joinToString(" · "),
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = BeeColors.HoneyGold
+                                    )
+                                    Text(r.name ?: r.url, fontSize = 10.sp, color = textColor, maxLines = 2)
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { ytSheet = false }) {
+                    Text(L(R.string.cancel), color = BeeColors.DeepAmber)
+                }
+            }
+        )
+    }
+
     // ── yt-dlp failure reason ─────────────────────────────────────────────────
-    ytErr?.let { msg ->
+    ytErr?.let { (failedUrl, msg) ->
         AlertDialog(
 
             // close AND drop the source so the poll loop can't re-pop the same failure
 
-            onDismissRequest = { ytErr = null; YtCtl.err = null },
+            onDismissRequest = { ytErr = null },
 
             containerColor = BeeColors.DarkComb,
 
@@ -701,7 +898,7 @@ fun BrowserScreen(
 
                     Spacer(Modifier.height(6.dp))
 
-                    Text(ytUrl, color = subColor, fontSize = 9.sp, maxLines = 3)
+                    Text(failedUrl, color = subColor, fontSize = 9.sp, maxLines = 3)
 
                 }
 
@@ -710,7 +907,7 @@ fun BrowserScreen(
             confirmButton = {
 
                 TextButton(onClick = {
-                    ytErr = null; YtCtl.err = null
+                    ytErr = null
                 }) {
 
                     Text(L(R.string.ok), color = BeeColors.DeepAmber)
@@ -721,10 +918,30 @@ fun BrowserScreen(
 
             dismissButton = {
                 TextButton(onClick = {
-                    copyToClipboard(context, "$msg\n$ytUrl")
+                    copyToClipboard(context, "$msg\n$failedUrl")
                     Toast.makeText(context, localeStr(context, R.string.rs_copied), Toast.LENGTH_SHORT).show()
                 }) {
                     Text(L(R.string.yt_copy_err), color = BeeColors.HoneyGold)
+                }
+            }
+        )
+    }
+
+    // ── saved media — one dialog per finished download, queued across a multi-download batch ──
+    ytDone?.let { f ->
+        AlertDialog(
+            onDismissRequest = { ytDone = null },
+            containerColor = BeeColors.DarkComb,
+            title = { Text(L(R.string.yt_done), color = BeeColors.HoneyGold) },
+            text = { Text(f.name, color = textColor, fontSize = 11.sp, maxLines = 3) },
+            confirmButton = {
+                TextButton(onClick = { ytDone = null; openDir(f.parentFile) }) {
+                    Text(L(R.string.med_open), color = BeeColors.HoneyGold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { ytDone = null }) {
+                    Text(L(R.string.ok), color = BeeColors.DeepAmber)
                 }
             }
         )
@@ -803,7 +1020,7 @@ fun BrowserScreen(
                     Icon(Icons.Default.Download, null, tint = BeeColors.FoundGreen, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        ytUrl,
+                        if (ytCount > 1) "↓$ytCount · $ytUrl" else ytUrl,
                         fontSize = 10.sp,
                         color = textColor,
                         maxLines = 1,
@@ -878,32 +1095,16 @@ fun BrowserScreen(
                             )
                         }
                         IconButton(onClick = {
-                            when {
-                                yt >= 100 -> {                   // done → open the downloads folder, then clear
-                                    openDir()
-                                    yt = -1; ytDone = null; YtCtl.reset()
-                                }
-
-                                yt in 0..99 -> stopYt()           // running → cancels
-                                else -> ytPicker = true           // idle → list captured media
-                            }
+                            if (yt in 0..99) ytSheet = true      // running → the live downloads screen
+                            else ytPicker = true                 // idle → list captured media
                         }) {
                             Box(Modifier.size(38.dp), contentAlignment = Alignment.Center) {
-                                when {
-                                    yt in 0..99 -> Text(
-                                        "$yt%", fontSize = 11.sp,
-                                        color = BeeColors.FoundGreen,
-                                        fontWeight = FontWeight.Bold
-                                    )
-
-                                    yt >= 100 -> Text(
-                                        "✓", fontSize = 13.sp,
-                                        color = BeeColors.FoundGreen,
-                                        fontWeight = FontWeight.Bold
-                                    )
-
-                                    else -> Icon(Icons.Default.Download, L(R.string.yt_cd), tint = BeeColors.FoundGreen)
-                                }
+                                if (yt in 0..99) Text(
+                                    if (ytCount > 1) "↓$ytCount" else "$yt%", fontSize = 11.sp,
+                                    color = BeeColors.FoundGreen,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                else Icon(Icons.Default.Download, L(R.string.yt_cd), tint = BeeColors.FoundGreen)
                                 if (yt < 0 && ytBadge > 0) {      // media urls captured on this page → count badge
                                     Box(
                                         modifier = Modifier
@@ -965,10 +1166,11 @@ fun BrowserScreen(
             ) {
                 ResourceSheet(
                     host = pageHost,
-                    log = remember(resTick, sheetVisible) { repo.engine.reqLog.toList() },
+                    log = remember(resTick, sheetVisible) { repo.engine.reqSnapshot() },
                     blocked = repo.engine.pageBlocks,
                     lifetime = repo.engine.lifetime,
                     onMedia = { ytPicker = true },
+                    onDownload = { startYt(it) },
                     onClose = { sheetVisible = false }
                 )
             }
@@ -995,6 +1197,7 @@ fun BrowserScreen(
  * page — page / js / css / img / frame / api / media — with live filters,
  * rule + list for each blocked one, and the lifetime counter.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun ResourceSheet(
     host: String,
@@ -1002,6 +1205,7 @@ private fun ResourceSheet(
     blocked: Int,
     lifetime: Long,
     onMedia: (String) -> Unit,
+    onDownload: (String) -> Unit,
     onClose: () -> Unit
 ) {
     val textColor = BeeColors.DarkOnSurface
@@ -1014,14 +1218,19 @@ private fun ResourceSheet(
 
     val copied = L(R.string.rs_copied)
     var filter by remember { mutableStateOf("all") }
+    var query by remember { mutableStateOf("") }              // free-text search across every request
+    var confirm by remember { mutableStateOf<String?>(null) } // long-pressed url awaiting download confirm
 
-    val shown = remember(log, filter) {
-        when (filter) {
+    val shown = remember(log, filter, query) {
+        val base = when (filter) {
             "blocked" -> log.filter { it.blocked }
             "api" -> log.filter { it.tag == "api" }
             "media" -> log.filter { it.tag == "media" }
             else -> log
         }
+        val q = query.trim()
+        if (q.isEmpty()) base
+        else base.filter { it.url.contains(q, ignoreCase = true) || it.tag.contains(q, ignoreCase = true) }
     }
 
     Column(Modifier.fillMaxWidth().height(560.dp).padding(horizontal = 14.dp, vertical = 12.dp)) {
@@ -1077,6 +1286,25 @@ private fun ResourceSheet(
             }
         }
         Spacer(Modifier.height(8.dp))
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            modifier = Modifier.fillMaxWidth().height(46.dp),
+            singleLine = true,
+            textStyle = TextStyle(fontSize = 12.sp, color = textColor),
+            placeholder = {
+                Text(L(R.string.rs_search), fontSize = 12.sp, color = textColor.copy(alpha = 0.35f))
+            },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedTextColor = textColor,
+                unfocusedTextColor = textColor,
+                focusedBorderColor = BeeColors.HoneyGold,
+                unfocusedBorderColor = BeeColors.HoneyGold.copy(alpha = 0.25f),
+                focusedContainerColor = rowBg,
+                unfocusedContainerColor = rowBg
+            )
+        )
+        Spacer(Modifier.height(8.dp))
         if (shown.isEmpty()) {
             Text(L(R.string.rs_empty), fontSize = 11.sp, color = subColor)
         } else {
@@ -1090,11 +1318,14 @@ private fun ResourceSheet(
                                 if (rec.blocked) BeeColors.NotFoundRed.copy(alpha = 0.18f) else rowBg,
                                 RoundedCornerShape(8.dp)
                             )
-                            .clickable {
-                                copyToClipboard(context, rec.url)
-                                if (rec.tag == "media") onMedia(rec.url)   // media rows forward to the downloads dialog
-                                Toast.makeText(context, copied, Toast.LENGTH_SHORT).show()
-                            }
+                            .combinedClickable(
+                                onClick = {
+                                    copyToClipboard(context, rec.url)
+                                    if (rec.tag == "media") onMedia(rec.url)   // media rows forward to the downloads dialog
+                                    Toast.makeText(context, copied, Toast.LENGTH_SHORT).show()
+                                },
+                                onLongClick = { confirm = rec.url }            // ask before queueing a download
+                            )
                             .padding(8.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1127,6 +1358,26 @@ private fun ResourceSheet(
                 }
             }
         }
+    }
+
+    // long-press → explicit confirm before the url joins the download queue
+    confirm?.let { u ->
+        AlertDialog(
+            onDismissRequest = { confirm = null },
+            containerColor = BeeColors.DarkComb,
+            title = { Text(L(R.string.dl_confirm_title), color = BeeColors.HoneyGold) },
+            text = { Text(u, color = textColor, fontSize = 10.sp, maxLines = 4) },
+            confirmButton = {
+                TextButton(onClick = { confirm = null; onDownload(u) }) {
+                    Text(L(R.string.yt_down), color = BeeColors.FoundGreen)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirm = null }) {
+                    Text(L(R.string.cancel), color = BeeColors.DeepAmber)
+                }
+            }
+        )
     }
 }
 
