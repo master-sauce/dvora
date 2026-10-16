@@ -23,7 +23,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.dvora.dvora20.adblock.BlockPolicy
 import com.dvora.dvora20.adblock.ListInfo
 import com.dvora.dvora20.adblock.ListRepo
 import kotlinx.coroutines.Dispatchers
@@ -52,7 +51,6 @@ fun BrowserTab(repo: ListRepo) {
     var master by remember { mutableStateOf(repo.isMaster()) }
     var listOn by remember { mutableStateOf(ListInfo.all.map { repo.isEnabled(it) }) }
     var useDvora by remember { mutableStateOf(prefs.getBoolean("use_dvora_browser", false)) }
-    var blockMedia by remember { mutableStateOf(BlockPolicy.isEnabled(context)) }
 
     fun clearAll() {
         confirmClear = false
@@ -151,26 +149,6 @@ fun BrowserTab(repo: ListRepo) {
                     fontWeight = FontWeight.Bold
                 )
             }
-        }
-        Spacer(Modifier.height(14.dp))
-
-        // ── block page media (1DM's localhost capture) — off by default, never breaks pages ──
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text("🎬 " + L(R.string.sniff_block_title), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = textColor)
-                Spacer(Modifier.height(2.dp))
-                Text(L(R.string.sniff_block_hint), fontSize = 10.sp, color = subColor)
-            }
-            Switch(
-                checked = blockMedia,
-                onCheckedChange = { blockMedia = it; BlockPolicy.setEnabled(context, it) },
-                colors = SwitchDefaults.colors(
-                    checkedTrackColor = BeeColors.HoneyGold,
-                    uncheckedTrackColor = BeeColors.DeepAmber.copy(alpha = 0.3f),
-                    checkedThumbColor = Color.Black,
-                    uncheckedThumbColor = BeeColors.HoneyGold
-                )
-            )
         }
         Spacer(Modifier.height(14.dp))
 

@@ -485,19 +485,11 @@ class SnifferJsInterface(
     }
 
     /**
-     * 1DM's localhost block-and-capture gate. Default open (never break a page); when the user
-     * enables "block page media" the script reroutes disallowed XHR/fetch URLs to
-     * `https://localhost:<random>/?url=<btoa(url)>` — shouldInterceptRequest decodes them,
-     * logs them to the capture list, and returns an empty CORS response.
+     * Always open — the localhost block-and-capture mode is gone. Kept so the injected
+     * script's isAjaxConnectionAllowed call still has a working bridge surface.
      */
     @JavascriptInterface
-    fun isAjaxConnectionAllowed(pageUrl: String, url: String): Boolean {
-        if (!url.startsWith("http")) return true
-        if (!BlockPolicy.shouldBlockMedia(context, pageUrl)) return true
-        val kind = Sniff.kind(url, "", null, -1) ?: return true
-        // never block playlists/manifests — that breaks the player; only direct media files
-        return !(kind != "m3u8" && kind != "mpd" && kind != "ts" && kind != "m4s" && kind !in setOf("aeskey", "blob"))
-    }
+    fun isAjaxConnectionAllowed(pageUrl: String, url: String): Boolean = true
 
     /** blob URL recorded by the createObjectURL hook → shown as a "BLOB" row in the picker */
     @JavascriptInterface
@@ -882,26 +874,6 @@ class SnifferJsInterface(
             })();
         """.trimIndent()
     }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Block policy — user opt-in for the localhost block-and-capture trick
-// ═══════════════════════════════════════════════════════════════════════════════
-
-object BlockPolicy {
-    private const val PREFS = "dvora_prefs"
-    private const val KEY = "sniffer_block_media"
-
-    fun isEnabled(context: Context): Boolean =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY, false)
-
-    fun setEnabled(context: Context, on: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(KEY, on).apply()
-    }
-
-    /** per-page gate — keeps the trick off until the user turns it on in the browser settings tab */
-    fun shouldBlockMedia(context: Context, pageUrl: String): Boolean =
-        pageUrl.startsWith("http") && isEnabled(context)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

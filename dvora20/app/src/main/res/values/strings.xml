@@ -142,8 +142,6 @@
     <string name="btab_clear_q">Clear browsing data?</string>
     <string name="btab_clear_msg">The in-app browser cache, cookies and history will be wiped.</string>
     <string name="btab_cleared">Browsing data cleared</string>
-    <string name="sniff_block_title">Block page media</string>
-    <string name="sniff_block_hint">Capture downloadable media (video / audio / playlists) and stop it streaming in the page — saves bandwidth, the rows in the media picker stay clickable</string>
 
     <!-- dialogs / toasts (shared) -->
     <string name="toast_open_url_failed">Could not open URL</string>
