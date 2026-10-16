@@ -25,11 +25,11 @@ object Media {
         Regex("/(?:manifest|mpd)(?:\\.php|\\.aspx|\\.xml)?(?:\\?|$)", RegexOption.IGNORE_CASE)
 
     private val DIRECT_EXT =
-        Regex("\\.(?:mp4|webm|mkv|avi|mov|flv|wmv|ogv|m4v)(?:$|\\?)", RegexOption.IGNORE_CASE)
+        Regex("\\.(?:mp4|webm|mkv|avi|mov|flv|wmv|ogv|m4v|ts|m4s|mp3|m4a|aac|flac|ogg|opus|wav|wma)(?:$|\\?)", RegexOption.IGNORE_CASE)
 
     /** first-match extension capture — used for the row label */
     private val EXT_CAPTURE =
-        Regex("\\.(?:mp4|webm|mkv|avi|mov|flv|wmv|ogv|m4v)(?:$|\\?|#)")
+        Regex("\\.(?:m3u8|mpd|mp4|webm|mkv|avi|mov|flv|wmv|ogv|m4v|ts|m4s|mp3|m4a|aac|flac|ogg|opus|wav|wma)(?:$|\\?|#)")
 
     fun looksLikePlaylist(url: String): Boolean {
         val u = url.lowercase()

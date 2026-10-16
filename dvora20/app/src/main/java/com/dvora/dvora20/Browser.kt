@@ -69,8 +69,13 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.dvora.dvora20.adblock.BlockerChromeClient
 import com.dvora.dvora20.adblock.BlockerEngine
 import com.dvora.dvora20.adblock.BlockerWebViewClient
+import com.dvora.dvora20.adblock.CapturedMedia
 import com.dvora.dvora20.adblock.ListRepo
 import com.dvora.dvora20.adblock.Media
+import com.dvora.dvora20.adblock.SniffName
+import com.dvora.dvora20.adblock.SnifferJsInterface
+import com.dvora.dvora20.adblock.SnifferStore
+import com.dvora.dvora20.adblock.SniffRow
 import com.dvora.dvora20.adblock.Whitelist
 import java.io.File
 import com.yausername.youtubedl_android.YoutubeDL
@@ -174,9 +179,13 @@ fun BrowserScreen(
             settings.mediaPlaybackRequiresUserGesture = false
             settings.setGeolocationEnabled(false)
             setBackgroundColor(0xFF1C1500.toInt())
+            // the injected sniffer script talks to the app through this bridge (1DM's JSInterface pattern)
+            addJavascriptInterface(SnifferJsInterface(), "JSInterface")
         }
     }
-    val client = remember { BlockerWebViewClient(context, repo) { allowed.toSet() } }
+    val client = remember { BlockerWebViewClient(context, repo) { allowed.toSet() } }.also { c ->
+        c.injectSniffer = { wv -> runCatching { wv.evaluateJavascript(SnifferJsInterface.SCRIPT, null) } }
+    }
     val chrome = remember { BlockerChromeClient() }
 
     // ── launchers ─────────────────────────────────────────────────────────────
@@ -266,9 +275,14 @@ fun BrowserScreen(
         YtCtl.dir = dir.path
         YtCtl.err = null
         YtCtl.last = null
+        // 1DM-style header replay: prefer the exact referer/cookie the page used for this
+        // resource (from the sniffer capture), fall back to the page itself + cookie jar
+        val cap = SnifferStore.byUrl(url)
+        val referer = cap?.referer ?: address.takeIf { it.startsWith("http") }
+        val cookie = cap?.cookie ?: CookieManager.getInstance().getCookie(url)
         // the saved file takes the current window title — every capture belongs to this page
         val title = pageTitle.replace(Regex("[\\\\/:*?\"<>|]"), "_").trim().take(120).takeIf { it.isNotBlank() }
-        YtDownloadService.start(context, url, dir, title)
+        YtDownloadService.start(context, url, dir, title, referer, webView.settings.userAgentString, cookie)
     }
 
 
@@ -279,6 +293,44 @@ fun BrowserScreen(
         yt = -1
         ytDone = null
         Toast.makeText(context, localeStr(context, R.string.yt_cancelled), Toast.LENGTH_SHORT).show()
+    }
+
+    // ── sniffer merges — 1DM-style captures (JS bridge: real headers/body) + reqLog url-only rows ──
+    fun sniffRows(): List<SniffRow> {
+        val fromStore = SnifferStore.all().map { c ->
+            SniffRow(
+                url = c.url,
+                label = c.kind.uppercase(),
+                size = c.size,
+                name = c.filename,
+                isSegment = isSegment(c.url),
+                isPlaylist = c.kind == "m3u8" || c.kind == "mpd"
+            )
+        }
+        val known = fromStore.mapTo(mutableSetOf()) { it.url.lowercase().substringBefore('#') }
+        val extras = repo.engine.reqLog.asSequence()
+            .filter { !it.blocked }
+            .map { it.url }
+            .filter { !it.contains("/api/", true) }
+            .filter { Media.sniff(it) != null }
+            .distinctBy { Media.normalize(it) }
+            .filter { it.lowercase().substringBefore('#') !in known }
+            .map { u ->
+                val k = Media.sniff(u) ?: "video"
+                SniffRow(u, k.uppercase(), -1L, null, isSegment(u), k == "m3u8" || k == "mpd")
+            }
+            .toList()
+        return (fromStore + extras)
+            .distinctBy { it.url.lowercase().substringBefore('#') }
+            .sortedBy { row -> when { row.isPlaylist -> 0; row.isSegment -> 2; else -> 1 } }
+    }
+
+    fun fmtSize(bytes: Long): String = when {
+        bytes <= 0 -> ""
+        bytes >= 1L shl 30 -> String.format("%.1f GB", bytes / 1e9)
+        bytes >= 1L shl 20 -> String.format("%.1f MB", bytes / 1e6)
+        bytes >= 1024 -> String.format("%.0f KB", bytes / 1e3)
+        else -> "$bytes B"
     }
 
     // resume the yt download that waited on the storage prompt — after startYt is declared above it
@@ -297,14 +349,8 @@ fun BrowserScreen(
             if (YtCtl.url != ytUrl) ytUrl = YtCtl.url
             if (yt >= 100 && YtCtl.last != null && ytDone == null) ytDone = YtCtl.last
             if (yt == -3 && YtCtl.err != null && ytErr == null) ytErr = YtCtl.err
-            val n = runCatching {
-                repo.engine.reqLog.count {
-                    !it.blocked && Media.sniff(it.url) != null && !it.url.contains(
-                        "/api/",
-                        true
-                    )
-                }
-            }.getOrDefault(0)
+            // badge = distinct captures (sniffer + reqLog), not raw request count
+            val n = sniffRows().size
             if (n != ytBadge) ytBadge = n
         }
     }
@@ -353,10 +399,9 @@ fun BrowserScreen(
                 return
             }
         }
-        val name = disposition?.let {
-            Regex("filename\\*?=(?:UTF-8'')?\"?([^\";]+)", RegexOption.IGNORE_CASE).find(it)
-                ?.groupValues?.get(1)?.trim()?.takeIf { n -> n.isNotEmpty() }
-        } ?: url.substringAfterLast('/')?.substringBefore('?')?.trim()?.takeIf { it.isNotEmpty() }
+        // filename: Content-Disposition (filename* charset-aware) first, then the url path
+        val name = SniffName.fromDisposition(disposition)
+            ?: url.substringAfterLast('/')?.substringBefore('?')?.trim()?.takeIf { it.isNotEmpty() }
         val safe = (name ?: "dvora-download-${System.currentTimeMillis()}")
             .replace(Regex("[^A-Za-z0-9._\\-]"), "_")
             .take(120)
@@ -366,7 +411,12 @@ fun BrowserScreen(
                 .setDescription(context.getString(R.string.dl_started_desc))
                 .setMimeType(mimeType ?: "application/octet-stream")
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                .addRequestHeader("User-Agent", "Mozilla/5.0 (Linux; Android) Dvora/1.0")
+                // 1DM-style header replay — the page's own UA / referer / cookies, not a fake one
+                .addRequestHeader("User-Agent", webView.settings.userAgentString)
+            (address.takeIf { it.startsWith("http") })?.let {
+                req.addRequestHeader("Referer", it)
+            }
+            CookieManager.getInstance().getCookie(url)?.let { req.addRequestHeader("Cookie", it) }
             if (Build.VERSION.SDK_INT >= 29) {
                 req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, safe)
             } else {
@@ -392,6 +442,23 @@ fun BrowserScreen(
             override fun onDownloadStart(
                 url: String, userAgent: String, contentDisposition: String, mimeType: String, contentLength: Long
             ) {
+                // forced downloads join the capture list (1DM marks these so they never double-list)
+                if (url.startsWith("http")) {
+                    val mime = mimeType ?: ""
+                    SnifferStore.add(
+                        CapturedMedia(
+                            url = url,
+                            kind = SniffName.resolve(url, mime, contentDisposition)
+                                ?.substringAfterLast('.')?.lowercase()?.takeIf { it.isNotEmpty() }
+                                ?: (mime.substringAfter('/').takeIf { it.isNotEmpty() && it != "*" } ?: "file"),
+                            mime = mime,
+                            size = contentLength,
+                            filename = SniffName.resolve(url, mime, contentDisposition),
+                            referer = address.takeIf { it.startsWith("http") },
+                            cookie = null
+                        )
+                    )
+                }
                 enqueueDownload(url, contentDisposition, mimeType)
             }
         })
@@ -413,6 +480,7 @@ fun BrowserScreen(
             favicon = null
             blocked = 0
             blockLog = emptyList()
+            SnifferStore.newPage()                       // 1DM keeps one capture list per page
             address =
                 url                              // bar always tracks the page actually loaded (redirects / history)
         }
@@ -522,17 +590,9 @@ fun BrowserScreen(
         }
     }
     if (ytPicker) {
-        // the same rows the panel's "media" filter shows — nothing captured may be missing here.
-        // playlists / direct videos on top, bare fragments at the bottom
-        val cands = remember(ytTick) {
-            repo.engine.reqLog
-                .filter { !it.blocked }
-                .map { it.url }
-                .filter { !it.contains("/api/", true) }   // json api endpoints are not yt-dlp inputs
-                .filter { Media.sniff(it) != null }       // playlists / manifests / direct files / fragments only
-                .distinctBy { Media.normalize(it) }       // query-stripped dedup — one row per stream, not per segment
-                .sortedBy { mediaRank(it) }               // playlists / masters on top — one fragment at the bottom is not the movie
-        }
+        // merged capture rows — sniffer captures (real headers / sizes / names) + reqLog extras.
+        // playlists / masters on top, bare fragments at the bottom
+        val rows = remember(ytTick) { sniffRows() }
         AlertDialog(
             onDismissRequest = { ytPicker = false },
 
@@ -540,38 +600,53 @@ fun BrowserScreen(
             title = { Text(L(R.string.yt_picker), color = BeeColors.HoneyGold) },
             text = {
                 Box(Modifier.heightIn(max = 420.dp)) {
-                    if (cands.isEmpty()) {
+                    if (rows.isEmpty()) {
                         Text(L(R.string.yt_none), fontSize = 12.sp, color = textColor)
                     } else {
                         LazyColumn {
-                            items(cands) { u ->
+                            items(rows) { r ->
                                 Column(
                                     Modifier.fillMaxWidth().clickable {
-                                        if (isSegment(u)) {
-                                            // one fragment ≠ the movie — yt-dlp needs the stream's MASTER PLAYLIST:
+                                        if (r.isSegment) {
+                                            // one fragment ≠ the movie — yt-dlp needs the MASTER PLAYLIST:
                                             // captured one → guessed sibling file of the fragment → else the page url
-                                            val pl = cands.firstOrNull { isPlaylistCandidate(it) }
-                                                ?: if (u.lowercase().contains(".mp4/")) {
-                                                    u.substringBeforeLast('/') + "/index.m3u8"
+                                            val pl = rows.firstOrNull { it.isPlaylist }?.url
+                                                ?: if (r.url.lowercase().contains(".mp4/")) {
+                                                    r.url.substringBeforeLast('/') + "/index.m3u8"
                                                 } else null
                                             startYt(pl ?: address)
                                         } else {
-                                            startYt(u)
+                                            startYt(r.url)
                                         }
                                     }.padding(vertical = 6.dp)
                                 ) {
                                     Text(
-                                        if (isSegment(u)) "SEGMENT" else (Media.sniff(u) ?: "media").uppercase(),
+                                        listOfNotNull(
+                                            r.label,
+                                            fmtSize(r.size).takeIf { it.isNotEmpty() }
+                                        ).joinToString(" · "),
                                         fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = if (isSegment(u)) BeeColors.DeepAmber else BeeColors.HoneyGold
+                                        color = when {
+                                            r.isSegment -> BeeColors.DeepAmber
+                                            r.isPlaylist -> BeeColors.HoneyGold
+                                            else -> BeeColors.HoneyGold
+                                        }
                                     )
                                     Text(
-                                        u,
+                                        r.name ?: r.url,
                                         fontSize = 10.sp,
                                         color = textColor,
                                         maxLines = 2
                                     )
+                                    if (r.name != null) {
+                                        Text(
+                                            r.url,
+                                            fontSize = 9.sp,
+                                            color = subColor,
+                                            maxLines = 1
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1042,24 +1117,6 @@ private fun ResourceSheet(
 private fun isSegment(u: String): Boolean {
     val p = u.substringBefore('?').lowercase()
     return p.endsWith(".ts") || p.endsWith(".m4s")
-}
-
-/**
- * a genuinely playable playlist/master URL — JSON api endpoints such as
- * /api/v2/download/episode/manifest?id=… sniff as MPD by url but hand yt-dlp
- * a plain JSON blob instead of the stream.
- */
-private fun isPlaylistCandidate(u: String): Boolean {
-    val ul = u.lowercase()
-    if (ul.contains("/api/", true) || ul.contains("manifest?id=", true)) return false
-    return Media.isM3U8(u) || Media.isMPD(u)
-}
-
-/** picker row rank — playlists/masters first, full container files next, fragments last. */
-private fun mediaRank(u: String): Int = when {
-    isPlaylistCandidate(u) -> 0
-    isSegment(u) -> 2
-    else -> 1
 }
 
 

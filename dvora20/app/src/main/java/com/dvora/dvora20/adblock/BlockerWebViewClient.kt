@@ -40,6 +40,9 @@ class BlockerWebViewClient(
     var onCrossNav: ((String, String) -> Unit)? = null   // (target url, host) — confirm-site-change dialog
     var onSsl: ((Uri?, SslErrorHandler) -> Unit)? = null
 
+    /** sniffer script injection — called on every http(s) page start (script itself is idempotent) */
+    var injectSniffer: ((WebView) -> Unit)? = null
+
     @Volatile
     var docHost: String = ""                     // current page's host (set from outside on approved cross-nav)
 
@@ -183,6 +186,8 @@ class BlockerWebViewClient(
         if ((uri.scheme ?: "").lowercase() !in setOf("http", "https")) return
         docHost = (uri.host ?: "").lowercase()
         repo.engine.newPage()          // fresh per-page counters / logs
+        // re-inject the media sniffer before the page's scripts run their first ajax calls
+        if (view != null) injectSniffer?.invoke(view)
         onPageStart(docHost, url)
     }
 

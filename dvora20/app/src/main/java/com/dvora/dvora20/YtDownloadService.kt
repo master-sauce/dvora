@@ -78,8 +78,14 @@ class YtDownloadService : Service() {
         const val EXTRA_URL = "yt_url"
         const val EXTRA_DIR = "yt_dir"
         const val EXTRA_NAME = "yt_name"
+        const val EXTRA_REFERER = "yt_referer"
+        const val EXTRA_UA = "yt_ua"
+        const val EXTRA_COOKIE = "yt_cookie"
 
-        fun start(ctx: Context, url: String, dir: File, name: String? = null) {
+        fun start(
+            ctx: Context, url: String, dir: File, name: String? = null,
+            referer: String? = null, userAgent: String? = null, cookie: String? = null
+        ) {
             try {
                 ContextCompat.startForegroundService(
                     ctx,
@@ -87,6 +93,9 @@ class YtDownloadService : Service() {
                         .putExtra(EXTRA_URL, url)
                         .putExtra(EXTRA_DIR, dir.path)
                         .putExtra(EXTRA_NAME, name ?: "")
+                        .putExtra(EXTRA_REFERER, referer ?: "")
+                        .putExtra(EXTRA_UA, userAgent ?: "")
+                        .putExtra(EXTRA_COOKIE, cookie ?: "")
                 )
             } catch (_: Exception) {
             }
@@ -156,6 +165,9 @@ class YtDownloadService : Service() {
             stopSelf(); return START_NOT_STICKY
         }
         val name = intent.getStringExtra(EXTRA_NAME)?.takeIf { it.isNotBlank() }
+        val referer = intent.getStringExtra(EXTRA_REFERER)?.takeIf { it.isNotBlank() }
+        val userAgent = intent.getStringExtra(EXTRA_UA)?.takeIf { it.isNotBlank() }
+        val cookie = intent.getStringExtra(EXTRA_COOKIE)?.takeIf { it.isNotBlank() }
         val dir = File(intent.getStringExtra(EXTRA_DIR) ?: Environment.getExternalStorageDirectory().path)
         if (!dir.exists() && !dir.mkdirs()) {
             stopSelf(); return START_NOT_STICKY
@@ -176,6 +188,10 @@ class YtDownloadService : Service() {
                 // best video + separate best audio when offered, else single best — merged to one mp4 by ffmpeg
                 req.addOption("-f", "bv*+ba/b")
                 req.addOption("--merge-output-format", "mp4")
+                // 1DM-style header replay — many CDNs 403 without the page's own referer / cookies / UA
+                referer?.let { req.addOption("--referer", it) }
+                userAgent?.let { req.addOption("--add-header", "User-Agent:$it") }
+                cookie?.let { req.addOption("--add-header", "Cookie:$it") }
                 // stale yt-dlp from a previously crashed / cancelled run under our fixed id
                 try {
                     YoutubeDL.getInstance().destroyProcessById(PROC)
