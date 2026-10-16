@@ -295,15 +295,18 @@ fun BrowserScreen(
         // resource (from the sniffer capture), fall back to the page itself + cookie jar
         val referer = cap?.referer ?: address.takeIf { it.startsWith("http") }
         val cookie = cap?.cookie ?: CookieManager.getInstance().getCookie(url)
-        // the page's EXACT request headers for this url (urlHeadersCache) — the engines
-        // replay them verbatim, exactly like 1DM's Connect; Accept-Encoding stays out
-        // (raw gzip would corrupt everything that isn't yt-dlp)
-        val headersCsv = SnifferStore.headersFor(url)?.entries
-            ?.filter {
+        // the page's EXACT request headers (urlHeadersCache) + the player's own JS-set
+        // headers (auth tokens, custom X-* — 1DM's additionalHeaders) — the engines
+        // replay them verbatim; JS-set headers win, they are what the media host accepted.
+        // Accept-Encoding stays out (raw gzip would corrupt everything that isn't yt-dlp)
+        val capHeaders = cap?.extraHeaders
+        val headers = (SnifferStore.headersFor(url) ?: emptyMap()) + (capHeaders ?: emptyMap())
+        val headersCsv = headers.entries
+            .filter {
                 !it.key.equals("Range", true) && !it.key.equals("Host", true) &&
                     !it.key.equals("Accept-Encoding", true) && it.value.isNotEmpty()
             }
-            ?.joinToString("\n") { "${it.key}: ${it.value}" }
+            .joinToString("\n") { "${it.key}: ${it.value}" }
         YtDownloadService.start(context, target, dir, job.baseName, referer, webView.settings.userAgentString, cookie, job.proc, headersCsv)
     }
 

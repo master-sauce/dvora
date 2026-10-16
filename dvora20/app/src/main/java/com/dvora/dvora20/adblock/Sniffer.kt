@@ -7,14 +7,18 @@ import android.os.Looper
 import android.util.Base64
 import android.webkit.JavascriptInterface
 import android.widget.Toast
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
-import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLDecoder
 import java.nio.charset.Charset
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.Response
 
 /**
  * The 1DM-style media sniffer core.
@@ -40,7 +44,10 @@ data class CapturedMedia(
     val iv: String? = null,  // HLS AES-128 IV (hex) — present only for kind == "aeskey"
     val duration: Double = -1.0,   // seconds, -1 unknown — #EXTINF sums of a playlist body
     val parts: Int = -1,           // segment count (variant count for masters), -1 unknown
-    val finalUrl: String? = null   // redirect-resolved url (1DM's Connect follows to the end); the row keeps the original
+    val finalUrl: String? = null,  // redirect-resolved url (1DM's Connect follows to the end); the row keeps the original
+    // every header the page's own JS set on the request (auth tokens, custom X-*) —
+    // 1DM's additionalHeaders: replayed by probe + both download engines
+    val extraHeaders: Map<String, String>? = null
 )
 
 /** row model for the media picker / badge */
@@ -285,6 +292,42 @@ internal object Sniff {
     }
 
     /**
+     * `https://<the media's own host>/` — the referer hotlink-protecting CDNs demand
+     * (verified: nginx HLS fronts 403 every referer except their own host).
+     */
+    fun sameHostReferer(url: String): String? = try {
+        val h = java.net.URI(url).host ?: return null
+        "https://$h/"
+    } catch (_: Exception) {
+        null
+    }
+
+    /**
+     * 1DM's `getAdditionalHeadersMapFromJavascriptJsonHeaders` — EVERY header the page's
+     * JS set on the XHR (setRequestHeader/fetch-init) comes back as a map: auth tokens,
+     * custom X-*, API keys. These are the headers the player itself used, so replaying
+     * them is what gets past token-checked CDNs that plain referer/cookie can't.
+     */
+    fun jsonHeaders(json: String?): Map<String, String>? {
+        if (json.isNullOrBlank()) return null
+        return try {
+            val obj = JSONObject(json)
+            val names = obj.names() ?: return null
+            if (names.length() == 0) return null
+            val out = java.util.TreeMap<String, String>(String.CASE_INSENSITIVE_ORDER)
+            for (i in 0 until names.length()) {
+                val k = names.getString(i)
+                val v = obj.get(k)
+                // an array-valued header (fetch init) → its first entry (1DM's behavior)
+                out[k] = if (v is JSONArray) v.optString(0) else v.toString()
+            }
+            out
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    /**
      * 1DM's `getGenericVideoLink` — the token around an extension hit: walk back
      * and forward to the nearest delimiter (quote / angle bracket / whitespace),
      * reject anything over 4096 chars, unfold JSON/html escapes, resolve against
@@ -502,6 +545,7 @@ class SnifferJsInterface(
 
             var cookie: String? = null
             var referer: String? = null
+            var extraHeaders: Map<String, String>? = null
             if (!headersJson.isNullOrBlank()) {
                 runCatching {
                     val obj = JSONObject(headersJson)
@@ -512,6 +556,12 @@ class SnifferJsInterface(
                         }
                     }
                 }
+                // 1DM's getAdditionalHeadersMapFromJavascriptJsonHeaders — EVERY header the
+                // player itself set (tokens, authorization, custom X-*) is captured and
+                // replayed later; cookie/referer ride in their own fields
+                extraHeaders = Sniff.jsonHeaders(headersJson)
+                    ?.filterKeys { it.lowercase() !in setOf("cookie", "referer", "referrer") }
+                    ?.takeIf { it.isNotEmpty() }
             }
 
             // 1DM's Extract — ANY body over 10 chars that isn't itself media gets scanned
@@ -543,7 +593,8 @@ class SnifferJsInterface(
                 referer = referer,
                 cookie = cookie,
                 duration = duration,
-                parts = parts
+                parts = parts,
+                extraHeaders = extraHeaders
             )
             if (SnifferStore.add(cap)) {
                 // playlists get their children captured too (master → media/audio/subtitle tracks)
@@ -887,7 +938,12 @@ object ResourceProbe {
 
     fun probeAsync(url: String, referer: String?, cookie: String?, ua: String? = null) {
         exec.execute {
-            val cached = SnifferStore.headersFor(url)     // 1DM's urlHeadersCache — exact replay
+            // 1DM's Connect replays the page's request headers AND the player's own JS-set
+            // headers (tokens) — the JS-set ones win, they are what the media host accepted
+            val capHeaders = SnifferStore.byUrl(url)?.extraHeaders
+            val cached = if (capHeaders != null)
+                (SnifferStore.headersFor(url) ?: emptyMap()) + capHeaders
+            else SnifferStore.headersFor(url)
             val r = runCatching { probe(url, referer, cookie, ua, cached) }.getOrNull() ?: return@execute
             val existing = SnifferStore.byUrl(url)
             if (existing != null) {
@@ -923,56 +979,66 @@ object ResourceProbe {
         }
     }
 
+    /**
+     * 1DM's engine stack: OkHttp — HTTP/2 + a modern TLS fingerprint. Gateways that
+     * 403/502 HttpURLConnection and python-urllib traffic accept OkHttp — the exact
+     * reason 1DM's Connect probe succeeds where plain-Java requests don't.
+     */
+    private val http = OkHttpClient.Builder()
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
+        .followRedirects(true)
+        .build()
+
+    /** the page's exact request headers (urlHeadersCache) + our Range/UA/Referer/Cookie. */
+    private fun buildReq(
+        url: String, referer: String?, cookie: String?, range: String?, ua: String?,
+        cached: Map<String, String>?
+    ): Request {
+        val b = Request.Builder().url(url)
+        ua?.let { b.header("User-Agent", it) }
+        referer?.let { b.header("Referer", it) }
+        cookie?.let { b.header("Cookie", it) }
+        // the page's EXACT request headers OVERRIDE our guesses — the cached Referer is
+        // the one the WebView actually sent and the server accepted. Accept-Encoding
+        // stays out — OkHttp negotiates its own and transparently unzips.
+        cached?.forEach { (k, v) ->
+            if (!k.equals("Range", true) && !k.equals("Host", true) &&
+                !k.equals("Accept-Encoding", true) && !k.equals("Content-Length", true) &&
+                v.isNotEmpty()
+            ) b.header(k, v)
+        }
+        range?.let { b.header("Range", it) }
+        return b.build()
+    }
+
+    private fun call(
+        url: String, referer: String?, cookie: String?, range: String?, ua: String?,
+        cached: Map<String, String>?
+    ): Response? = runCatching { http.newCall(buildReq(url, referer, cookie, range, ua, cached)).execute() }.getOrNull()
+
     /** page/frame fetch for the body scanner — capped at 256KB, replaying the page's headers. */
     fun fetchBodyAsync(url: String, referer: String?, cookie: String?, ua: String?, cached: Map<String, String>? = null, cb: (String?) -> Unit) {
         exec.execute {
             val body = runCatching {
-                val conn = openConn(url, referer, cookie, null, ua, cached)
-                try {
-                    if (conn.responseCode !in 200..299) return@runCatching null
-                    val mime = (conn.contentType ?: "").substringBefore(';').trim().lowercase()
+                call(url, referer, cookie, null, ua, cached)?.use { r ->
+                    if (r.code !in 200..299) return@use null
+                    val mime = (r.header("Content-Type") ?: "").substringBefore(';').trim().lowercase()
                     if (mime.startsWith("video/") || mime.startsWith("audio/") || mime.startsWith("image/")) {
-                        return@runCatching null
+                        return@use null
                     }
-                    String(readCapped(conn, 262_144), Charsets.UTF_8)
-                } finally {
-                    conn.disconnect()
+                    String(readCapped(r, 262_144), Charsets.UTF_8)
                 }
             }.getOrNull()
             cb(body)
         }
     }
 
-    private fun openConn(
-        url: String, referer: String?, cookie: String?, range: String?, ua: String?,
-        cached: Map<String, String>? = null
-    ): HttpURLConnection =
-        (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 15000
-            readTimeout = 15000
-            instanceFollowRedirects = true
-            requestMethod = "GET"
-            // 1DM's urlHeadersCache — the probe must look EXACTLY like the page's own request.
-            // Accept-Encoding dies here: HttpURLConnection auto-unzips only ITS OWN encoding —
-            // replaying the page's would deliver raw gzip bytes to every parser.
-            cached?.forEach { (k, v) ->
-                if (!k.equals("Range", true) && !k.equals("Host", true) &&
-                    !k.equals("Accept-Encoding", true) && !k.equals("Content-Length", true) &&
-                    v.isNotEmpty()
-                ) setRequestProperty(k, v)
-            }
-            range?.let { setRequestProperty("Range", it) }
-            // no UA → instant 403 on most CDNs — always replay one (the WebView's own when known)
-            ua?.let { setRequestProperty("User-Agent", it) }
-            referer?.let { setRequestProperty("Referer", it) }
-            cookie?.let { setRequestProperty("Cookie", it) }
-        }
-
-    /** reads at most [cap] bytes — the parse window — and kills whatever the server keeps streaming. */
-    private fun readCapped(conn: HttpURLConnection, cap: Int): ByteArray {
+    /** reads at most [cap] bytes — the parse window; closing the response kills the stream. */
+    private fun readCapped(r: Response, cap: Int): ByteArray {
         val out = java.io.ByteArrayOutputStream()
         runCatching {
-            conn.inputStream.use { ins ->
+            r.body?.byteStream()?.use { ins ->
                 val buf = ByteArray(8192)
                 while (out.size() < cap) {
                     val n = ins.read(buf, 0, minOf(buf.size, cap - out.size()))
@@ -988,29 +1054,40 @@ object ResourceProbe {
         if (!url.startsWith("http")) return null
         val path = url.substringBefore('?').lowercase()
         val looksPlaylist = path.endsWith(".m3u8") || path.endsWith(".mpd")
-        // playlists → full body (#EXTINF lines run through the whole file); files → a 64KB head window
-        var conn = openConn(url, referer, cookie, if (looksPlaylist) null else "bytes=0-65535", ua, cached)
+        // playlists → full body (#EXTINF lines run through the whole file); files → a 64KB head window.
+        // A 403 here = the hotlink gate (referer must be the media's own host) — retry once
+        var ref = referer
+        var r = call(url, ref, cookie, if (looksPlaylist) null else "bytes=0-65535", ua, cached)
+        if (r == null || r.code == 403) {
+            val alt = Sniff.sameHostReferer(url)
+            if (alt != null && !alt.equals(ref, true)) {
+                r?.close()
+                r = call(url, alt, cookie, if (looksPlaylist) null else "bytes=0-65535", ua, cached)
+                if (r != null && r.code in 200..399) ref = alt
+            }
+        }
+        r = r ?: return null
         try {
-            var code = conn.responseCode
+            var code = r.code
             if (code < 200 || code >= 400) return null
-            var mime = (conn.contentType ?: "").substringBefore(';').trim()
-            val disp = conn.getHeaderField("Content-Disposition")
-            var size = conn.getHeaderField("Content-Length")?.trim()?.toLongOrNull() ?: -1L
+            var mime = (r.header("Content-Type") ?: "").substringBefore(';').trim()
+            val disp = r.header("Content-Disposition")
+            var size = r.header("Content-Length")?.trim()?.toLongOrNull() ?: -1L
             // 206 partial → Content-Range "bytes 0-65535/12345678" carries the full size
-            conn.getHeaderField("Content-Range")?.let { cr ->
+            r.header("Content-Range")?.let { cr ->
                 Regex("""bytes\s+\S+/(\d+)""", RegexOption.IGNORE_CASE).find(cr)?.let {
                     size = it.groupValues[1].toLongOrNull() ?: size
                 }
             }
-            var finalUrl = conn.url.toString()
+            var finalUrl = r.request.url.toString()
             // an extension-less playlist endpoint asked with a Range — reconnect for the whole body
             if (!looksPlaylist && (mime.contains("mpegurl", true) || mime.contains("dash+xml", true))) {
-                conn.disconnect()
-                conn = openConn(finalUrl, referer, cookie, null, ua, cached)
-                code = conn.responseCode
+                r.close()
+                r = call(finalUrl, ref, cookie, null, ua, cached) ?: return null
+                code = r.code
                 if (code < 200 || code >= 400) return null
-                mime = (conn.contentType ?: "").substringBefore(';').trim().ifBlank { mime }
-                finalUrl = conn.url.toString()
+                mime = (r.header("Content-Type") ?: "").substringBefore(';').trim().ifBlank { mime }
+                finalUrl = r.request.url.toString()
             }
             var duration = -1.0
             var parts = -1
@@ -1018,31 +1095,28 @@ object ResourceProbe {
             if (looksPlaylist || fPath.endsWith(".m3u8") || fPath.endsWith(".mpd") ||
                 mime.contains("mpegurl", true) || mime.contains("dash+xml", true)
             ) {
-                val body = String(readCapped(conn, 524_288), Charsets.UTF_8)
+                val body = String(readCapped(r, 524_288), Charsets.UTF_8)
                 if ("#EXTINF" in body) {
                     val pd = Sniff.parsePlaylist(body)
                     duration = pd.first
                     parts = pd.second
                 }
             } else {
-                val head = readCapped(conn, 65_536)
+                val head = readCapped(r, 65_536)
                 val trimmedHead = String(head, Charsets.UTF_8).trimStart()
                 if (trimmedHead.length >= 7 && trimmedHead.substring(0, 7).equals("#EXTM3U", true)) {
                     // extension-less endpoint answering with a playlist body under a text/plain
                     // mime — refetch the whole body and parse it like the playlist branch
-                    conn.disconnect()
-                    val c2 = openConn(finalUrl, referer, cookie, null, ua, cached)
-                    try {
-                        if (c2.responseCode in 200..299) {
-                            mime = (c2.contentType ?: "").substringBefore(';').trim()
+                    r.close()
+                    call(finalUrl, ref, cookie, null, ua, cached)?.use { c2 ->
+                        if (c2.code in 200..299) {
+                            mime = (c2.header("Content-Type") ?: "").substringBefore(';').trim()
                                 .ifBlank { "application/vnd.apple.mpegurl" }
                             val body = String(readCapped(c2, 524_288), Charsets.UTF_8)
                             val pd = Sniff.parsePlaylist(body)
                             duration = pd.first
                             parts = pd.second
                         }
-                    } finally {
-                        c2.disconnect()
                     }
                 } else {
                     val kind = Sniff.kind(finalUrl, mime, null, size) ?: ""
@@ -1050,12 +1124,9 @@ object ResourceProbe {
                         duration = MediaMeta.duration(kind, mime, head, size) { range ->
                             // mp4 with the moov box at the end — the tail window carries mvhd
                             runCatching {
-                                val c3 = openConn(finalUrl, referer, cookie, range, ua, cached)
-                                try {
-                                    if (c3.responseCode in 200..299) readCapped(c3, 262_144) else ByteArray(0)
-                                } finally {
-                                    c3.disconnect()
-                                }
+                                call(finalUrl, ref, cookie, range, ua, cached)?.use { c3 ->
+                                    if (c3.code in 200..299) readCapped(c3, 262_144) else ByteArray(0)
+                                } ?: ByteArray(0)
                             }.getOrDefault(ByteArray(0))
                         }
                     }
@@ -1065,7 +1136,7 @@ object ResourceProbe {
         } catch (_: Exception) {
             return null
         } finally {
-            conn.disconnect()
+            r.close()
         }
     }
 }

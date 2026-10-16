@@ -285,8 +285,11 @@ class YtDownloadService : Service() {
                 // best video + separate best audio when offered, else single best — merged to one mp4 by ffmpeg
                 req.addOption("-f", "bv*+ba/b")
                 req.addOption("--merge-output-format", "mp4")
-                // 1DM-style header replay — many CDNs 403 without the page's own referer / cookies / UA
-                referer?.let { req.addOption("--referer", it) }
+                // 1DM-style header replay — many CDNs 403 without the page's own referer / cookies / UA.
+                // The page's cached Referer (the one the WebView actually sent and the server
+                // accepted — hotlink gates check it) beats the guessed page referer.
+                val effReferer = headers?.get("Referer")?.takeIf { it.isNotBlank() } ?: referer
+                effReferer?.let { req.addOption("--referer", it) }
                 userAgent?.let { req.addOption("--add-header", "User-Agent:$it") }
                 cookie?.let { req.addOption("--add-header", "Cookie:$it") }
                 // the page's EXACT request headers (urlHeadersCache) — a probe/engine must look
