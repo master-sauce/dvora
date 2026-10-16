@@ -47,7 +47,9 @@ data class CapturedMedia(
     val finalUrl: String? = null,  // redirect-resolved url (1DM's Connect follows to the end); the row keeps the original
     // every header the page's own JS set on the request (auth tokens, custom X-*) —
     // 1DM's additionalHeaders: replayed by probe + both download engines
-    val extraHeaders: Map<String, String>? = null
+    val extraHeaders: Map<String, String>? = null,
+    val master: Boolean = false,    // m3u8 master (variant list) — THE row to pick for the full video
+    val qualities: String? = null   // master's variant ladder "1080p·720p", highest first
 )
 
 /** row model for the media picker / badge */
@@ -60,7 +62,9 @@ data class SniffRow(
     val isPlaylist: Boolean,
     val isBlob: Boolean = false,
     val duration: Double = -1.0,
-    val parts: Int = -1
+    val parts: Int = -1,
+    val isMaster: Boolean = false,
+    val qualities: String? = null
 )
 
 object SnifferStore {
@@ -289,6 +293,17 @@ internal object Sniff {
         } catch (_: Exception) {
             m.groupValues[1].trim()
         }
+    }
+
+    /** master playlist → its variant qualities ("1080p·720p"), highest first. */
+    fun masterQualities(body: String): String? {
+        val hs = Regex("""RESOLUTION=(\d+)x(\d+)""", RegexOption.IGNORE_CASE).findAll(body)
+            .mapNotNull { it.groupValues[2].toIntOrNull() }.filter { it > 0 }.distinct().sortedDescending().toList()
+        if (hs.isNotEmpty()) return hs.joinToString("·") { "${it}p" }
+        // no resolutions published — fall back to the bandwidth ladder
+        val bws = Regex("""BANDWIDTH=(\d+)""", RegexOption.IGNORE_CASE).findAll(body)
+            .mapNotNull { it.groupValues[1].toLongOrNull() }.filter { it > 0 }.distinct().sortedDescending().take(4).toList()
+        return bws.takeIf { it.isNotEmpty() }?.joinToString("·") { "${it / 1000}k" }
     }
 
     /**
@@ -575,13 +590,22 @@ class SnifferJsInterface(
             if (kind == null) return
             if (kind !in setOf("m3u8", "mpd") && len in 1..10_239) return   // size gate
 
-            // playlist bodies carry their own metrics — #EXTINF sum = duration, line count = parts
+            // playlist bodies carry their own metrics — #EXTINF sum = duration, line count = parts;
+            // a master (#EXT-X-STREAM-INF) is THE entry point and carries its variant ladder
             var duration = -1.0
             var parts = -1
+            var master = false
+            var qualities: String? = null
             if (kind == "m3u8" && b.isNotEmpty()) {
                 val pd = Sniff.parsePlaylist(b)
-                duration = pd.first
-                parts = pd.second
+                if (pd.second > 0) {
+                    parts = pd.second
+                    if (pd.first > 0) duration = pd.first
+                }
+                if (b.contains("#EXT-X-STREAM-INF", true)) {
+                    master = true
+                    qualities = Sniff.masterQualities(b)
+                }
             }
 
             val cap = CapturedMedia(
@@ -594,7 +618,9 @@ class SnifferJsInterface(
                 cookie = cookie,
                 duration = duration,
                 parts = parts,
-                extraHeaders = extraHeaders
+                extraHeaders = extraHeaders,
+                master = master,
+                qualities = qualities
             )
             if (SnifferStore.add(cap)) {
                 // playlists get their children captured too (master → media/audio/subtitle tracks)
@@ -931,7 +957,8 @@ object BlobSaver {
 object ResourceProbe {
     data class Result(
         val finalUrl: String, val mime: String, val size: Long, val disposition: String?,
-        val duration: Double, val parts: Int
+        val duration: Double, val parts: Int,
+        val master: Boolean, val qualities: String?
     )
 
     private val exec = Executors.newFixedThreadPool(3) { r -> Thread(r, "dvora-probe").apply { isDaemon = true } }
@@ -958,7 +985,9 @@ object ResourceProbe {
                         duration = if (r.duration > 0) r.duration else c.duration,
                         parts = if (r.parts > 0) r.parts else c.parts,
                         // 1DM's Connect resolves redirects to the END — the engine gets the final url
-                        finalUrl = if (!r.finalUrl.equals(url, ignoreCase = true)) r.finalUrl else c.finalUrl
+                        finalUrl = if (!r.finalUrl.equals(url, ignoreCase = true)) r.finalUrl else c.finalUrl,
+                        master = c.master || r.master,
+                        qualities = r.qualities ?: c.qualities
                     )
                 }
             } else {
@@ -972,7 +1001,9 @@ object ResourceProbe {
                         filename = SniffName.resolve(r.finalUrl, r.mime, r.disposition),
                         referer = referer, cookie = cookie,
                         duration = r.duration, parts = r.parts,
-                        finalUrl = if (!r.finalUrl.equals(url, ignoreCase = true)) r.finalUrl else null
+                        finalUrl = if (!r.finalUrl.equals(url, ignoreCase = true)) r.finalUrl else null,
+                        master = r.master,
+                        qualities = r.qualities
                     )
                 )
             }
@@ -1091,15 +1122,22 @@ object ResourceProbe {
             }
             var duration = -1.0
             var parts = -1
+            var master = false
+            var qualities: String? = null
             val fPath = finalUrl.substringBefore('?').lowercase()
             if (looksPlaylist || fPath.endsWith(".m3u8") || fPath.endsWith(".mpd") ||
                 mime.contains("mpegurl", true) || mime.contains("dash+xml", true)
             ) {
                 val body = String(readCapped(r, 524_288), Charsets.UTF_8)
-                if ("#EXTINF" in body) {
-                    val pd = Sniff.parsePlaylist(body)
-                    duration = pd.first
+                val pd = Sniff.parsePlaylist(body)
+                if (pd.second > 0) {
                     parts = pd.second
+                    if (pd.first > 0) duration = pd.first
+                }
+                // a master playlist (#EXT-X-STREAM-INF) is THE entry point — flag it + its ladder
+                if (body.contains("#EXT-X-STREAM-INF", true)) {
+                    master = true
+                    qualities = Sniff.masterQualities(body)
                 }
             } else {
                 val head = readCapped(r, 65_536)
@@ -1114,8 +1152,14 @@ object ResourceProbe {
                                 .ifBlank { "application/vnd.apple.mpegurl" }
                             val body = String(readCapped(c2, 524_288), Charsets.UTF_8)
                             val pd = Sniff.parsePlaylist(body)
-                            duration = pd.first
-                            parts = pd.second
+                            if (pd.second > 0) {
+                                parts = pd.second
+                                if (pd.first > 0) duration = pd.first
+                            }
+                            if (body.contains("#EXT-X-STREAM-INF", true)) {
+                                master = true
+                                qualities = Sniff.masterQualities(body)
+                            }
                         }
                     }
                 } else {
@@ -1132,7 +1176,7 @@ object ResourceProbe {
                     }
                 }
             }
-            return Result(finalUrl, mime, size, disp, duration, parts)
+            return Result(finalUrl, mime, size, disp, duration, parts, master, qualities)
         } catch (_: Exception) {
             return null
         } finally {

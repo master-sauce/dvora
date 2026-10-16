@@ -44,17 +44,19 @@ object NativeDl {
         url: String, dir: File, name: String?,
         referer: String?, ua: String?, cookie: String?,
         cached: Map<String, String>? = null,
+        isCancelled: () -> Boolean = { false },
         onPct: (Int) -> Unit
     ): File? {
         val clean = url.substringBefore('#')
+        if (isCancelled()) return null
         val playlist = clean.substringBefore('?').endsWith(".m3u8", true) || Media.isM3U8(clean)
         val dash = !playlist && Media.isMPD(clean)
         return when {
-            dash -> mpd(clean, dir, name, referer, ua, cookie, cached, onPct)
-                ?: direct(clean, dir, name, referer, ua, cookie, cached, onPct)   // mpd-shaped but not parseable — try it as a file
-            playlist -> hls(clean, dir, name, referer, ua, cookie, cached, onPct)
-                ?: direct(clean, dir, name, referer, ua, cookie, cached, onPct)  // playlist-shaped but not one — try it as a file
-            else -> direct(clean, dir, name, referer, ua, cookie, cached, onPct)
+            dash -> mpd(clean, dir, name, referer, ua, cookie, cached, isCancelled, onPct)
+                ?: direct(clean, dir, name, referer, ua, cookie, cached, isCancelled, onPct)   // mpd-shaped but not parseable — try it as a file
+            playlist -> hls(clean, dir, name, referer, ua, cookie, cached, isCancelled, onPct)
+                ?: direct(clean, dir, name, referer, ua, cookie, cached, isCancelled, onPct)  // playlist-shaped but not one — try it as a file
+            else -> direct(clean, dir, name, referer, ua, cookie, cached, isCancelled, onPct)
         }
     }
 
@@ -152,10 +154,11 @@ object NativeDl {
     private fun direct(
         url: String, dir: File, name: String?,
         referer: String?, ua: String?, cookie: String?, cached: Map<String, String>?,
-        onPct: (Int) -> Unit
+        isCancelled: () -> Boolean, onPct: (Int) -> Unit
     ): File? {
         // ranged header probe — total size, range support, real mime. A 403 here = the
         // hotlink gate: retry with the media's OWN host as referer (proven on nginx CDNs)
+        if (isCancelled()) return null
         var effReferer = referer
         var head = call(url, referer, ua, cookie, "bytes=0-0", cached)
         if (head == null || head.code == 403) {
@@ -186,13 +189,13 @@ object NativeDl {
         val written = AtomicLong(0)
         try {
             part.delete()
-            if (ranges && size >= PARALLEL_MIN && parallel(url, part, size, effReferer, ua, cookie, cached, written, onPct)) {
+            if (ranges && size >= PARALLEL_MIN && parallel(url, part, size, effReferer, ua, cookie, cached, isCancelled, written, onPct)) {
                 return finish(rename(part, out))
             }
             // Range-ignoring server or small file — one stream, verified written bytes
             part.delete()
             written.set(0)
-            if (!single(url, part, size, effReferer, ua, cookie, cached, written, onPct)) {
+            if (!single(url, part, size, effReferer, ua, cookie, cached, isCancelled, written, onPct)) {
                 part.delete()
                 return null
             }
@@ -221,7 +224,7 @@ object NativeDl {
     private fun parallel(
         url: String, part: File, size: Long,
         referer: String?, ua: String?, cookie: String?, cached: Map<String, String>?,
-        written: AtomicLong, onPct: (Int) -> Unit
+        isCancelled: () -> Boolean, written: AtomicLong, onPct: (Int) -> Unit
     ): Boolean {
         try {
             RandomAccessFile(part, "rw").use { it.setLength(size) }
@@ -241,6 +244,7 @@ object NativeDl {
                                 body.use { ins ->
                                     val buf = ByteArray(16384)
                                     while (true) {
+                                        if (isCancelled()) return@submit
                                         val n = ins.read(buf)
                                         if (n < 0) break
                                         raf.write(buf, 0, n)
@@ -268,7 +272,7 @@ object NativeDl {
     private fun single(
         url: String, part: File, size: Long,
         referer: String?, ua: String?, cookie: String?, cached: Map<String, String>?,
-        written: AtomicLong, onPct: (Int) -> Unit
+        isCancelled: () -> Boolean, written: AtomicLong, onPct: (Int) -> Unit
     ): Boolean {
         val conn = call(url, referer, ua, cookie, null, cached) ?: return false
         try {
@@ -278,6 +282,7 @@ object NativeDl {
                 body.use { ins ->
                     val buf = ByteArray(16384)
                     while (true) {
+                        if (isCancelled()) return false
                         val n = ins.read(buf)
                         if (n < 0) break
                         fos.write(buf, 0, n)
@@ -299,12 +304,14 @@ object NativeDl {
     private fun hls(
         url: String, dir: File, name: String?,
         referer: String?, ua: String?, cookie: String?, cached: Map<String, String>?,
-        onPct: (Int) -> Unit
+        isCancelled: () -> Boolean, onPct: (Int) -> Unit
     ): File? {
         // hotlink-403 gate: CDNs like this one only serve requests whose referer is the
         // MEDIA HOST ITSELF — retry with it once and keep whichever referer worked
+        if (isCancelled()) return null
         var ref = referer
         fun text(u: String): String? {
+            if (isCancelled()) return null
             fetchText(u, ref, ua, cookie, cached)?.let { return it }
             val alt = Sniff.sameHostReferer(u) ?: return null
             if (alt.equals(ref, true)) return null
@@ -374,6 +381,7 @@ object NativeDl {
                     onPct(1)
                 }
                 for ((i, seg) in segments.withIndex()) {
+                    if (isCancelled()) throw Exception("cancelled")
                     // CDNs flake under bursts — 1DM retries segments, so does this
                     var bytes: ByteArray? = null
                     for (attempt in 1..3) {
@@ -414,8 +422,9 @@ object NativeDl {
     private fun mpd(
         url: String, dir: File, name: String?,
         referer: String?, ua: String?, cookie: String?, cached: Map<String, String>?,
-        onPct: (Int) -> Unit
+        isCancelled: () -> Boolean, onPct: (Int) -> Unit
     ): File? {
+        if (isCancelled()) return null
         // same hotlink gate as hls — retry with the media's own host as referer, keep the winner
         var ref = referer
         val xml = fetchText(url, ref, ua, cookie, cached)
@@ -453,6 +462,7 @@ object NativeDl {
                         onPct(((done * 99) / total).toInt().coerceIn(0, 99))
                     }
                     for (su in urls) {
+                        if (isCancelled()) throw Exception("cancelled")
                         var bytes: ByteArray? = null
                         for (attempt in 1..3) {                       // same retry discipline as HLS
                             bytes = fetchBytes(su, ref, ua, cookie, cached)

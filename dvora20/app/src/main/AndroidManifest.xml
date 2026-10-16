@@ -46,6 +46,11 @@
             <data android:scheme="file" />
             <data android:mimeType="resource/folder" />
         </intent>
+        <!-- the system Files app (DocumentsUI) opens a folder via its dir mime -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:mimeType="vnd.android.document/directory" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.SEND" />
             <data android:scheme="content" />

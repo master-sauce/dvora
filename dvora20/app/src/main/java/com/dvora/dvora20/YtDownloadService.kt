@@ -39,9 +39,11 @@ import kotlinx.coroutines.launch
 object YtCtl {
 
     /** one download — registered by startYt before the service starts, keyed by its yt-dlp process id. */
-    class Job(val url: String, val dir: String, val proc: String, val baseName: String?) {
+    class Job(val url: String, val dir: String, val proc: String, val baseName: String?, val noteId: Int) {
         @Volatile
         var pct: Int = 0        // 0..99 running · >=100 done · -3 failed · -1 cancelled
+        @Volatile
+        var cancelled: Boolean = false   // checked by the native engine's loops mid-download
     }
 
     const val MAX = 4           // concurrent yt-dlp processes
@@ -61,7 +63,7 @@ object YtCtl {
         if (jobs.values.count { it.pct in 0..99 } >= MAX) return null
         prune()
         val proc = "dvora-media-${++seq}"
-        val j = Job(url, dir.path, proc, uniqueName(dir, name))
+        val j = Job(url, dir.path, proc, uniqueName(dir, name), 4242 + (seq % 500))
         jobs[proc] = j
         j
     }
@@ -116,6 +118,7 @@ object YtCtl {
             else listOfNotNull(jobs.remove(job.proc))
         }
         for (t in targets) {
+            t.cancelled = true                    // native engine loops abort mid-download
             try {
                 YoutubeDL.getInstance().destroyProcessById(t.proc)
             } catch (_: Exception) {
@@ -188,6 +191,8 @@ class YtDownloadService : Service() {
     private var saved = 0                      // files landed in this batch — picks the final done/fail face
     private var failed = 0
     private val finishing = AtomicBoolean(false)   // guard: only the first "last job ended" posts the final note
+    private val noteIds: MutableSet<Int> = java.util.concurrent.ConcurrentHashMap.newKeySet()   // per-job notification ids
+    private var perJobPosted = 0               // done/fail notes already posted per job — no batch-wide duplicates
     private val nm by lazy { getSystemService(NotificationManager::class.java) }
 
     private fun note(tail: StringBuilder, line: String?) {
@@ -204,27 +209,19 @@ class YtDownloadService : Service() {
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
 
-    /** content of the finished notification — opens the folder the media was saved to. */
-    private fun folderIntent(dir: File): PendingIntent {
-        val view = Intent(Intent.ACTION_VIEW)
-            .setDataAndType(Uri.fromFile(dir), "resource/folder")
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        return if (view.resolveActivity(packageManager) != null) {
-            PendingIntent.getActivity(
-                applicationContext,
-                3,
-                view,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-        } else {
-            appIntent()
-        }
-    }
-
-    private fun cancelPi(): PendingIntent = PendingIntent.getBroadcast(
+    /** content of the finished notification — opens the folder in the system Files app. */
+    private fun folderIntent(dir: File): PendingIntent = PendingIntent.getActivity(
         applicationContext,
-        2,
-        Intent(applicationContext, YtCancelReceiver::class.java),
+        3,
+        folderOpenIntent(applicationContext, dir),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+    )
+
+    /** the job's own cancel action — carries its process id; empty = cancel all (the summary's button). */
+    private fun cancelPi(proc: String): PendingIntent = PendingIntent.getBroadcast(
+        applicationContext,
+        if (proc.isEmpty()) 2 else proc.hashCode(),
+        Intent(applicationContext, YtCancelReceiver::class.java).putExtra("proc", proc),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
     )
 
@@ -264,7 +261,18 @@ class YtDownloadService : Service() {
         finishing.set(false)                   // a fresh job joined — the batch continues
         // the job was registered by startYt; null only when the OS restarted the service — run it standalone
         launchJob(YtCtl.byProc(proc), url.substringBefore('#'), name, dir, referer, userAgent, cookie, proc, headers)
-        fg(summary())
+        // each download is its own notification — the job's note becomes the foreground one;
+        // a service restart orphan gets a bare placeholder that finishBatch replaces
+        val j = YtCtl.byProc(proc)
+        if (j != null) fg(j.noteId, jobNote(j, name))
+        else fg(
+            ID,
+            NotificationCompat.Builder(applicationContext, CHANNEL)
+                .setContentTitle(getString(R.string.yt_down))
+                .setSmallIcon(android.R.drawable.stat_sys_download)
+                .setOngoing(true)
+                .build()
+        )
         return START_NOT_STICKY
     }
 
@@ -308,9 +316,9 @@ class YtDownloadService : Service() {
                     val n = p.toInt()
                     if (n in 0..99) {
                         job?.pct = n
-                        if (n / 5 != stepped / 5) {      // refresh the summary notification per 5%
+                        if (n / 5 != stepped / 5) {      // refresh the job's own notification per 5%
                             stepped = n
-                            post(summary())
+                            job?.let { postJob(it, base) }
                         }
                     }
                 }
@@ -326,6 +334,7 @@ class YtDownloadService : Service() {
                     job?.pct = 100
                     saved++
                     YtCtl.pushDone(newest)
+                    job?.let { jobDone(it, newest.name, dir) }
                 } else {
                     // yt-dlp landed nothing — the native engine (1DM-style) gets its shot
                     note(tail, "yt-dlp empty → native engine")
@@ -334,6 +343,7 @@ class YtDownloadService : Service() {
                         job?.pct = 100
                         saved++
                         YtCtl.pushDone(fb)
+                        job?.let { jobDone(it, fb.name, dir) }
                     } else fail(job, clean, tail)
                 }
             } catch (e: Exception) {
@@ -346,10 +356,11 @@ class YtDownloadService : Service() {
                         job?.pct = 100
                         saved++
                         YtCtl.pushDone(fb)
+                        job?.let { jobDone(it, fb.name, dir) }
                     } else fail(job, clean, tail)
                 }
             }
-            if (YtCtl.count == 0) finishBatch() else post(summary())
+            if (YtCtl.count == 0) finishBatch()
         }
     }
 
@@ -357,6 +368,25 @@ class YtDownloadService : Service() {
         job?.pct = -3
         failed++
         YtCtl.pushErr(url, tail.toString().takeLast(1500).take(2000))
+        // the job's own failure note — stays until tapped (auto-cancel)
+        if (job != null) {
+            perJobPosted++
+            noteIds.remove(job.noteId)
+            if (can()) {
+                runCatching {
+                    nm.notify(
+                        job.noteId,
+                        NotificationCompat.Builder(applicationContext, CHANNEL)
+                            .setContentTitle(getString(R.string.yt_err_title))
+                            .setContentText(url.take(140))
+                            .setSmallIcon(android.R.drawable.stat_sys_download)
+                            .setAutoCancel(true)
+                            .setContentIntent(appIntent())
+                            .build()
+                    )
+                }
+            }
+        }
     }
 
     /**
@@ -371,42 +401,17 @@ class YtDownloadService : Service() {
         if (job?.pct == -1) return null                 // the user already cancelled
         var stepped = -5
         return runCatching {
-            NativeDl.download(url, dir, base ?: "dvora-media", referer, userAgent, cookie, headers) { n ->
+            NativeDl.download(
+                url, dir, base ?: "dvora-media", referer, userAgent, cookie, headers,
+                { job?.cancelled == true }              // per-job cancel aborts the loops mid-download
+            ) { n ->
                 job?.pct = n
-                if (n / 5 != stepped / 5) {             // refresh the summary notification per 5%
+                if (n / 5 != stepped / 5) {             // refresh the job's own notification per 5%
                     stepped = n
-                    post(summary())
+                    job?.let { postJob(it, base) }
                 }
             }
         }.getOrNull()
-    }
-
-    /** the batch summary — the first job's progress in front, the count when several run. */
-    private fun summary(): Notification {
-        val run = YtCtl.running()
-        val text = when {
-            run.isEmpty() -> ""
-            run.size == 1 -> "${run[0].pct}% · ${run[0].url.take(110)}"
-            else -> getString(R.string.yt_multi, run.size) + " · " + run.joinToString(", ") { "${it.pct}%" }
-        }
-        return NotificationCompat.Builder(applicationContext, CHANNEL)
-            .setContentTitle(getString(R.string.yt_down))
-            .setContentText(text)
-            .setSmallIcon(android.R.drawable.stat_sys_download)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setProgress(100, (run.minOfOrNull { it.pct } ?: 0).coerceIn(0, 99), run.size > 1)
-            .addAction(
-                NotificationCompat.Action.Builder(
-                    android.R.drawable.ic_menu_revert,
-                    getString(R.string.yt_cancel),
-                    cancelPi()
-                ).build()
-            )
-            .setContentIntent(appIntent())
-            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-            .build()
     }
 
     private fun post(n: Notification) {
@@ -419,52 +424,156 @@ class YtDownloadService : Service() {
         }
     }
 
-    private fun fg(n: Notification) {
+    /** one notification PER download — its own progress bar + its own cancel action. */
+    private fun jobNote(job: YtCtl.Job, name: String?): Notification =
+        NotificationCompat.Builder(applicationContext, CHANNEL)
+            .setContentTitle(name?.takeIf { it.isNotBlank() } ?: getString(R.string.yt_down))
+            .setContentText("${job.pct.coerceIn(0, 99)}% · ${job.url.take(90)}")
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setProgress(100, job.pct.coerceIn(0, 99), false)
+            .addAction(
+                NotificationCompat.Action.Builder(
+                    android.R.drawable.ic_menu_revert,
+                    getString(R.string.yt_cancel),
+                    cancelPi(job.proc)
+                ).build()
+            )
+            .setContentIntent(appIntent())
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .build()
+
+    private fun postJob(job: YtCtl.Job, name: String?) {
+        noteIds.add(job.noteId)
+        if (can()) {
+            try {
+                val n = jobNote(job, name)
+                last = n
+                nm.notify(job.noteId, n)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /** the job's own success notification — tap it → the folder in the Files app. */
+    private fun jobDone(job: YtCtl.Job, name: String, dir: File) {
+        perJobPosted++
+        noteIds.remove(job.noteId)
+        val n = NotificationCompat.Builder(applicationContext, CHANNEL)
+            .setContentTitle(getString(R.string.yt_done))
+            .setContentText(name)
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setProgress(100, 100, false)
+            .setAutoCancel(true)
+            .setContentIntent(folderIntent(dir))
+            .setCategory(NotificationCompat.CATEGORY_STATUS)
+            .build()
+        if (can()) {
+            try {
+                nm.notify(job.noteId, n)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    private var fgId = ID          // the notification id currently bound to the foreground service
+
+    /** the job's own notification IS the foreground one — no separate summary exists. */
+    private fun fg(id: Int, n: Notification) {
+        fgId = id
         last = n
         try {
             if (Build.VERSION.SDK_INT >= 34) {
-                startForeground(ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING)
+                startForeground(id, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROCESSING)
             } else if (Build.VERSION.SDK_INT >= 26) {
-                startForeground(ID, n)
+                startForeground(id, n)
             }
         } catch (_: Exception) {
         }
     }
 
-    /** the batch's last job ended — swap the foreground note for the finished one and release. */
+    /** the batch's last job ended — sweep temp files, swap the foreground note, release. */
     private fun finishBatch() {
         if (!finishing.compareAndSet(false, true)) {
             stopSelf()
             return
         }
         val dir = lastDir ?: File(Environment.getExternalStorageDirectory(), "Download/dvora")
-        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        // DETACH, not REMOVE — the fg-bound note is the job's own DONE note by now;
+        // removing it would yank the finished notification away
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_DETACH)
+        // leftover progress notes of cancelled jobs die here; done/fail notes manage their own ids
+        noteIds.forEach { runCatching { nm.cancel(it) } }
+        noteIds.clear()
+        // stale temp sweep FIRST (its transient note uses ID, then cancels it) —
+        // .dvoraPart leftovers + yt-dlp partials; files touched <60s ago are never raced
+        cleanTemp(dir)
+        // every job already posted its own done/fail note — a batch-wide one would
+        // just duplicate them in the shade; only orphan batches (service restart) need it
         if (saved > 0 || failed > 0) {
-            val n = if (saved > 0) {
-                NotificationCompat.Builder(applicationContext, CHANNEL)
-                    .setContentTitle(getString(R.string.yt_done))
-                    .setContentText(dir.name)
-                    .setSmallIcon(android.R.drawable.stat_sys_download)
-                    .setProgress(100, 100, false)
-                    .setAutoCancel(true)
-                    .setContentIntent(folderIntent(dir))     // pressing it → the folder with the saved media
-                    .setCategory(NotificationCompat.CATEGORY_STATUS)
-                    .build()
-            } else {
-                NotificationCompat.Builder(applicationContext, CHANNEL)
-                    .setContentTitle(getString(R.string.yt_err_title))
-                    .setContentText(getString(R.string.yt_down))
-                    .setSmallIcon(android.R.drawable.stat_sys_download)
-                    .setAutoCancel(true)
-                    .setContentIntent(appIntent())
-                    .build()
+            if (perJobPosted == 0) {
+                val n = if (saved > 0) {
+                    NotificationCompat.Builder(applicationContext, CHANNEL)
+                        .setContentTitle(getString(R.string.yt_done))
+                        .setContentText(dir.name)
+                        .setSmallIcon(android.R.drawable.stat_sys_download)
+                        .setProgress(100, 100, false)
+                        .setAutoCancel(true)
+                        .setContentIntent(folderIntent(dir))     // pressing it → the folder with the saved media
+                        .setCategory(NotificationCompat.CATEGORY_STATUS)
+                        .build()
+                } else {
+                    NotificationCompat.Builder(applicationContext, CHANNEL)
+                        .setContentTitle(getString(R.string.yt_err_title))
+                        .setContentText(getString(R.string.yt_down))
+                        .setSmallIcon(android.R.drawable.stat_sys_download)
+                        .setAutoCancel(true)
+                        .setContentIntent(appIntent())
+                        .build()
+                }
+                post(n)
             }
-            post(n)
         }
         // a pure-cancel batch posts nothing — the user already saw the cancelled toast
         saved = 0
         failed = 0
+        perJobPosted = 0
         stopSelf()     // finished — the notification stays; only cancel / done may close it
+    }
+
+    /**
+     * Sweeps the save dir for stale temp files — `.dvoraPart` parts, yt-dlp `.part`
+     * partials, `.ytdl` fragments, orphan `.f###.ext` pre-merge halves — under a
+     * short "deleting temp files" note. Files touched <60s ago are skipped so an
+     * active download is never raced.
+     */
+    private fun cleanTemp(dir: File) {
+        val n = NotificationCompat.Builder(applicationContext, CHANNEL)
+            .setContentTitle(getString(R.string.yt_cleaning))
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setProgress(0, 0, true)
+            .setOngoing(true)
+            .build()
+        if (can()) runCatching { nm.notify(ID, n) }
+        try {
+            val now = System.currentTimeMillis()
+            runCatching { dir.listFiles() }.getOrDefault(emptyArray())
+                .filter { f ->
+                    val name = f.name
+                    (name.endsWith(".dvoraPart") || name.endsWith(".part") || name.endsWith(".ytdl") ||
+                        name.endsWith(".tmp") || Regex("""\.f\d+\.[A-Za-z0-9]+$""").containsMatchIn(name)) &&
+                        f.lastModified() < now - 60_000
+                }
+                .forEach { runCatching { it.delete() } }
+            Thread.sleep(1500)          // let the note read for a beat before it vanishes
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+        } catch (_: Exception) {
+        } finally {
+            runCatching { nm.cancel(ID) }
+        }
     }
 
     /** swipe-proof progress — the notification comes straight back on the swipe. */
@@ -487,6 +596,13 @@ class YtDownloadService : Service() {
                 YoutubeDL.getInstance().destroyProcessById(j.proc)
             } catch (_: Exception) {
             }
+        }
+        // a cancelled batch leaves the fg-bound progress note stale — kill it + the
+        // leftovers; a FINISHED batch detached its notes, they manage themselves
+        if (!finishing.get()) {
+            runCatching { nm.cancel(fgId) }
+            noteIds.forEach { runCatching { nm.cancel(it) } }
+            noteIds.clear()
         }
         super.onDestroy()
     }

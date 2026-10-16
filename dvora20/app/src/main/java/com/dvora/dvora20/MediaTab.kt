@@ -208,13 +208,17 @@ fun MediaTab() {
     fun openFolder() {
         val dir = cur ?: ytSaveDir(context) ?: return
         try {
-            context.startActivity(
-                Intent(Intent.ACTION_VIEW)
-                    .setDataAndType(Uri.fromFile(dir), "resource/folder")
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
+            context.startActivity(folderOpenIntent(context, dir))
         } catch (_: Exception) {
-            Toast.makeText(context, dir.path, Toast.LENGTH_LONG).show()
+            // last resort — the system Downloads screen, then the raw path
+            try {
+                context.startActivity(
+                    Intent(android.app.DownloadManager.ACTION_VIEW_DOWNLOADS)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            } catch (_: Exception) {
+                Toast.makeText(context, dir.path, Toast.LENGTH_LONG).show()
+            }
         }
     }
 

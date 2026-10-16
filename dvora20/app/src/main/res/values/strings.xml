@@ -94,6 +94,8 @@
     <string name="rs_req">requests</string>
     <string name="rs_blocked">blocked</string>
     <string name="rs_empty">nothing requested on this page yet</string>
+    <string name="rs_clear">clear this page\'s requests + captured media</string>
+    <string name="rs_clear_q">clear this page\'s data?</string>
 
     <!-- yt-dlp media download -->
     <string name="yt_picker">media to download</string>
@@ -113,6 +115,7 @@
     <string name="yt_sheet_rest">more media on this page</string>
     <string name="rs_search">search requests…</string>
     <string name="dl_confirm_title">download this media?</string>
+    <string name="yt_cleaning">deleting temp files…</string>
     <string name="yt_parts">%1$d parts</string>
     <string name="yt_seg_hint">segment fragment only — pick the playlist/master (.m3u8 / .mpd) row on top for the full video</string>
     <string name="yt_folder_lbl">MEDIA DOWNLOAD LOCATION</string>

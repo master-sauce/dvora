@@ -92,6 +92,35 @@ import kotlinx.coroutines.launch
 const val BROWSER_HOME = "https://duckduckgo.com/"
 
 /**
+ * Opens a folder in the system Files app (DocumentsUI via ExternalStorageProvider).
+ * `resource/folder` + file:// stopped resolving on modern Android — that's why the
+ * old open-folder buttons did nothing. Falls back to the legacy view, then the
+ * system Downloads screen.
+ */
+fun folderOpenIntent(context: Context, dir: File): Intent {
+    val root = Environment.getExternalStorageDirectory().absolutePath
+    val rel = dir.absolutePath.removePrefix(root).trimStart('/')
+    val docId = if (rel.isEmpty()) "primary:" else "primary:$rel"
+    val docUri = try {
+        android.provider.DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", docId)
+    } catch (_: Exception) {
+        null
+    }
+    if (docUri != null) {
+        val i = Intent(Intent.ACTION_VIEW)
+            .setDataAndType(docUri, android.provider.DocumentsContract.Document.MIME_TYPE_DIR)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (i.resolveActivity(context.packageManager) != null) return i
+    }
+    val legacy = Intent(Intent.ACTION_VIEW)
+        .setDataAndType(Uri.fromFile(dir), "resource/folder")
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    if (legacy.resolveActivity(context.packageManager) != null) return legacy
+    return Intent(android.app.DownloadManager.ACTION_VIEW_DOWNLOADS)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+}
+
+/**
  * Where yt-dlp stores captured media — the picker-chosen folder from the
  * browser settings tab (prefs `yt_dir`), defaulting to `Download/dvora`.
  * Falls back to the app-private external files dir if nothing is writable.
@@ -349,14 +378,20 @@ fun BrowserScreen(
         val fromStore = SnifferStore.all().map { c ->
             SniffRow(
                 url = c.url,
-                label = if (c.kind == "blob") "BLOB" else c.kind.uppercase(),
+                label = when {
+                    c.kind == "blob" -> "BLOB"
+                    c.master -> "MASTER"        // the variant list — THE entry point for the full video
+                    else -> c.kind.uppercase()
+                },
                 size = c.size,
                 name = c.filename,
                 isSegment = isSegment(c.url),
                 isPlaylist = c.kind == "m3u8" || c.kind == "mpd",
                 isBlob = c.kind == "blob",
                 duration = c.duration,
-                parts = c.parts
+                parts = c.parts,
+                isMaster = c.master,
+                qualities = c.qualities
             )
         }
         val known = fromStore.mapTo(mutableSetOf()) { it.url.lowercase().substringBefore('#') }
@@ -419,7 +454,7 @@ fun BrowserScreen(
             .toList()
         return (fromStore + extras)
             .distinctBy { it.url.lowercase().substringBefore('#') }
-            .sortedBy { row -> when { row.isPlaylist -> 0; row.isSegment -> 2; else -> 1 } }
+            .sortedBy { row -> when { row.isMaster -> 0; row.isPlaylist -> 1; row.isSegment -> 3; else -> 2 } }
     }
 
     fun fmtSize(bytes: Long): String = when {
@@ -492,13 +527,17 @@ fun BrowserScreen(
     fun openDir(dir: File? = null) {
         val d = dir ?: ytSaveDir(context) ?: return
         try {
-            context.startActivity(
-                Intent(Intent.ACTION_VIEW)
-                    .setDataAndType(Uri.fromFile(d), "resource/folder")
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
+            context.startActivity(folderOpenIntent(context, d))
         } catch (_: Exception) {
-            Toast.makeText(context, d.path, Toast.LENGTH_LONG).show()
+            // last resort — the system Downloads screen, then the raw path
+            try {
+                context.startActivity(
+                    Intent(android.app.DownloadManager.ACTION_VIEW_DOWNLOADS)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            } catch (_: Exception) {
+                Toast.makeText(context, d.path, Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -734,6 +773,7 @@ fun BrowserScreen(
                                     Text(
                                         listOfNotNull(
                                             r.label,
+                                            r.qualities?.takeIf { it.isNotEmpty() },
                                             fmtDur(r.duration).takeIf { it.isNotEmpty() },
                                             if (r.parts > 0) context.getString(R.string.yt_parts, r.parts) else null,
                                             fmtSize(r.size).takeIf { it.isNotEmpty() }
@@ -817,6 +857,8 @@ fun BrowserScreen(
                                     IconButton(
                                         onClick = {
                                             YtCtl.cancel(context, job)     // this job only — the rest keep running
+                                            // and its notification dies with it, not stuck at some stale %
+                                            runCatching { androidx.core.app.NotificationManagerCompat.from(context).cancel(job.noteId) }
                                             Toast.makeText(context, localeStr(context, R.string.yt_cancelled), Toast.LENGTH_SHORT).show()
                                         },
                                         modifier = Modifier.size(28.dp)
@@ -856,6 +898,7 @@ fun BrowserScreen(
                                     Text(
                                         listOfNotNull(
                                             r.label,
+                                            r.qualities?.takeIf { it.isNotEmpty() },
                                             fmtDur(r.duration).takeIf { it.isNotEmpty() },
                                             if (r.parts > 0) context.getString(R.string.yt_parts, r.parts) else null,
                                             fmtSize(r.size).takeIf { it.isNotEmpty() }
@@ -967,10 +1010,24 @@ fun BrowserScreen(
                         .background(headerBg)
                 ) {
                     Icon(
-                        Icons.Default.Link,
+                        Icons.Default.Share,
                         null,
                         tint = if (urlEditing) BeeColors.FoundGreen else BeeColors.HoneyGold,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier
+                            .size(16.dp)
+                            .clickable {
+                                // the android share sheet for the current url
+                                runCatching {
+                                    context.startActivity(
+                                        Intent.createChooser(
+                                            Intent(Intent.ACTION_SEND)
+                                                .setType("text/plain")
+                                                .putExtra(Intent.EXTRA_TEXT, address),
+                                            null
+                                        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    )
+                                }
+                            }
                     )
                     Spacer(Modifier.width(8.dp))
                     OutlinedTextField(
@@ -1174,6 +1231,12 @@ fun BrowserScreen(
                     lifetime = repo.engine.lifetime,
                     onMedia = { ytPicker = true },
                     onDownload = { startYt(it) },
+                    onClear = {
+                        // wipe this page's request log + captured media list
+                        repo.engine.newPage()
+                        SnifferStore.newPage()
+                        resTick++
+                    },
                     onClose = { sheetVisible = false }
                 )
             }
@@ -1209,6 +1272,7 @@ private fun ResourceSheet(
     lifetime: Long,
     onMedia: (String) -> Unit,
     onDownload: (String) -> Unit,
+    onClear: () -> Unit,
     onClose: () -> Unit
 ) {
     val textColor = BeeColors.DarkOnSurface
@@ -1223,6 +1287,7 @@ private fun ResourceSheet(
     var filter by remember { mutableStateOf("all") }
     var query by remember { mutableStateOf("") }              // free-text search across every request
     var confirm by remember { mutableStateOf<String?>(null) } // long-pressed url awaiting download confirm
+    var confirmClear by remember { mutableStateOf(false) }     // the trash button's wipe confirm
 
     val shown = remember(log, filter, query) {
         val base = when (filter) {
@@ -1253,6 +1318,9 @@ private fun ResourceSheet(
                     color = subColor,
                     maxLines = 1
                 )
+            }
+            IconButton(onClick = { confirmClear = true }) {
+                Icon(Icons.Default.Delete, contentDescription = L(R.string.rs_clear), tint = BeeColors.DeepAmber)
             }
             IconButton(onClick = onClose) {
                 Icon(Icons.Default.Close, contentDescription = L(R.string.cd_close), tint = BeeColors.DeepAmber)
@@ -1292,7 +1360,7 @@ private fun ResourceSheet(
         OutlinedTextField(
             value = query,
             onValueChange = { query = it },
-            modifier = Modifier.fillMaxWidth().height(46.dp),
+            modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             textStyle = TextStyle(fontSize = 12.sp, color = textColor),
             placeholder = {
@@ -1363,6 +1431,26 @@ private fun ResourceSheet(
         }
     }
 
+    // the trash button — wiping the page's request log + captured media needs an explicit yes
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            containerColor = BeeColors.DarkComb,
+            title = { Text(L(R.string.rs_clear_q), color = BeeColors.HoneyGold) },
+            text = { Text(L(R.string.rs_clear), color = textColor, fontSize = 11.sp) },
+            confirmButton = {
+                TextButton(onClick = { confirmClear = false; onClear() }) {
+                    Text(L(R.string.ok), color = BeeColors.FoundGreen)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmClear = false }) {
+                    Text(L(R.string.cancel), color = BeeColors.DeepAmber)
+                }
+            }
+        )
+    }
+
     // long-press → explicit confirm before the url joins the download queue
     confirm?.let { u ->
         AlertDialog(
@@ -1395,7 +1483,12 @@ private fun isSegment(u: String): Boolean {
 /** notification cancel action — kills the yt-dlp process + stops the download service. */
 class YtCancelReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
-        YtCtl.cancel(context)
+        val proc = intent?.getStringExtra("proc")
+        if (proc.isNullOrBlank()) YtCtl.cancel(context)               // cancel-all (in-app stop button)
+        else YtCtl.byProc(proc)?.let {
+            YtCtl.cancel(context, it)                                  // this download only…
+            runCatching { androidx.core.app.NotificationManagerCompat.from(context).cancel(it.noteId) }   // …and its note
+        }
         Toast.makeText(context, "cancelled", Toast.LENGTH_SHORT).show()
     }
 }
