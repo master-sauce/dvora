@@ -33,7 +33,8 @@ import com.dvora.dvora20.adblock.SnifferStore
  *
  * Incognito tabs turn off every persistent store the WebView can touch —
  * cookies (app-wide accept is toggled off while any incognito tab lives),
- * DOM storage, database, form data, cache — and die with their WebView.
+ * DOM storage, database, form data, cache — die with the browser screen,
+ * and never report their pages to HistoryStore.
  */
 class WebTab(
     context: Context,
@@ -109,12 +110,20 @@ class WebTab(
         chrome.onFileChooser = { cb, params -> onPick(cb, params) }
         chrome.onVideo = { v, cb -> video = v to cb }
         chrome.onVideoExited = { video = null }
-        chrome.onTitle = { if (it.isNotBlank()) pageTitle = it }
+        chrome.onTitle = {
+            if (it.isNotBlank()) {
+                pageTitle = it
+                if (!incognito) HistoryStore.setTitle(address, it)   // incognito pages never record
+            }
+        }
         chrome.onProgress = { progress = it; navTick++ }
         chrome.onIcon = { favicon = it }
         client.onUrl = { address = it; navTick++ }
         // the real-time address fix: every committed url incl. SPA pushState lands here
-        client.onVisited = { url -> if (url != address) { address = url; navTick++ } }
+        client.onVisited = { url ->
+            if (!incognito) HistoryStore.add(url)   // history keeps every committed page — incognito never records
+            if (url != address) { address = url; navTick++ }
+        }
         client.onPageStart = { host, url ->
             video?.let { it.second.onCustomViewHidden() }   // page changed → leave fullscreen video
             video = null
