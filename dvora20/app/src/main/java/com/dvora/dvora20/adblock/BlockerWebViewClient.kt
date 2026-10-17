@@ -38,6 +38,9 @@ class BlockerWebViewClient(
 
     // ── UI callbacks ──────────────────────────────────────────────────────────
     var onUrl: (String) -> Unit = {}
+    // every COMMITTED url — navs, redirects AND in-page history.pushState/replaceState;
+    // the only hook that fires for SPA route changes, so the address bar stays live
+    var onVisited: (String) -> Unit = {}
     var onPageStart: (String, String) -> Unit = { _, _ -> }    // (page doc host, url), after counters were reset
     var onPageEnd: () -> Unit = {}
     var onBlocked: () -> Unit = {}              // page-block counter just moved → refresh badge
@@ -268,7 +271,16 @@ class BlockerWebViewClient(
 
     override fun onPageFinished(view: WebView?, url: String?) {
         repo.flushLifetime()           // keep the persisted counter current
+        // the final committed url — catches redirect tails onPageStarted never reported
+        if (!url.isNullOrBlank()) onVisited(url)
         onPageEnd()
+    }
+
+    // SPA history.pushState/replaceState + every committed navigation — fires here and
+    // NOWHERE else, so without this hook the address bar goes stale on modern sites
+    override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
+        if (!url.isNullOrBlank()) onVisited(url)
+        super.doUpdateVisitedHistory(view, url, isReload)
     }
 
     // ── SSL — user dialog, never silently proceed ─────────────────────────────

@@ -21,6 +21,14 @@
     <string name="cd_shield">Blocked requests — details</string>
     <string name="cd_close">Close</string>
     <string name="cd_refresh">Update this list now</string>
+    <string name="cd_newtab">New tab</string>
+    <string name="cd_incognito">New incognito tab</string>
+    <string name="cd_close_tab">Close tab</string>
+    <string name="cd_history">Browsing history</string>
+    <string name="hist_title">History</string>
+    <string name="hist_empty">No pages recorded yet — incognito pages are never recorded</string>
+    <string name="hist_clear_q">Clear history?</string>
+    <string name="hist_clear_msg">Every recorded page url will be deleted. Incognito pages were never recorded.</string>
 
     <!-- settings tabs -->
     <string name="tab_shows">Shows</string>

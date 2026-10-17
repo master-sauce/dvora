@@ -10,21 +10,17 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
 import android.util.Log
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
-import android.view.View
+import android.view.ViewGroup
 import android.webkit.CookieManager
-import android.webkit.DownloadListener
-import android.webkit.SslErrorHandler
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
-import android.webkit.WebSettings
-import android.webkit.WebView
+import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -39,6 +35,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -65,19 +62,16 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.dvora.dvora20.adblock.BlockerChromeClient
 import com.dvora.dvora20.adblock.BlockerEngine
-import com.dvora.dvora20.adblock.BlockerWebViewClient
-import com.dvora.dvora20.adblock.CapturedMedia
 import com.dvora.dvora20.adblock.ListRepo
 import com.dvora.dvora20.adblock.Media
 import com.dvora.dvora20.adblock.ResourceProbe
 import com.dvora.dvora20.adblock.Sniff
 import com.dvora.dvora20.adblock.SniffName
-import com.dvora.dvora20.adblock.SnifferJsInterface
 import com.dvora.dvora20.adblock.SnifferStore
 import com.dvora.dvora20.adblock.SniffRow
 import com.dvora.dvora20.adblock.Whitelist
@@ -138,10 +132,12 @@ fun ytSaveDir(context: Context): File? {
 
 /**
  * The full-screen, in-app, bee-themed browser with the built-in
- * ad/tracker blocker: toolbar (history / reload / favicon+title / theme),
- * address bar with GO, load-progress indicator, shield button with a
- * per-page blocked-count badge, per-site whitelist panel, SSL user dialog,
- * `<input type="file">` picker, and DownloadManager downloads.
+ * ad/tracker blocker: multi-tab strip (normal + 🕵 incognito tabs),
+ * toolbar (history / reload / favicon+title / theme), address bar with
+ * GO that follows every committed url live, load-progress indicator,
+ * shield button with a per-page blocked-count badge, per-site whitelist
+ * panel, SSL user dialog, `<input type="file">` picker, and
+ * DownloadManager downloads.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -166,25 +162,21 @@ fun BrowserScreen(
     val subColor = BeeColors.DarkOnSurface.copy(alpha = 0.7f)
 
     // ── screen state ──────────────────────────────────────────────────────────
-    var address by remember { mutableStateOf(initialUrl.ifBlank { BROWSER_HOME }) }
-    var pageTitle by remember { mutableStateOf("") }
-    var favicon by remember { mutableStateOf<Bitmap?>(null) }
-    var progress by remember { mutableIntStateOf(0) }
-    var pageHost by remember { mutableStateOf("") }
-    var blocked by remember { mutableIntStateOf(0) }
-    var blockLog by remember { mutableStateOf<List<BlockerEngine.BlockRecord>>(emptyList()) }
-    var ssl by remember { mutableStateOf<Pair<Uri?, SslErrorHandler>?>(null) }
-    var pendingChooser by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
+    // per-page state (address / title / favicon / progress / ssl / video) lives on each
+    // WebTab; the screen keeps only shared chrome — tabs list, active index, url row,
+    // panels, dialogs and the yt-dlp machinery
     var sheetVisible by remember { mutableStateOf(false) }
-    var crossNav by remember { mutableStateOf<Pair<String, String>?>(null) }   // (url, host) awaiting confirm
+    var crossNav by remember { mutableStateOf<Triple<WebTab, String, String>?>(null) }   // (tab, url, host) awaiting confirm
     var resTick by remember { mutableIntStateOf(0) }                           // bumps live while the panel is open
     var barVisible by remember { mutableStateOf(true) }                         // hide/show the bottom toolbar
     var urlBar by remember { mutableStateOf(false) }                             // editable url/search row below the toolbar
     var urlDraft by remember { mutableStateOf("") }                               // field text while the user edits
     var urlEditing by remember { mutableStateOf(false) }                           // true once the row text is user-owned
+    var historyOpen by remember { mutableStateOf(false) }                           // the 🕘 history dialog
+    var histClear by remember { mutableStateOf(false) }                             // history wipe awaiting confirm
     val urlFocus = remember { FocusRequester() }
+    var pendingChooser by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }   // active <input type=file> picker
     var hasStorage by remember { mutableStateOf(Build.VERSION.SDK_INT >= 29) }
-    var video by remember { mutableStateOf<Pair<View, WebChromeClient.CustomViewCallback>?>(null) }   // fullscreen video overlay
 
     // the whole site's whitelist — kept live; the interceptor reads this supplier per request
     var allowed by remember { mutableStateOf(Whitelist.hosts(context)) }
@@ -202,27 +194,11 @@ fun BrowserScreen(
     var ytErr by remember { mutableStateOf<Pair<String, String>?>(null) }  // (url, failure text) dialog queue
     var mgr by remember { mutableStateOf(Build.VERSION.SDK_INT < 30 || Environment.isExternalStorageManager()) }
 
-    // ── one-time objects ──────────────────────────────────────────────────────
-    val webView = remember {
-        WebView(context).apply {
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            settings.databaseEnabled = true
-            settings.builtInZoomControls = true
-            settings.displayZoomControls = false
-            settings.cacheMode = WebSettings.LOAD_DEFAULT
-            settings.mediaPlaybackRequiresUserGesture = false
-            settings.setGeolocationEnabled(false)
-            setBackgroundColor(0xFF1C1500.toInt())
-        }
-    }
-    // the injected sniffer script talks to the app through this bridge — built after the
-    // WebView so the UA provider can read the WebView's real User-Agent string
-    val jsInterface = remember { SnifferJsInterface(context) { webView.settings.userAgentString } }
-    val client = remember { BlockerWebViewClient(context, repo) { allowed.toSet() } }.also { c ->
-        c.injectSniffer = { wv -> runCatching { wv.evaluateJavascript(SnifferJsInterface.SCRIPT, null) } }
-    }
-    val chrome = remember { BlockerChromeClient() }
+    // ── tabs ──────────────────────────────────────────────────────────────────
+    // app-session store: regular tabs survive leaving / re-entering the browser
+    // screen for as long as the app is open; incognito tabs die with the screen
+    val tabs = TabCtl.tabs
+    var active by TabCtl.activeState
 
     // ── launchers ─────────────────────────────────────────────────────────────
     val dlPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -268,6 +244,7 @@ fun BrowserScreen(
 
     /** kick off a media download — the foreground service runs up to YtCtl.MAX of them concurrently. */
     fun startYt(given: String) {
+        val t = tabs.getOrNull(active) ?: return
         val url = given.substringBefore('#')     // page hash fragments are noise for yt-dlp
         // 1DM resolves media urls to the END (redirects already followed by the probe) before
         // any engine sees them — the row keeps the original, the engine gets the final url
@@ -311,7 +288,7 @@ fun BrowserScreen(
         }
         // the saved file takes the current window title — every capture belongs to this page;
         // '%' must die too — yt-dlp's -o is a template and a bare % breaks it
-        val title = pageTitle.replace(Regex("[\\\\/:*?\"<>|%]"), "_").trim().take(120).takeIf { it.isNotBlank() }
+        val title = t.pageTitle.replace(Regex("[\\\\/:*?\"<>|%]"), "_").trim().take(120).takeIf { it.isNotBlank() }
         // registers the job (unique output name + own process id) — null = the queue is full
         val job = YtCtl.add(target, dir, title) ?: run {
             Toast.makeText(context, localeStr(context, R.string.yt_queue_full), Toast.LENGTH_SHORT).show()
@@ -322,7 +299,7 @@ fun BrowserScreen(
         ytUrl = target
         // 1DM-style header replay: prefer the exact referer/cookie the page used for this
         // resource (from the sniffer capture), fall back to the page itself + cookie jar
-        val referer = cap?.referer ?: address.takeIf { it.startsWith("http") }
+        val referer = cap?.referer ?: t.address.takeIf { it.startsWith("http") }
         val cookie = cap?.cookie ?: CookieManager.getInstance().getCookie(url)
         // the page's EXACT request headers (urlHeadersCache) + the player's own JS-set
         // headers (auth tokens, custom X-* — 1DM's additionalHeaders) — the engines
@@ -336,7 +313,7 @@ fun BrowserScreen(
                     !it.key.equals("Accept-Encoding", true) && it.value.isNotEmpty()
             }
             .joinToString("\n") { "${it.key}: ${it.value}" }
-        YtDownloadService.start(context, target, dir, job.baseName, referer, webView.settings.userAgentString, cookie, job.proc, headersCsv)
+        YtDownloadService.start(context, target, dir, job.baseName, referer, t.webView.settings.userAgentString, cookie, job.proc, headersCsv)
     }
 
 
@@ -357,7 +334,7 @@ fun BrowserScreen(
                 // blob URLs can't go to yt-dlp — the JS side fetches the in-memory Blob,
                 // base64-chunks it to the bridge, native writes the file
                 val js = "(window.__dvoraSaveBlob && window.__dvoraSaveBlob('" + r.url + "'))"
-                runCatching { webView.evaluateJavascript(js, null) }
+                runCatching { tabs.getOrNull(active)?.webView?.evaluateJavascript(js, null) }
                 close()
             }
             r.isSegment -> {
@@ -367,7 +344,7 @@ fun BrowserScreen(
                     ?: if (r.url.lowercase().contains(".mp4/")) {
                         r.url.substringBeforeLast('/') + "/index.m3u8"
                     } else null
-                startYt(pl ?: address)
+                tabs.getOrNull(active)?.let { tab -> startYt(pl ?: tab.address) }
             }
             else -> startYt(r.url)
         }
@@ -404,6 +381,8 @@ fun BrowserScreen(
             "woff", "woff2", "ttf", "otf", "eot", "xml", "txt", "html", "htm", "json", "map"
         )
         run {
+            val pageUrl = tabs.getOrNull(active)?.address?.takeIf { it.startsWith("http") }
+            val ua = tabs.getOrNull(active)?.webView?.settings?.userAgentString
             val cands = repo.engine.reqSnapshot().filter { !it.blocked }
                 .filter { it.tag == "media" || it.tag == "api" || it.tag == "req" }
             (cands.filter { it.tag == "media" } + cands.filter { it.tag != "media" }.asReversed())
@@ -414,9 +393,9 @@ fun BrowserScreen(
                     SnifferStore.markProbe(r.url) {
                         ResourceProbe.probeAsync(
                             r.url,
-                            address.takeIf { it.startsWith("http") },
+                            pageUrl,
                             CookieManager.getInstance().getCookie(r.url),
-                            webView.settings.userAgentString
+                            ua
                         )
                     }
                 }
@@ -437,12 +416,14 @@ fun BrowserScreen(
                 // probe extras once per url per page — fills size/name/duration after redirects;
                 // bare fragments can't enrich (Sniff.kind rejects them) so they burn no probe slot
                 if (!isSegment(u)) {
+                    val pageUrl = tabs.getOrNull(active)?.address?.takeIf { it.startsWith("http") }
+                    val ua = tabs.getOrNull(active)?.webView?.settings?.userAgentString
                     SnifferStore.markProbe(u) {
                         ResourceProbe.probeAsync(
                             u,
-                            address.takeIf { it.startsWith("http") },
+                            pageUrl,
                             CookieManager.getInstance().getCookie(u),
-                            webView.settings.userAgentString
+                            ua
                         )
                     }
                 }
@@ -474,6 +455,11 @@ fun BrowserScreen(
         val s = t % 60
         return if (h > 0) String.format("%d:%02d:%02d", h, m, s) else String.format("%d:%02d", m, s)
     }
+
+    /** history row timestamp — short locale date + time */
+    fun fmtTime(at: Long): String =
+        java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT)
+            .format(java.util.Date(at))
 
     // resume the yt download that waited on the storage prompt — after startYt is declared above it
     LaunchedEffect(mgr, hasStorage, ytPending) {
@@ -507,7 +493,8 @@ fun BrowserScreen(
      * what is loading even if the page client reports nothing yet.
      */
     fun submitUrl() {
-        val raw = if (urlEditing) urlDraft.trim() else address.trim()
+        val t = tabs.getOrNull(active) ?: return
+        val raw = if (urlEditing) urlDraft.trim() else t.address.trim()
         if (raw.isEmpty()) return
         // a url must carry a scheme or a dotted host — bare words / phrases are searches
         val host = raw.substringBefore('/').substringBefore('?').substringBefore('#')
@@ -519,8 +506,7 @@ fun BrowserScreen(
         }
         urlEditing = false
         urlDraft = ""
-        address = target
-        webView.loadUrl(target)
+        t.load(target)
     }
 
     /** opens the downloads folder — [dir] overrides (the done dialog passes the file's own folder). */
@@ -562,8 +548,8 @@ fun BrowserScreen(
                 .setMimeType(mimeType ?: "application/octet-stream")
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                 // 1DM-style header replay — the page's own UA / referer / cookies, not a fake one
-                .addRequestHeader("User-Agent", webView.settings.userAgentString)
-            (address.takeIf { it.startsWith("http") })?.let {
+                .addRequestHeader("User-Agent", tabs.getOrNull(active)?.webView?.settings?.userAgentString ?: "")
+            tabs.getOrNull(active)?.address?.takeIf { it.startsWith("http") }?.let {
                 req.addRequestHeader("Referer", it)
             }
             CookieManager.getInstance().getCookie(url)?.let { req.addRequestHeader("Cookie", it) }
@@ -580,133 +566,127 @@ fun BrowserScreen(
         }
     }
 
-    // ── one-time wiring ───────────────────────────────────────────────────────
-    LaunchedEffect(Unit) {
-        CookieManager.getInstance().setAcceptCookie(true)
-        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
-        if (Build.VERSION.SDK_INT < 29) dlPerm.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+    // ── tab management ────────────────────────────────────────────────────────
 
-        webView.addJavascriptInterface(jsInterface, "JSInterface")     // 1DM's JSInterface bridge
-        webView.webViewClient = client
-        webView.webChromeClient = chrome
-        webView.setDownloadListener(object : DownloadListener {
-            override fun onDownloadStart(
-                url: String, userAgent: String, contentDisposition: String, mimeType: String, contentLength: Long
-            ) {
-                // forced downloads join the capture list (1DM marks these so they never double-list)
-                if (url.startsWith("http")) {
-                    val mime = mimeType ?: ""
-                    SnifferStore.add(
-                        CapturedMedia(
-                            url = url,
-                            kind = SniffName.resolve(url, mime, contentDisposition)
-                                ?.substringAfterLast('.')?.lowercase()?.takeIf { it.isNotEmpty() }
-                                ?: (mime.substringAfter('/').takeIf { it.isNotEmpty() && it != "*" } ?: "file"),
-                            mime = mime,
-                            size = contentLength,
-                            filename = SniffName.resolve(url, mime, contentDisposition),
-                            referer = address.takeIf { it.startsWith("http") },
-                            cookie = null
-                        )
-                    )
-                }
-                enqueueDownload(url, contentDisposition, mimeType)
-            }
-        })
-
-        chrome.onFileChooser = { cb, params -> pendingChooser = cb; pickFile(params) }
-        chrome.onVideo = { v, cb -> video = (v to cb) }
-        chrome.onVideoExited = { video = null }
-        chrome.onTitle = { pageTitle = it }
-        chrome.onProgress = { progress = it }
-        chrome.onIcon = { favicon = it }
-        client.onUrl = { address = it }
-        client.onPageStart = { host, url ->
-            if (video != null) {                           // page changed → leave fullscreen video
-                video?.let { it.second.onCustomViewHidden() }
-                video = null
-            }
-            pageHost = host
-            pageTitle = ""
-            favicon = null
-            blocked = 0
-            blockLog = emptyList()
-            SnifferStore.newPage()                       // 1DM keeps one capture list per page
-            address =
-                url                              // bar always tracks the page actually loaded (redirects / history)
-        }
-        client.onActivity = { if (sheetVisible) resTick++ }
-        client.onCrossNav = { url, host -> crossNav = url to host }
-        client.onPageEnd = {
-            blockLog = repo.engine.blockSnapshot()
-            blocked = repo.engine.pageBlocks
-            // 1DM scans every body it can reach — the page's own DOM too: <video>/<source>
-            // elements and iframes that never issue an XHR still carry captureable media
-            runCatching {
-                webView.evaluateJavascript(
-                    "(function(){try{var h=document.documentElement.outerHTML;" +
-                        "window.JSInterface.scanPage(h.length>2000000?h.substring(0,2000000):h,window.location.href)}catch(e){}})()",
-                    null
-                )
-            }
-        }
-        client.onBlocked = { blocked = repo.engine.pageBlocks }
-        client.onSsl = { uri, handler -> ssl = (uri to handler) }
-
-        webView.loadUrl(address)
+    /**
+     * While ANY incognito tab lives the app-wide cookie jar is closed — restored
+     * the moment the last one dies. WebView cookies are process-global, so this
+     * is the only way to guarantee an incognito tab leaves nothing behind; the
+     * price is that normal tabs pause their cookie sessions while one is open.
+     */
+    fun syncCookies() {
+        CookieManager.getInstance().setAcceptCookie(tabs.none { it.incognito })
     }
 
+    fun newTab(url: String, incognito: Boolean) {
+        tabs.add(
+            WebTab(
+                context, repo, url.ifBlank { BROWSER_HOME }, incognito, { allowed.toSet() },
+                onCrossNav = { tab, u, h -> crossNav = Triple(tab, u, h) },
+                onActivity = { if (sheetVisible) resTick++ },
+                onPick = { cb, params -> pendingChooser = cb; pickFile(params) },
+                onEnqueue = { u, d, m -> enqueueDownload(u, d, m) }
+            )
+        )
+        active = tabs.lastIndex
+        syncCookies()
+    }
 
+    fun closeTab(i: Int) {
+        val t = tabs.getOrNull(i) ?: return
+        tabs.removeAt(i)
+        t.destroy()
+        if (tabs.isEmpty()) {                       // never tab-less — a fresh home tab
+            newTab(BROWSER_HOME, false)
+            return
+        }
+        active = when {
+            i < active -> active - 1                                // same tab stays selected
+            i == active -> active.coerceAtMost(tabs.lastIndex)      // its neighbor slides in
+            else -> active
+        }
+        syncCookies()
+    }
+
+    // entering the browser: restore the session's tabs as they were; a tapped
+    // link (initialUrl ≠ plain home open) opens as its own NEW tab instead
+    var opened by remember { mutableStateOf(false) }
+    if (!opened) {
+        opened = true
+        if (tabs.isEmpty()) newTab(initialUrl.ifBlank { BROWSER_HOME }, false)
+        else if (initialUrl.isNotBlank() && initialUrl != BROWSER_HOME) newTab(initialUrl, false)
+    }
+
+    // leaving the browser screen: incognito tabs die here (never saved, never
+    // recorded); regular tabs keep living in TabCtl for the whole app session
+    DisposableEffect(Unit) {
+        onDispose {
+            TabCtl.dropIncognito()
+            syncCookies()
+        }
+    }
+
+    // ── one-time wiring ───────────────────────────────────────────────────────
+    LaunchedEffect(Unit) {
+        if (Build.VERSION.SDK_INT < 29) dlPerm.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+    }
 
     BackHandler {
         if (sheetVisible) {
             sheetVisible = false; return@BackHandler
         }   // resources panel closes first
-        if (video != null) {                                 // then leave fullscreen video
-            video?.let { it.second.onCustomViewHidden() }
-            video = null
+        val tab = tabs.getOrNull(active)
+        if (tab?.video != null) {                               // then leave fullscreen video
+            tab.video?.let { it.second.onCustomViewHidden() }
             return@BackHandler
         }
-        if (webView.canGoBack()) webView.goBack() else onBack()          // then page history, then exit
+        when {
+            tab != null && tab.webView.canGoBack() -> tab.webView.goBack()    // then page history…
+            tab != null && tabs.size > 1 -> closeTab(active)                    // …then the tab itself…
+            else -> onBack()                                                   // …then exit
+        }
     }
 
     // ── SSL dialog — allow once / go back, never silently proceed ────────────
-    ssl?.let { (uri, handler) ->
-        AlertDialog(
-            onDismissRequest = { ssl = null; handler.cancel() },
+    // ── SSL dialog — allow once / go back, never silently proceed ────────────
+    tabs.getOrNull(active)?.let { tab ->
+        tab.ssl?.let { (uri, handler) ->
+            AlertDialog(
+                onDismissRequest = { tab.ssl = null; handler.cancel() },
 
-            containerColor = BeeColors.DarkComb,
-            title = { Text("\ud83d\udd12 " + L(R.string.ssl_title), color = BeeColors.HoneyGold) },
-            text = {
-                Column {
-                    Text(L(R.string.ssl_body), color = textColor)
-                    Spacer(Modifier.height(8.dp))
-                    Text(uri?.toString() ?: "", color = subColor, fontSize = 11.sp)
+                containerColor = BeeColors.DarkComb,
+                title = { Text("\ud83d\udd12 " + L(R.string.ssl_title), color = BeeColors.HoneyGold) },
+                text = {
+                    Column {
+                        Text(L(R.string.ssl_body), color = textColor)
+                        Spacer(Modifier.height(8.dp))
+                        Text(uri?.toString() ?: "", color = subColor, fontSize = 11.sp)
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { tab.ssl = null; handler.proceed() }) {
+                        Text(
+                            L(R.string.ssl_proceed),
+                            color = BeeColors.DeepAmber
+                        )
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { tab.ssl = null; handler.cancel() }) {
+                        Text(
+                            L(R.string.ssl_cancel),
+                            color = BeeColors.DeepAmber
+                        )
+                    }
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = { ssl = null; handler.proceed() }) {
-                    Text(
-                        L(R.string.ssl_proceed),
-                        color = BeeColors.DeepAmber
-                    )
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { ssl = null; handler.cancel() }) {
-                    Text(
-                        L(R.string.ssl_cancel),
-                        color = BeeColors.DeepAmber
-                    )
-                }
-            }
-        )
+            )
+        }
     }
 
     // ── cross-site confirm — asked whenever a page link would change the site ──
-    crossNav?.let { (url, host) ->
+    crossNav?.let { (navTab, url, host) ->
         AlertDialog(
-            onDismissRequest = { crossNav = null; address = webView.url ?: "" },
+            onDismissRequest = { crossNav = null; navTab.address = navTab.webView.url ?: "" },
 
             containerColor = BeeColors.DarkComb,
             title = { Text(L(R.string.nav_title), color = BeeColors.HoneyGold) },
@@ -725,15 +705,15 @@ fun BrowserScreen(
             confirmButton = {
                 TextButton(onClick = {
                     // follow-up redirects of the approved host must not re-prompt
-                    client.docHost = Uri.parse(url).host?.lowercase() ?: ""
+                    navTab.client.docHost = Uri.parse(url).host?.lowercase() ?: ""
                     crossNav = null
-                    webView.loadUrl(url)
+                    navTab.webView.loadUrl(url)
                 }) {
                     Text(L(R.string.nav_go), color = BeeColors.DeepAmber, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { crossNav = null; address = webView.url ?: "" }) {
+                TextButton(onClick = { crossNav = null; navTab.address = navTab.webView.url ?: "" }) {
                     Text(L(R.string.cancel), color = BeeColors.DeepAmber)
                 }
             }
@@ -993,15 +973,167 @@ fun BrowserScreen(
         )
     }
 
+    // ── 🕘 history — every committed page url of normal tabs, newest on top ──
+    // (incognito pages were never recorded — there is nothing of them anywhere)
+    if (historyOpen) {
+        AlertDialog(
+            onDismissRequest = { historyOpen = false },
+
+            containerColor = BeeColors.DarkComb,
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("🕘 " + L(R.string.hist_title), color = BeeColors.HoneyGold, modifier = Modifier.weight(1f))
+                    IconButton(onClick = { histClear = true }) {
+                        Icon(
+                            Icons.Default.Delete,
+                            contentDescription = L(R.string.rs_clear),
+                            tint = BeeColors.DeepAmber
+                        )
+                    }
+                }
+            },
+            text = {
+                Box(Modifier.heightIn(max = 420.dp)) {
+                    if (HistoryStore.entries.isEmpty()) {
+                        Text(L(R.string.hist_empty), fontSize = 12.sp, color = textColor)
+                    } else {
+                        LazyColumn {
+                            items(HistoryStore.entries) { h ->
+                                Column(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            historyOpen = false
+                                            tabs.getOrNull(active)?.load(h.url)   // opens in the active tab
+                                        }
+                                        .padding(vertical = 6.dp)
+                                ) {
+                                    Text(
+                                        h.title ?: h.host,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = textColor,
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        "${h.url}  ·  ${fmtTime(h.at)}",
+                                        fontSize = 9.sp,
+                                        color = subColor,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { historyOpen = false }) {
+                    Text(L(R.string.cancel), color = BeeColors.DeepAmber)
+                }
+            }
+        )
+    }
+    if (histClear) {
+        ConfirmDeleteDialog(
+            title = L(R.string.hist_clear_q),
+            message = L(R.string.hist_clear_msg),
+            confirmText = L(R.string.ok),
+            onDismiss = { histClear = false },
+            onConfirm = { HistoryStore.clear() }
+        )
+    }
+
     // ── UI ──────────────────────────────────────────────────────────────────────
     // edge-to-edge; the toolbar is a collapsible row at the bottom of the screen
+    val tab = tabs.getOrNull(active) ?: return
     Box(modifier = modifier.fillMaxSize().background(pageBg)) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
+            // ── tab strip: every open tab, tap to select, x to close ──
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth().background(headerBg)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState())
+                ) {
+                    tabs.forEachIndexed { i, t ->
+                        val sel = i == active
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .padding(horizontal = 3.dp, vertical = 3.dp)
+                                .widthIn(min = 64.dp, max = 140.dp)
+                                .background(
+                                    if (sel) BeeColors.HoneyGold else BeeColors.DarkStripe,
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .clickable {
+                                    if (i != active) {
+                                        active = i
+                                        urlEditing = false
+                                    }
+                                }
+                                .padding(start = 6.dp, top = 2.dp, bottom = 2.dp)
+                        ) {
+                            // 🕵 marks an incognito tab; 🌐 holds the spot until a favicon arrives
+                            when {
+                                t.incognito -> Text("🕵", fontSize = 10.sp)
+                                t.favicon != null -> Image(
+                                    t.favicon!!.asImageBitmap(), null,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                else -> Text("🌐", fontSize = 10.sp)
+                            }
+                            Spacer(Modifier.width(4.dp))
+                            Text(
+                                t.pageTitle.ifBlank { t.pageHost.ifBlank { "…" } },
+                                fontSize = 10.sp,
+                                color = if (sel) Color.Black else textColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(Modifier.width(4.dp))
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = L(R.string.cd_close_tab),
+                                tint = if (sel) Color.Black else subColor,
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .clickable { closeTab(i) }
+                            )
+                        }
+                    }
+                }
+                // pinned: new tab / new incognito tab
+                IconButton(onClick = { newTab(BROWSER_HOME, false) }, modifier = Modifier.size(34.dp)) {
+                    Icon(
+                        Icons.Default.Add, L(R.string.cd_newtab),
+                        tint = BeeColors.HoneyGold, modifier = Modifier.size(18.dp)
+                    )
+                }
+                IconButton(onClick = { newTab(BROWSER_HOME, true) }, modifier = Modifier.size(34.dp)) {
+                    Icon(
+                        Icons.Default.VisibilityOff, L(R.string.cd_incognito),
+                        tint = BeeColors.DarkOnSurface, modifier = Modifier.size(18.dp)
+                    )
+                }
+                IconButton(onClick = { historyOpen = true }, modifier = Modifier.size(34.dp)) {
+                    Icon(
+                        Icons.Default.History, L(R.string.cd_history),
+                        tint = BeeColors.HoneyGold, modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+
             // ── top row: live url / search — toggleable by the toolbar button ──
             if (urlBar) {
-                LaunchedEffect(Unit) {
+                LaunchedEffect(active) {
                     urlEditing = false
-                    urlDraft = address
+                    urlDraft = tab.address
                 }
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -1022,7 +1154,7 @@ fun BrowserScreen(
                                         Intent.createChooser(
                                             Intent(Intent.ACTION_SEND)
                                                 .setType("text/plain")
-                                                .putExtra(Intent.EXTRA_TEXT, address),
+                                                .putExtra(Intent.EXTRA_TEXT, tab.address),
                                             null
                                         ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                                     )
@@ -1031,7 +1163,7 @@ fun BrowserScreen(
                     )
                     Spacer(Modifier.width(8.dp))
                     OutlinedTextField(
-                        value = if (urlEditing) urlDraft else address,
+                        value = if (urlEditing) urlDraft else tab.address,
                         onValueChange = { urlEditing = true; urlDraft = it },
                         modifier = Modifier.weight(1f).focusRequester(urlFocus),
                         singleLine = true,
@@ -1056,14 +1188,30 @@ fun BrowserScreen(
                 }
             }
 
+            // the active tab's webview is reparented in/out — every tab keeps its own
+            // renderer, scroll and page state while it sits in the background
             AndroidView(
-                factory = { webView },
+                factory = { FrameLayout(it) },
+                update = { frame ->
+                    val wv = tab.webView
+                    if (wv.parent !== frame) {
+                        (wv.parent as? ViewGroup)?.removeView(wv)
+                        frame.removeAllViews()
+                        frame.addView(
+                            wv,
+                            FrameLayout.LayoutParams(
+                                FrameLayout.LayoutParams.MATCH_PARENT,
+                                FrameLayout.LayoutParams.MATCH_PARENT
+                            )
+                        )
+                    }
+                },
                 modifier = Modifier.weight(1f).fillMaxWidth()
             )
 
-            if (progress < 100) {
+            if (tab.progress < 100) {
                 LinearProgressIndicator(
-                    progress = { progress / 100f },
+                    progress = { tab.progress / 100f },
                     modifier = Modifier.fillMaxWidth().height(4.dp),
                     color = BeeColors.DeepAmber,
                     trackColor = BeeColors.DeepAmber.copy(alpha = 0.2f)
@@ -1121,26 +1269,26 @@ fun BrowserScreen(
                             .padding(horizontal = 2.dp, vertical = 4.dp).background(headerBg)
                     ) {
                         IconButton(
-                            onClick = { if (webView.canGoBack()) webView.goBack() },
-                            enabled = webView.canGoBack()
+                            onClick = { if (tab.canBack()) tab.webView.goBack() },
+                            enabled = tab.canBack()
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowBack, L(R.string.cd_back_page),
-                                tint = if (webView.canGoBack()) BeeColors.HoneyGold else BeeColors.HoneyGold.copy(alpha = 0.3f)
+                                tint = if (tab.canBack()) BeeColors.HoneyGold else BeeColors.HoneyGold.copy(alpha = 0.3f)
                             )
                         }
                         IconButton(
-                            onClick = { if (webView.canGoForward()) webView.goForward() },
-                            enabled = webView.canGoForward()
+                            onClick = { if (tab.canFwd()) tab.webView.goForward() },
+                            enabled = tab.canFwd()
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Filled.ArrowForward, L(R.string.cd_fwd_page),
-                                tint = if (webView.canGoForward()) BeeColors.HoneyGold else BeeColors.HoneyGold.copy(
+                                tint = if (tab.canFwd()) BeeColors.HoneyGold else BeeColors.HoneyGold.copy(
                                     alpha = 0.3f
                                 )
                             )
                         }
-                        IconButton(onClick = { webView.reload() }) {
+                        IconButton(onClick = { tab.webView.reload() }) {
                             Icon(Icons.Default.Refresh, L(R.string.cd_reload), tint = BeeColors.HoneyGold)
                         }
                         IconButton(onClick = onBack) {
@@ -1225,8 +1373,8 @@ fun BrowserScreen(
                 )
             ) {
                 ResourceSheet(
-                    host = pageHost,
-                    log = remember(resTick, sheetVisible) { repo.engine.reqSnapshot() },
+                    host = tab.pageHost,
+                    log = remember(resTick, sheetVisible, active) { repo.engine.reqSnapshot() },
                     blocked = repo.engine.pageBlocks,
                     lifetime = repo.engine.lifetime,
                     onMedia = { ytPicker = true },
@@ -1242,16 +1390,18 @@ fun BrowserScreen(
             }
         }
 
-        // fullscreen video overlay (onShowCustomView) with its own close button
-        video?.let { (v, cb) ->
-            Box(Modifier.fillMaxSize().background(Color.Black)) {
-                AndroidView(factory = { v }, modifier = Modifier.fillMaxSize())
-                IconButton(
-                    onClick = { video = null; cb.onCustomViewHidden() },
-                    modifier = Modifier.statusBarsPadding().align(Alignment.TopEnd).padding(8.dp),
-                    colors = IconButtonDefaults.iconButtonColors(containerColor = Color.Black.copy(alpha = 0.55f))
-                ) {
-                    Icon(Icons.Default.Close, contentDescription = L(R.string.cd_close), tint = Color.White)
+        // fullscreen video overlay (onShowCustomView) of the ACTIVE tab, with its own close button
+        tab.video?.let { (v, cb) ->
+            key(v) {
+                Box(Modifier.fillMaxSize().background(Color.Black)) {
+                    AndroidView(factory = { v }, modifier = Modifier.fillMaxSize())
+                    IconButton(
+                        onClick = { tab.video = null; cb.onCustomViewHidden() },
+                        modifier = Modifier.statusBarsPadding().align(Alignment.TopEnd).padding(8.dp),
+                        colors = IconButtonDefaults.iconButtonColors(containerColor = Color.Black.copy(alpha = 0.55f))
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = L(R.string.cd_close), tint = Color.White)
+                    }
                 }
             }
         }

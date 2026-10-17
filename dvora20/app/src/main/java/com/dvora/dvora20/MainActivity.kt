@@ -353,6 +353,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         BookmarksManager.load(this)
         BookmarksManager.rescheduleAllReminders(this)
+        HistoryStore.load(this)   // persisted browsing history — incognito pages were never recorded
         // yt-dlp + ffmpeg — the in-app browser's media-download feature
         try {
             YoutubeDL.getInstance().init(this)
@@ -385,6 +386,13 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // the browser tabs' WebViews belong to this Activity — the app-session
+        // tab store (regular tabs) must never survive its death
+        TabCtl.destroyAll()
     }
 }
 

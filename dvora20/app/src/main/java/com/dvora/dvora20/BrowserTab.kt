@@ -63,6 +63,7 @@ fun BrowserTab(repo: ListRepo) {
                     WebStorage.getInstance().deleteAllData()
                     File(context.cacheDir, "webview_cache").deleteRecursively()
                     File(context.cacheDir, "webview").deleteRecursively()
+                    HistoryStore.clear()   // the recorded page urls — incognito pages were never in it
                 } catch (_: Exception) {
                 }
             }
