@@ -1459,6 +1459,52 @@ fun SubtitlesScreen(
                 )
             }
             Spacer(Modifier.height(10.dp))
+            // OpenSubtitles — the same Hebrew search on the world's biggest subtitle
+            // archive, opened pre-searched through the app's browser flow. The site sits
+            // behind a bot-wall (Cloudflare JS challenge) that only a real WebView passes,
+            // so this goes as a link instead of a server-side scrape like wizdom.
+            if (searchTerm.isNotBlank()) {
+                val osUrl = "https://www.opensubtitles.org/he/search/sublanguageid-heb/moviename-" +
+                    java.net.URLEncoder.encode(searchTerm.trim(), "UTF-8")
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable { onResult(osUrl) },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkCell)
+                    ),
+                    elevation = CardDefaults.cardElevation(3.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, BeeColors.HoneyGold.copy(alpha = 0.4f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Language, null,
+                            tint = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold)
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "OpenSubtitles",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 14.sp,
+                                color = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
+                            )
+                            Text(
+                                searchTerm.trim(),
+                                fontSize = 11.sp,
+                                color = beeAdapt(Color(0xFF5D4037), BeeColors.DarkOnSurface.copy(alpha = 0.7f))
+                            )
+                        }
+                        Icon(
+                            Icons.Default.OpenInNew, "Open",
+                            tint = beeAdapt(BeeColors.FoundGreen, BeeColors.FoundGreenDark)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+            }
             if (isSearching) {
                 LinearProgressIndicator(
                     Modifier.fillMaxWidth(),
