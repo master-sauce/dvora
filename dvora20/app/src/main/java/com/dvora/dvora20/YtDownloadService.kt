@@ -44,6 +44,9 @@ object YtCtl {
         var pct: Int = 0        // 0..99 running · >=100 done · -3 failed · -1 cancelled
         @Volatile
         var cancelled: Boolean = false   // checked by the native engine's loops mid-download
+
+        /** when the job was registered — cancel only sweeps files newer than this */
+        val startedAt: Long = System.currentTimeMillis()
     }
 
     const val MAX = 4           // concurrent yt-dlp processes
@@ -124,8 +127,30 @@ object YtCtl {
             } catch (_: Exception) {
             }
             t.pct = -1
+            cleanJob(t)                            // the dead process' partials leave with it
         }
         if (count == 0) ctx.stopService(Intent(ctx, YtDownloadService::class.java))
+    }
+
+    /**
+     * Deletes the cancelled job's OWN partial files (.part / .ytdl / pre-merge
+     * `.f###.` halves). The process is already dead so nothing races the
+     * delete — the 60s-guarded stale sweep never catches these because they
+     * were touched seconds ago. %title% jobs (no caller base name) are left
+     * for that stale sweep — their file names are unknown here.
+     */
+    private fun cleanJob(t: Job) {
+        val base = t.baseName ?: return
+        runCatching {
+            File(t.dir).listFiles()?.forEach { f ->
+                val n = f.name
+                val temp = n.endsWith(".part") || n.endsWith(".ytdl") || n.endsWith(".tmp") ||
+                    n.endsWith(".dvoraPart") || Regex("""\.f\d+\.[A-Za-z0-9]+$""").containsMatchIn(n)
+                if (f.isFile && temp && n.startsWith("$base.") && f.lastModified() >= t.startedAt - 5_000) {
+                    runCatching { f.delete() }
+                }
+            }
+        }
     }
 }
 
@@ -311,9 +336,40 @@ class YtDownloadService : Service() {
                 note(tail, "yt-dlp $clean")
                 val started = System.currentTimeMillis()
                 var stepped = -5
+                // yt-dlp's callback % is PER STREAM — with bv*+ba the video runs 0→100
+                // and the audio then RESETS to 0, so a raw pass-through renders a bar that
+                // falls backwards mid-job. Parse each stream's "x% of N MiB" line and
+                // weight the streams by their byte sizes → a monotone overall %.
+                var doneBytes = 0.0          // streams fully landed
+                var curBytes = 0.0          // the stream downloading now
+                var allBytes = 0.0          // every stream this job has seen
+                var lastPct = -1f
+                val dlRe = Regex("""\[download\]\s+([\d.]+)%\s+of\s+~?([\d.]+)\s*(KiB|MiB|GiB|TiB)""")
+                fun unit(u: String): Double = when (u) {
+                    "KiB" -> 1024.0
+                    "MiB" -> 1024.0 * 1024
+                    "GiB" -> 1024.0 * 1024 * 1024
+                    else -> 1024.0 * 1024 * 1024 * 1024
+                }
                 YoutubeDL.execute(req, proc) { p, _, line ->
                     note(tail, line)
-                    val n = p.toInt()
+                    var n = p.toInt()
+                    val m = dlRe.find(line)
+                    if (m != null) {
+                        val iPct = m.groupValues[1].toFloatOrNull() ?: -1f
+                        val iBytes = m.groupValues[2].toDoubleOrNull()?.let { it * unit(m.groupValues[3]) } ?: -1.0
+                        if (iPct >= 0 && iBytes > 0) {
+                            if (allBytes == 0.0) {                    // the first stream
+                                curBytes = iBytes; allBytes = iBytes
+                            } else if (iPct < lastPct - 2f) {          // % reset → the next stream began
+                                doneBytes += curBytes; curBytes = iBytes; allBytes += iBytes
+                            } else if (iBytes != curBytes) {          // mid-stream size-estimate refresh
+                                allBytes += iBytes - curBytes; curBytes = iBytes
+                            }
+                            lastPct = iPct
+                            n = ((doneBytes + iPct / 100.0 * curBytes) / allBytes * 100).toInt()
+                        }
+                    }
                     if (n in 0..99) {
                         job?.pct = n
                         if (n / 5 != stepped / 5) {      // refresh the job's own notification per 5%
