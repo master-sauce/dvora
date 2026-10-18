@@ -280,9 +280,11 @@ async function doSubSearch(){
       lastSubtitleResults={query:q,mode:subMode,results:[],sessionLogs};
       if(document.getElementById('sov').classList.contains('open')&&activeTab==='logs') renderLogs();
       document.getElementById('subpw').classList.remove('visible');
-      document.getElementById('subArea').innerHTML=
+      const area=document.getElementById('subArea');
+      area.innerHTML=
         '<div class="sub-banner-nf">✗ No subtitles found for &quot;'+esc(q)+'&quot;</div>'
         +'<div class="sub-empty-msg">No matching titles with Hebrew subtitles found on Wizdom.</div>';
+      area.appendChild(mkOpenSubCard(q,0));   // OpenSubtitles — the alternative archive
       return;
     }
     foundResults.forEach((r,i)=>{
@@ -299,7 +301,9 @@ async function doSubSearch(){
     lastSubtitleResults={query:q,mode:subMode,results:[],sessionLogs};
     if(document.getElementById('sov').classList.contains('open')&&activeTab==='logs') renderLogs();
     document.getElementById('subpw').classList.remove('visible');
-    document.getElementById('subArea').innerHTML='<div class="empty"><span class="eg">⚠️</span><div class="et">Error: '+esc(err.message)+'</div></div>';
+    const area=document.getElementById('subArea');
+    area.innerHTML='<div class="empty"><span class="eg">⚠️</span><div class="et">Error: '+esc(err.message)+'</div></div>';
+    area.appendChild(mkOpenSubCard(q,0));   // the term is still searchable on OpenSubtitles
   }
 }
 
@@ -309,6 +313,7 @@ function renderSub(sData){
   if(!found.length){
     area.innerHTML='<div class="sub-banner-nf">✗ No subtitles found for &quot;'+esc(sData.query)+'&quot;</div>'
       +'<div class="sub-empty-msg">No matching titles found on Wizdom or IMDb.</div>';
+    area.appendChild(mkOpenSubCard(sData.query,0));   // OpenSubtitles — the alternative archive
     return;
   }
   const banner=document.createElement('div');
@@ -320,6 +325,7 @@ function renderSub(sData){
   hdr.innerHTML='<span style="font-family:\'Sora\',sans-serif;font-size:.78rem;font-weight:700;letter-spacing:.12em;color:var(--tm)">🎞️ &quot;'+esc(sData.query)+'&quot;</span>'
     +'<span style="font-size:.74rem;font-weight:800;color:var(--sub)">'+found.length+' found</span>';
   area.appendChild(hdr);
+  area.appendChild(mkOpenSubCard(sData.query,0));   // OpenSubtitles — the alternative archive
   found.forEach((r,i)=>{
     const isRich=!!(r.posterUrl||r.rating||r.genres||r.titleHe||r.year);
     area.appendChild(isRich?mkRichSubCard(r,i):mkSimpleSubCard(r,i));
@@ -382,6 +388,31 @@ function mkSimpleSubCard(r,idx){
     +'<div class="sub-ractions">'
       +'<span class="sub-rbadge yes">✓ SUBS</span>'
       +'<button class="cpbtn" onclick="event.stopPropagation();cp(\''+esc(r.url)+'\',this)">📋 Copy link</button>'
+    +'</div>';
+  return card;
+}
+
+// OpenSubtitles — the same Hebrew search on the world's biggest subtitle archive,
+// opened pre-searched in the system browser. The site hides behind a bot-wall
+// (Cloudflare JS challenge) that no server-side scrape passes — a link is the only route.
+function osSearchUrl(q){
+  return 'https://www.opensubtitles.org/he/search/sublanguageid-heb/moviename-'+encodeURIComponent(q);
+}
+function mkOpenSubCard(q,idx){
+  const u=osSearchUrl(q);
+  const card=document.createElement('div');
+  card.className='sub-rich';
+  card.style.animationDelay=(idx*40)+'ms';
+  card.onclick=()=>window.open(u,'_blank');
+  card.innerHTML='<div class="sub-poster-ph">🌐</div>'
+    +'<div class="sub-ri">'
+      +'<div class="sub-ren">'
+        +'<a href="'+esc(u)+'" target="_blank" onclick="event.stopPropagation()">OpenSubtitles — search &quot;'+esc(q)+'&quot;</a>'
+      +'</div>'
+      +'<div class="sub-rurl">→ '+esc(u)+'</div>'
+    +'</div>'
+    +'<div class="sub-ractions">'
+      +'<button class="cpbtn" onclick="event.stopPropagation();cp(\''+esc(u)+'\',this)">📋 Copy link</button>'
     +'</div>';
   return card;
 }
