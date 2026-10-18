@@ -33,6 +33,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
@@ -327,7 +328,8 @@ fun BrowserScreen(
         Toast.makeText(context, localeStr(context, R.string.yt_cancelled), Toast.LENGTH_SHORT).show()
     }
 
-    /** a picker/sheet row tap → the right download route — shared by both dialogs. */
+    /** a picker/sheet row tap → the right download route — shared by both dialogs.
+     *  close() always runs afterwards; what "closed" means is the caller's choice. */
     fun openRow(r: SniffRow, rows: List<SniffRow>, close: () -> Unit) {
         when {
             r.isBlob -> {
@@ -335,7 +337,6 @@ fun BrowserScreen(
                 // base64-chunks it to the bridge, native writes the file
                 val js = "(window.__dvoraSaveBlob && window.__dvoraSaveBlob('" + r.url + "'))"
                 runCatching { tabs.getOrNull(active)?.webView?.evaluateJavascript(js, null) }
-                close()
             }
             r.isSegment -> {
                 // one fragment ≠ the movie — yt-dlp needs the MASTER PLAYLIST:
@@ -348,6 +349,7 @@ fun BrowserScreen(
             }
             else -> startYt(r.url)
         }
+        close()
     }
 
     // ── sniffer merges — 1DM-style captures (JS bridge: real headers/body) + reqLog url-only rows ──
@@ -746,9 +748,16 @@ fun BrowserScreen(
                         LazyColumn {
                             items(rows) { r ->
                                 Column(
-                                    Modifier.fillMaxWidth().clickable {
-                                        openRow(r, rows) { ytPicker = false }
-                                    }.padding(vertical = 6.dp)
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 2.dp)
+                                        .background(BeeColors.HoneyGold.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                                        .border(1.dp, BeeColors.HoneyGold.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            // tap → hand over to the live downloads screen
+                                            openRow(r, rows) { ytPicker = false; ytSheet = true }
+                                        }
+                                        .padding(8.dp)
                                 ) {
                                     Text(
                                         listOfNotNull(
@@ -818,7 +827,14 @@ fun BrowserScreen(
                     LazyColumn {
                         items(jobs) { t ->
                             val (jurl, jpct, job) = t
-                            Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                            Column(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp)
+                                    .background(BeeColors.HoneyGold.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                                        .border(1.dp, BeeColors.HoneyGold.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                    .padding(8.dp)
+                            ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
                                         jurl,
@@ -871,9 +887,16 @@ fun BrowserScreen(
                             }
                             items(rest) { r ->
                                 Column(
-                                    Modifier.fillMaxWidth().clickable {
-                                        openRow(r, restRows) { ytSheet = false }
-                                    }.padding(vertical = 6.dp)
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 2.dp)
+                                        .background(BeeColors.HoneyGold.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                                        .border(1.dp, BeeColors.HoneyGold.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            // the sheet stays open — the new job appears in the live list via dlTick
+                                            openRow(r, restRows) { }
+                                        }
+                                        .padding(8.dp)
                                 ) {
                                     Text(
                                         listOfNotNull(
