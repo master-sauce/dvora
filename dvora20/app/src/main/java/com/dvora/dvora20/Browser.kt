@@ -1486,7 +1486,7 @@ private fun ResourceSheet(
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    "${log.size} ${L(R.string.rs_req)} · $blocked ${L(R.string.rs_blocked)} · ${lifetime} ${L(R.string.sheet_lifetime)}",
+                    "${log.size} ${L(R.string.rs_req)} · $blocked ${L(R.string.rs_blocked)}",
                     fontSize = 10.sp,
                     color = subColor,
                     maxLines = 1

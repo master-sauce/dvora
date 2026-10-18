@@ -88,7 +88,6 @@
 
     <!-- shield bottom sheet -->
     <string name="sheet_blocked_page">blocked on this page</string>
-    <string name="sheet_lifetime">blocked since install</string>
     <string name="sheet_allowed">Allowed site — blocking OFF for this domain</string>
     <string name="sheet_log">Blocked on this page</string>
     <string name="sheet_log_empty">Nothing blocked on this page so far</string>
