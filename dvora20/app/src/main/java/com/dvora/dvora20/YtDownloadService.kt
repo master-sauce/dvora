@@ -16,6 +16,7 @@ import android.os.Environment
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -335,7 +336,8 @@ class YtDownloadService : Service() {
                 }
                 note(tail, "yt-dlp $clean")
                 val started = System.currentTimeMillis()
-                var stepped = -5
+                var lastN = -1
+                var lastPost = 0L
                 // yt-dlp's callback % is PER STREAM — with bv*+ba the video runs 0→100
                 // and the audio then RESETS to 0, so a raw pass-through renders a bar that
                 // falls backwards mid-job. Parse each stream's "x% of N MiB" line and
@@ -372,8 +374,13 @@ class YtDownloadService : Service() {
                     }
                     if (n in 0..99) {
                         job?.pct = n
-                        if (n / 5 != stepped / 5) {      // refresh the job's own notification per 5%
-                            stepped = n
+                        // the notification follows the LIVE % (same value the app's rows
+                        // read), every integer step — time-gated so fast streams can't
+                        // spam the shade; no more 5% quantization against the app UI
+                        val now = SystemClock.elapsedRealtime()
+                        if (n != lastN && now - lastPost >= 400) {
+                            lastN = n
+                            lastPost = now
                             job?.let { postJob(it, base) }
                         }
                     }
@@ -455,15 +462,19 @@ class YtDownloadService : Service() {
         referer: String?, userAgent: String?, cookie: String?, headers: Map<String, String>?
     ): File? {
         if (job?.pct == -1) return null                 // the user already cancelled
-        var stepped = -5
+        var lastN = -1
+        var lastPost = 0L
         return runCatching {
             NativeDl.download(
                 url, dir, base ?: "dvora-media", referer, userAgent, cookie, headers,
                 { job?.cancelled == true }              // per-job cancel aborts the loops mid-download
             ) { n ->
                 job?.pct = n
-                if (n / 5 != stepped / 5) {             // refresh the job's own notification per 5%
-                    stepped = n
+                // live % into the notification like the app rows — every step, 400ms-gated
+                val now = SystemClock.elapsedRealtime()
+                if (n != lastN && now - lastPost >= 400) {
+                    lastN = n
+                    lastPost = now
                     job?.let { postJob(it, base) }
                 }
             }
