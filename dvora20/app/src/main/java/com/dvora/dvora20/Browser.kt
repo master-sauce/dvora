@@ -293,9 +293,13 @@ fun BrowserScreen(
             Toast.makeText(context, localeStr(context, R.string.yt_dl_fail), Toast.LENGTH_LONG).show()
             return
         }
-        // the saved file takes the current window title — every capture belongs to this page;
+        // the saved file takes the current window title — every capture belongs to this page.
+        // A YOUTUBE row contributes yt-dlp's own resolved video title instead: a KNOWN base
+        // name even when the tab title is blank, so the cancel-cleanup always matches its
+        // temp files — and a clean name without the "- YouTube" suffix.
         // '%' must die too — yt-dlp's -o is a template and a bare % breaks it
-        val title = t.pageTitle.replace(Regex("[\\\\/:*?\"<>|%]"), "_").trim().take(120).takeIf { it.isNotBlank() }
+        val rawTitle = if (cap?.kind == "youtube") cap.filename else null
+        val title = (rawTitle ?: t.pageTitle).replace(Regex("[\\\\/:*?\"<>|%]"), "_").trim().take(120).takeIf { it.isNotBlank() }
         // registers the job (unique output name + own process id) — null = the queue is full
         val job = YtCtl.add(target, dir, title) ?: run {
             Toast.makeText(context, localeStr(context, R.string.yt_queue_full), Toast.LENGTH_SHORT).show()

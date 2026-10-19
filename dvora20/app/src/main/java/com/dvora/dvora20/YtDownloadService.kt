@@ -134,18 +134,21 @@ object YtCtl {
     }
 
     /**
-     * Deletes the cancelled job's OWN partial files (.part / .ytdl / pre-merge
-     * `.f###.` halves). The process is already dead so nothing races the
-     * delete — the 60s-guarded stale sweep never catches these because they
-     * were touched seconds ago. %title% jobs (no caller base name) are left
-     * for that stale sweep — their file names are unknown here.
+     * Deletes the cancelled job's OWN partial files (.part incl. yt-dlp's fragment
+     * tails `.part-Frag###` (YouTube DASH/HLS) / .ytdl / pre-merge `.f###.` halves).
+     * The process is already dead so nothing races the delete — the 60s-guarded
+     * stale sweep never catches these because they were touched seconds ago.
+     * %title% jobs (no caller base name) are left for that stale sweep — their
+     * file names are unknown here.
      */
     private fun cleanJob(t: Job) {
         val base = t.baseName ?: return
         runCatching {
             File(t.dir).listFiles()?.forEach { f ->
                 val n = f.name
-                val temp = n.endsWith(".part") || n.endsWith(".ytdl") || n.endsWith(".tmp") ||
+                // contains(".part") over endsWith — a YouTube fragment in flight is
+                // `base.f137.mp4.part-Frag45`, not a plain .part
+                val temp = n.contains(".part") || n.endsWith(".ytdl") || n.endsWith(".tmp") ||
                     n.endsWith(".dvoraPart") || Regex("""\.f\d+\.[A-Za-z0-9]+$""").containsMatchIn(n)
                 if (f.isFile && temp && n.startsWith("$base.") && f.lastModified() >= t.startedAt - 5_000) {
                     runCatching { f.delete() }
@@ -629,7 +632,8 @@ class YtDownloadService : Service() {
             runCatching { dir.listFiles() }.getOrDefault(emptyArray())
                 .filter { f ->
                     val name = f.name
-                    (name.endsWith(".dvoraPart") || name.endsWith(".part") || name.endsWith(".ytdl") ||
+                    // contains(".part") — a killed YouTube fragment leaves `.part-Frag###`
+                    (name.endsWith(".dvoraPart") || name.contains(".part") || name.endsWith(".ytdl") ||
                         name.endsWith(".tmp") || Regex("""\.f\d+\.[A-Za-z0-9]+$""").containsMatchIn(name)) &&
                         f.lastModified() < now - 60_000
                 }
