@@ -23,6 +23,12 @@ import com.dvora.dvora20.adblock.ListRepo
 import com.dvora.dvora20.adblock.SniffName
 import com.dvora.dvora20.adblock.SnifferJsInterface
 import com.dvora.dvora20.adblock.SnifferStore
+import com.yausername.youtubedl_android.YoutubeDL
+import com.yausername.youtubedl_android.YoutubeDLRequest
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
  * One open browser tab: its OWN WebView + page client + chrome client and all
@@ -122,6 +128,7 @@ class WebTab(
         // the real-time address fix: every committed url incl. SPA pushState lands here
         client.onVisited = { url ->
             if (!incognito) HistoryStore.add(url)   // history keeps every committed page — incognito never records
+            ytWatchUrl(url)?.let { probeYouTube(it) }   // SPA route change on youtube → the new video
             if (url != address) { address = url; navTick++ }
         }
         client.onPageStart = { host, url ->
@@ -133,6 +140,7 @@ class WebTab(
             blocked = 0
             blockLog = emptyList()
             SnifferStore.newPage()                       // 1DM keeps one capture list per page
+            ytWatchUrl(url)?.let { probeYouTube(it) }    // a YouTube page loads → its download row
             address = url                                // bar always tracks the page actually loaded (redirects / history)
             navTick++
         }
@@ -150,6 +158,9 @@ class WebTab(
                     null
                 )
             }
+            // heal: a settled YouTube page always carries its row — the first probe may
+            // have raced a store wipe or died against a busy (self-updating) yt-dlp binary
+            ytWatchUrl(address)?.let { w -> if (SnifferStore.byUrl(w) == null) probeYouTube(w, force = true) }
         }
         client.onBlocked = { blocked = repo.engine.pageBlocks }
         client.onSsl = { uri, handler -> ssl = uri to handler }
@@ -166,6 +177,70 @@ class WebTab(
     /** back/fwd availability — reading navTick makes Compose refresh these on every history change. */
     fun canBack(): Boolean = navTick.let { webView.canGoBack() }
     fun canFwd(): Boolean = navTick.let { webView.canGoForward() }
+
+    // ── YouTube — yt-dlp knows the video itself, one probe plants the download row ──
+
+    private val ytScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val ytTried = mutableMapOf<String, Long>()   // url → last probe attempt (millis)
+
+    /** a canonical YouTube watch url from any shape (watch?v= / shorts / youtu.be / embed), else null. */
+    fun ytWatchUrl(u: String): String? {
+        val uri = Uri.parse(u)
+        val host = (uri.host ?: "").lowercase()
+        if (host != "youtu.be" && !host.endsWith("youtube.com")) return null
+        val v = uri.getQueryParameter("v")
+        return when {
+            !v.isNullOrBlank() -> "https://www.youtube.com/watch?v=$v"
+            host == "youtu.be" -> "https://www.youtube.com/watch?v=" + (uri.path ?: "").trim('/')
+            uri.path?.startsWith("/shorts/") == true || uri.path?.startsWith("/embed/") == true ->
+                "https://www.youtube.com/watch?v=" + (uri.path ?: "").substringAfterLast('/')
+            else -> null
+        }
+    }
+
+    /**
+     * A YouTube page → one yt-dlp probe resolves the real title / duration / quality
+     * ladder and plants a YOUTUBE row in the media picker. Tapping the row hands THIS
+     * SAME url to the download service — yt-dlp downloads the page itself, because
+     * the player's googlevideo links are signed and expire while the page url never is.
+     *
+     * [force] is the heal path — the page IS youtube but its row is missing (the
+     * store was wiped by another tab's navigation, or the probe failed e.g. while
+     * the yt-dlp binary was busy self-updating at app start) → retried at most
+     * every 5s, so nothing races or fails permanently.
+     */
+    fun probeYouTube(watchUrl: String, force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        val last = ytTried[watchUrl] ?: 0L
+        if (last > 0 && (!force || now - last < 5_000)) return
+        ytTried[watchUrl] = now
+        ytScope.launch {
+            try {
+                val info = YoutubeDL.getInstance().getInfo(YoutubeDLRequest(watchUrl))
+                val qualities = info.formats.orEmpty()
+                    .mapNotNull { it.height }
+                    .filter { it > 0 }
+                    .distinct()
+                    .sortedDescending()
+                    .joinToString("·") { "${it}p" }
+                    .takeIf { it.isNotEmpty() }
+                SnifferStore.add(
+                    CapturedMedia(
+                        url = watchUrl,
+                        kind = "youtube",
+                        mime = "video/mp4",
+                        size = -1,
+                        filename = info.title?.takeIf { it.isNotBlank() },
+                        referer = watchUrl,
+                        cookie = null,
+                        duration = info.duration?.toDouble() ?: -1.0,
+                        qualities = qualities
+                    )
+                )
+            } catch (_: Exception) {
+            }
+        }
+    }
 
     /** tears the tab down — WebView.destroy() frees its renderer slot; safe to call twice. */
     fun destroy() {

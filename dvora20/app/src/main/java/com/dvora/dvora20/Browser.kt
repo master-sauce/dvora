@@ -28,7 +28,9 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -40,6 +42,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -200,6 +203,12 @@ fun BrowserScreen(
     // screen for as long as the app is open; incognito tabs die with the screen
     val tabs = TabCtl.tabs
     var active by TabCtl.activeState
+
+    // vertical tabs — the persisted layout choice; a left-edge counter pill +
+    // slide-in tab list replace the top strip when it's on
+    val prefs = remember { context.getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE) }
+    var tabsVertical by remember { mutableStateOf(prefs.getBoolean("tabs_vertical", false)) }
+    var tabsPanelOpen by remember { mutableStateOf(false) }
 
     // ── launchers ─────────────────────────────────────────────────────────────
     val dlPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -483,6 +492,13 @@ fun BrowserScreen(
             // done/fail dialogs consume their queues one at a time — a multi-download batch loses none
             if (ytDone == null) YtCtl.popDone()?.let { ytDone = it }
             if (ytErr == null) YtCtl.popErr()?.let { ytErr = it }
+            // heal the YOUTUBE row — a wipe race (another tab navigated) or a busy
+            // (self-updating) yt-dlp binary must never lose it; force=… is 5s-throttled
+            tabs.getOrNull(active)?.let { t ->
+                t.ytWatchUrl(t.address)?.let { w ->
+                    if (SnifferStore.byUrl(w) == null) t.probeYouTube(w, force = true)
+                }
+            }
             // badge = distinct captures (sniffer + reqLog), not raw request count
             val n = sniffRows().size
             if (n != ytBadge) ytBadge = n
@@ -634,9 +650,12 @@ fun BrowserScreen(
     }
 
     BackHandler {
+        if (tabsPanelOpen) {
+            tabsPanelOpen = false; return@BackHandler
+        }   // the vertical tab list closes first
         if (sheetVisible) {
             sheetVisible = false; return@BackHandler
-        }   // resources panel closes first
+        }   // resources panel closes next
         val tab = tabs.getOrNull(active)
         if (tab?.video != null) {                               // then leave fullscreen video
             tab.video?.let { it.second.onCustomViewHidden() }
@@ -1073,65 +1092,92 @@ fun BrowserScreen(
     val tab = tabs.getOrNull(active) ?: return
     Box(modifier = modifier.fillMaxSize().background(pageBg)) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            // ── tab strip: every open tab, tap to select, x to close ──
+            // ── top bar ──
+            // horizontal mode: every tab as a scrollable chip; vertical mode: ONE
+            // tabs button with the live count on the left that opens the tab list
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.fillMaxWidth().background(headerBg)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState())
-                ) {
-                    tabs.forEachIndexed { i, t ->
-                        val sel = i == active
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier
-                                .padding(horizontal = 3.dp, vertical = 3.dp)
-                                .widthIn(min = 64.dp, max = 140.dp)
-                                .background(
-                                    if (sel) BeeColors.HoneyGold else BeeColors.DarkStripe,
-                                    RoundedCornerShape(8.dp)
-                                )
-                                .clickable {
-                                    if (i != active) {
-                                        active = i
-                                        urlEditing = false
-                                    }
-                                }
-                                .padding(start = 6.dp, top = 2.dp, bottom = 2.dp)
-                        ) {
-                            // 🕵 marks an incognito tab; 🌐 holds the spot until a favicon arrives
-                            when {
-                                t.incognito -> Text("🕵", fontSize = 10.sp)
-                                t.favicon != null -> Image(
-                                    t.favicon!!.asImageBitmap(), null,
-                                    modifier = Modifier.size(14.dp)
-                                )
-                                else -> Text("🌐", fontSize = 10.sp)
-                            }
-                            Spacer(Modifier.width(4.dp))
-                            Text(
-                                t.pageTitle.ifBlank { t.pageHost.ifBlank { "…" } },
-                                fontSize = 10.sp,
-                                color = if (sel) Color.Black else textColor,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Spacer(Modifier.width(4.dp))
-                            Icon(
-                                Icons.Default.Close,
-                                contentDescription = L(R.string.cd_close_tab),
-                                tint = if (sel) Color.Black else subColor,
+                if (tabsVertical) {
+                    // the tabs button — the counter sits on the left of the bar
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .padding(3.dp)
+                            .background(BeeColors.DarkStripe, RoundedCornerShape(8.dp))
+                            .clickable { tabsPanelOpen = true }
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Tab, L(R.string.cd_tabs_panel),
+                            tint = BeeColors.HoneyGold, modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "${tabs.size}",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = textColor
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                } else {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f).horizontalScroll(rememberScrollState())
+                    ) {
+                        tabs.forEachIndexed { i, t ->
+                            val sel = i == active
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier
-                                    .size(16.dp)
-                                    .clickable { closeTab(i) }
-                            )
+                                    .padding(horizontal = 3.dp, vertical = 3.dp)
+                                    .widthIn(min = 64.dp, max = 140.dp)
+                                    .background(
+                                        if (sel) BeeColors.HoneyGold else BeeColors.DarkStripe,
+                                        RoundedCornerShape(8.dp)
+                                    )
+                                    .clickable {
+                                        if (i != active) {
+                                            active = i
+                                            urlEditing = false
+                                        }
+                                    }
+                                    .padding(start = 6.dp, top = 2.dp, bottom = 2.dp)
+                            ) {
+                                // 🕵 marks an incognito tab; 🌐 holds the spot until a favicon arrives
+                                when {
+                                    t.incognito -> Text("🕵", fontSize = 10.sp)
+                                    t.favicon != null -> Image(
+                                        t.favicon!!.asImageBitmap(), null,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    else -> Text("🌐", fontSize = 10.sp)
+                                }
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    t.pageTitle.ifBlank { t.pageHost.ifBlank { "…" } },
+                                    fontSize = 10.sp,
+                                    color = if (sel) Color.Black else textColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = L(R.string.cd_close_tab),
+                                    tint = if (sel) Color.Black else subColor,
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .clickable { closeTab(i) }
+                                )
+                            }
                         }
                     }
                 }
-                // pinned: new tab / new incognito tab
+                // pinned: new tab / new incognito tab / history — shared by both modes
                 IconButton(onClick = { newTab(BROWSER_HOME, false) }, modifier = Modifier.size(34.dp)) {
                     Icon(
                         Icons.Default.Add, L(R.string.cd_newtab),
@@ -1147,6 +1193,20 @@ fun BrowserScreen(
                 IconButton(onClick = { historyOpen = true }, modifier = Modifier.size(34.dp)) {
                     Icon(
                         Icons.Default.History, L(R.string.cd_history),
+                        tint = BeeColors.HoneyGold, modifier = Modifier.size(18.dp)
+                    )
+                }
+                // the layout switch — horizontal chips ↔ vertical list, either way
+                IconButton(
+                    onClick = {
+                        tabsVertical = !tabsVertical
+                        prefs.edit().putBoolean("tabs_vertical", tabsVertical).apply()
+                        if (!tabsVertical) tabsPanelOpen = false
+                    },
+                    modifier = Modifier.size(34.dp)
+                ) {
+                    Icon(
+                        Icons.Default.ViewSidebar, L(R.string.cd_tablayout),
                         tint = BeeColors.HoneyGold, modifier = Modifier.size(18.dp)
                     )
                 }
@@ -1410,6 +1470,138 @@ fun BrowserScreen(
                     },
                     onClose = { sheetVisible = false }
                 )
+            }
+        }
+
+        // vertical tabs — scrim eats the outside tap, the panel slides in from the left edge
+        if (tabsPanelOpen && tabsVertical) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.35f))
+                    .clickable { tabsPanelOpen = false }
+            )
+        }
+        AnimatedVisibility(
+            visible = tabsPanelOpen && tabsVertical,
+            enter = slideInHorizontally { -it },
+            exit = slideOutHorizontally { -it },
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .fillMaxHeight()
+                .width(300.dp)
+        ) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .background(BeeColors.DarkComb)
+                    .statusBarsPadding()
+            ) {
+                // header: live tab count · back to the horizontal strip · close
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().background(headerBg).padding(2.dp)
+                ) {
+                    Text(
+                        "🗂 ${tabs.size}",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = BeeColors.HoneyGold,
+                        modifier = Modifier.weight(1f).padding(start = 6.dp)
+                    )
+                    IconButton(
+                        onClick = {
+                            tabsVertical = false
+                            prefs.edit().putBoolean("tabs_vertical", false).apply()
+                        },
+                        modifier = Modifier.size(34.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.ViewSidebar, L(R.string.cd_tablayout),
+                            tint = BeeColors.HoneyGold, modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    IconButton(onClick = { tabsPanelOpen = false }, modifier = Modifier.size(34.dp)) {
+                        Icon(
+                            Icons.Default.Close, L(R.string.cd_close),
+                            tint = BeeColors.DeepAmber, modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+                LazyColumn(Modifier.weight(1f)) {
+                    itemsIndexed(tabs) { i, t ->
+                        val sel = i == active
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 5.dp, vertical = 2.dp)
+                                .background(
+                                    if (sel) BeeColors.HoneyGold.copy(alpha = 0.2f) else Color.Transparent,
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .clickable {
+                                    active = i
+                                    urlEditing = false
+                                    tabsPanelOpen = false
+                                }
+                                .padding(horizontal = 4.dp, vertical = 7.dp)
+                        ) {
+                            when {
+                                t.incognito -> Text("🕵", fontSize = 12.sp)
+                                t.favicon != null -> Image(
+                                    t.favicon!!.asImageBitmap(), null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                else -> Text("🌐", fontSize = 12.sp)
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    t.pageTitle.ifBlank { t.pageHost.ifBlank { "…" } },
+                                    fontSize = 11.sp,
+                                    color = textColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    t.address,
+                                    fontSize = 8.sp,
+                                    color = subColor,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = L(R.string.cd_close_tab),
+                                tint = subColor,
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .clickable { closeTab(i) }
+                            )
+                        }
+                    }
+                }
+                // footer: new tab / new incognito tab
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(2.dp),
+                    modifier = Modifier.fillMaxWidth().background(headerBg).navigationBarsPadding()
+                ) {
+                    IconButton(onClick = { newTab(BROWSER_HOME, false) }, modifier = Modifier.size(34.dp)) {
+                        Icon(
+                            Icons.Default.Add, L(R.string.cd_newtab),
+                            tint = BeeColors.HoneyGold, modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    IconButton(onClick = { newTab(BROWSER_HOME, true) }, modifier = Modifier.size(34.dp)) {
+                        Icon(
+                            Icons.Default.VisibilityOff, L(R.string.cd_incognito),
+                            tint = BeeColors.DarkOnSurface, modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
             }
         }
 
