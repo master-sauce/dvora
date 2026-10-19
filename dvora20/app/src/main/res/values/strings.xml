@@ -25,7 +25,6 @@
     <string name="cd_incognito">New incognito tab</string>
     <string name="cd_close_tab">Close tab</string>
     <string name="cd_history">Browsing history</string>
-    <string name="cd_tablayout">Switch between horizontal and vertical tabs</string>
     <string name="cd_tabs_panel">Open the tabs list</string>
     <string name="hist_title">History</string>
     <string name="hist_empty">No pages recorded yet — incognito pages are never recorded</string>
