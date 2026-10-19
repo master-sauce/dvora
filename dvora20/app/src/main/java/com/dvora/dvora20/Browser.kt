@@ -250,7 +250,7 @@ fun BrowserScreen(
     // ── yt-dlp ────────────────────────────────────────────────────────────────────
 
     /** kick off a media download — the foreground service runs up to YtCtl.MAX of them concurrently. */
-    fun startYt(given: String) {
+    fun startYt(given: String, baseName: String? = null) {
         val t = tabs.getOrNull(active) ?: return
         val url = given.substringBefore('#')     // page hash fragments are noise for yt-dlp
         // 1DM resolves media urls to the END (redirects already followed by the probe) before
@@ -294,11 +294,11 @@ fun BrowserScreen(
             return
         }
         // the saved file takes the current window title — every capture belongs to this page.
-        // A YOUTUBE row contributes yt-dlp's own resolved video title instead: a KNOWN base
-        // name even when the tab title is blank, so the cancel-cleanup always matches its
-        // temp files — and a clean name without the "- YouTube" suffix.
+        // A clicked download link brings its own resolved file name; a YOUTUBE row brings
+        // yt-dlp's own video title — either way a KNOWN base name even when the tab title
+        // is blank, so the cancel-cleanup always matches its temp files.
         // '%' must die too — yt-dlp's -o is a template and a bare % breaks it
-        val rawTitle = if (cap?.kind == "youtube") cap.filename else null
+        val rawTitle = baseName ?: if (cap?.kind == "youtube") cap.filename else null
         val title = (rawTitle ?: t.pageTitle).replace(Regex("[\\\\/:*?\"<>|%]"), "_").trim().take(120).takeIf { it.isNotBlank() }
         // registers the job (unique output name + own process id) — null = the queue is full
         val job = YtCtl.add(target, dir, title) ?: run {
@@ -338,6 +338,46 @@ fun BrowserScreen(
         Toast.makeText(context, localeStr(context, R.string.yt_cancelled), Toast.LENGTH_SHORT).show()
     }
 
+    /** queues a real file download through the system DownloadManager — its own name, its own notification. */
+    fun enqueueDownload(url: String, disposition: String?, mimeType: String?) {
+        if (!url.startsWith("http")) return
+        if (!hasStorage) {
+            if (Build.VERSION.SDK_INT < 29) {          // needs the runtime grant on old APIs
+                dlPerm.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                return
+            }
+        }
+        // filename: Content-Disposition (filename* charset-aware) first, then the url path
+        val name = SniffName.fromDisposition(disposition)
+            ?: url.substringAfterLast('/')?.substringBefore('?')?.trim()?.takeIf { it.isNotEmpty() }
+        val safe = (name ?: "dvora-download-${System.currentTimeMillis()}")
+            .replace(Regex("[^A-Za-z0-9._\\-]"), "_")
+            .take(120)
+        try {
+            val req = DownloadManager.Request(Uri.parse(url))
+                .setTitle(safe)
+                .setDescription(context.getString(R.string.dl_started_desc))
+                .setMimeType(mimeType ?: "application/octet-stream")
+                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                // 1DM-style header replay — the page's own UA / referer / cookies, not a fake one
+                .addRequestHeader("User-Agent", tabs.getOrNull(active)?.webView?.settings?.userAgentString ?: "")
+            tabs.getOrNull(active)?.address?.takeIf { it.startsWith("http") }?.let {
+                req.addRequestHeader("Referer", it)
+            }
+            CookieManager.getInstance().getCookie(url)?.let { req.addRequestHeader("Cookie", it) }
+            if (Build.VERSION.SDK_INT >= 29) {
+                req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, safe)
+            } else {
+                val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
+                req.setDestinationUri(Uri.fromFile(File(dir, safe)))
+            }
+            (context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(req)
+            Toast.makeText(context, localeStr(context, R.string.dl_started), Toast.LENGTH_SHORT).show()
+        } catch (_: Exception) {
+            Toast.makeText(context, localeStr(context, R.string.dl_failed), Toast.LENGTH_SHORT).show()
+        }
+    }
+
     /** a picker/sheet row tap → the right download route — shared by both dialogs.
      *  close() always runs afterwards; what "closed" means is the caller's choice. */
     fun openRow(r: SniffRow, rows: List<SniffRow>, close: () -> Unit) {
@@ -357,7 +397,14 @@ fun BrowserScreen(
                     } else null
                 tabs.getOrNull(active)?.let { tab -> startYt(pl ?: tab.address) }
             }
-            else -> startYt(r.url)
+            // subtitle files go through yt-dlp now — its HTTP stack + cookies get past
+            // the hotlink gates that block a direct fetch; genuine media → yt-dlp;
+            // anything else is a plain file for the DownloadManager
+            else -> when {
+                isSubtitleRow(r) -> startYt(r.url, r.name?.substringBeforeLast('.')?.takeIf { it.isNotBlank() })
+                isMediaRow(r) -> startYt(r.url)
+                else -> enqueueDownload(r.url, null, null)
+            }
         }
         close()
     }
@@ -546,43 +593,38 @@ fun BrowserScreen(
         }
     }
 
-    fun enqueueDownload(url: String, disposition: String?, mimeType: String?) {
-        if (!url.startsWith("http")) return
-        if (!hasStorage) {
-            if (Build.VERSION.SDK_INT < 29) {          // needs the runtime grant on old APIs
-                dlPerm.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                return
-            }
+    /**
+     * A clicked download link. Genuinely MEDIA links (video / audio / stream
+     * containers) run through the yt-dlp pipeline and the live downloads screen
+     * opens on its own — the click IS the download plus its UI. Everything else
+     * is a plain file for the DownloadManager: it keeps its own name untouched.
+     */
+    fun clickDownload(url: String, disposition: String?, mime: String?) {
+        val mimeL = (mime ?: "").lowercase()
+        val path = url.substringBefore('?').substringBefore('#').lowercase()
+        // subtitles ride the same yt-dlp pipeline — its HTTP stack + cookies get past
+        // the hotlink gates that block a direct fetch; same folder, live job, menu opens
+        if (isSubtitleUrl(path)) {
+            val stem = (SniffName.fromDisposition(disposition) ?: SnifferStore.byUrl(url)?.filename)
+                ?.substringBeforeLast('.')?.takeIf { it.isNotBlank() }
+            startYt(url, stem)
+            ytSheet = true
+            return
         }
-        // filename: Content-Disposition (filename* charset-aware) first, then the url path
-        val name = SniffName.fromDisposition(disposition)
-            ?: url.substringAfterLast('/')?.substringBefore('?')?.trim()?.takeIf { it.isNotEmpty() }
-        val safe = (name ?: "dvora-download-${System.currentTimeMillis()}")
-            .replace(Regex("[^A-Za-z0-9._\\-]"), "_")
-            .take(120)
-        try {
-            val req = DownloadManager.Request(Uri.parse(url))
-                .setTitle(safe)
-                .setDescription(context.getString(R.string.dl_started_desc))
-                .setMimeType(mimeType ?: "application/octet-stream")
-                .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                // 1DM-style header replay — the page's own UA / referer / cookies, not a fake one
-                .addRequestHeader("User-Agent", tabs.getOrNull(active)?.webView?.settings?.userAgentString ?: "")
-            tabs.getOrNull(active)?.address?.takeIf { it.startsWith("http") }?.let {
-                req.addRequestHeader("Referer", it)
-            }
-            CookieManager.getInstance().getCookie(url)?.let { req.addRequestHeader("Cookie", it) }
-            if (Build.VERSION.SDK_INT >= 29) {
-                req.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, safe)
-            } else {
-                val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir
-                req.setDestinationUri(Uri.fromFile(File(dir, safe)))
-            }
-            (context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager).enqueue(req)
-            Toast.makeText(context, localeStr(context, R.string.dl_started), Toast.LENGTH_SHORT).show()
-        } catch (_: Exception) {
-            Toast.makeText(context, localeStr(context, R.string.dl_failed), Toast.LENGTH_SHORT).show()
+        val ext = path.substringAfterLast('.', "")
+        val media = path.endsWith(".m3u8") || path.endsWith(".mpd") ||
+            mimeL.startsWith("video/") || mimeL.startsWith("audio/") ||
+            mimeL.contains("mpegurl") || mimeL.contains("dash+xml") ||
+            ext in MEDIA_EXTS
+        if (!media) {
+            enqueueDownload(url, disposition, mime)   // the file keeps its own name — no yt-dlp
+            return
         }
+        // the listener captured this link right before us — its resolved name is the
+        // output base (stem only: yt-dlp appends %(ext)s itself)
+        val stem = SnifferStore.byUrl(url)?.filename?.substringBeforeLast('.')?.takeIf { it.isNotBlank() }
+        startYt(url, stem)
+        ytSheet = true      // the download menu opens with the live job
     }
 
     // ── tab management ────────────────────────────────────────────────────────
@@ -604,7 +646,7 @@ fun BrowserScreen(
                 onCrossNav = { tab, u, h -> crossNav = Triple(tab, u, h) },
                 onActivity = { if (sheetVisible) resTick++ },
                 onPick = { cb, params -> pendingChooser = cb; pickFile(params) },
-                onEnqueue = { u, d, m -> enqueueDownload(u, d, m) }
+                onEnqueue = { u, d, m -> clickDownload(u, d, m) }
             )
         )
         active = tabs.lastIndex
@@ -1757,6 +1799,33 @@ private fun isSegment(u: String): Boolean {
     val p = u.substringBefore('?').lowercase()
     return p.endsWith(".ts") || p.endsWith(".m4s")
 }
+
+/** the MEDIA whitelist — only these ever reach yt-dlp. Everything else is a plain
+ *  file for the DownloadManager, which keeps its own name (no ".unknown_video"). */
+private val MEDIA_EXTS = setOf(
+    "mp4", "m3u8", "mpd", "mkv", "webm", "m4v", "mov", "avi", "flv", "wmv", "mpg", "mpeg",
+    "3gp", "mp3", "m4a", "aac", "flac", "ogg", "opus", "wav", "wma"
+)
+
+/** a picker row holding genuine media — everything else is a plain file. */
+private fun isMediaRow(r: SniffRow): Boolean {
+    if (r.label.equals("video", true) || r.label.equals("audio", true)) return true
+    if (r.label.lowercase() in MEDIA_EXTS) return true
+    val ext = r.url.substringBefore('?').substringBefore('#').lowercase().substringAfterLast('.', "")
+    return ext in MEDIA_EXTS
+}
+
+/** subtitle files — saved straight into the dvora folder with the media. */
+private val SUBTITLE_EXTS = setOf("srt", "vtt", "sub", "ttml", "sbv", "ssa", "ass")
+
+/** a picker row holding a subtitle file. */
+private fun isSubtitleRow(r: SniffRow): Boolean =
+    r.label.lowercase() in SUBTITLE_EXTS ||
+        r.url.substringBefore('?').substringBefore('#').lowercase().substringAfterLast('.', "") in SUBTITLE_EXTS
+
+/** a subtitle url (query/hash already stripped, lowercased by the caller or not — handled here). */
+private fun isSubtitleUrl(url: String): Boolean =
+    url.substringBefore('?').substringBefore('#').lowercase().substringAfterLast('.', "") in SUBTITLE_EXTS
 
 
 /** notification cancel action — kills the yt-dlp process + stops the download service. */
