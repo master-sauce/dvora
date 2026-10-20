@@ -345,8 +345,8 @@ class ListRepo(private val appCtx: Context) {
         statuses = statuses.toMutableMap().apply { put(l, msg) }
     }
 
-    /** lines like `! Checksum: …` — excluded from the digest body. */
-    private val checksumLine = Regex("""^\\s*!?\\s*checksum\\s*:""", RegexOption.IGNORE_CASE)
+    /** lines like `! Checksum: …` — excluded from the digest body (raw string: single backslashes). */
+    private val checksumLine = Regex("""^\s*!?\s*checksum\s*:""", RegexOption.IGNORE_CASE)
 
     /**
      * Integrity gate: when the list ships a `! Checksum:` header (EasyList
