@@ -55,7 +55,7 @@ enum class ListInfo(
     ),
     PRIVACY(
         "privacy",
-        "https://easylist.to/easyprivacy/easyprivacy.txt",
+        "https://easylist.to/easylist/easyprivacy.txt",
         "easyprivacy.txt",
         "EasyPrivacy (trackers)"
     ),
@@ -67,7 +67,7 @@ enum class ListInfo(
     ),
     COOKIE(
         "cookie",
-        "https://easylist.to/list/easylistcookie.txt",
+        "https://secure.fanboy.co.nz/fanboy-cookiemonster.txt",
         "easylistcookie.txt",
         "EasyList Cookie (banners)"
     ),
