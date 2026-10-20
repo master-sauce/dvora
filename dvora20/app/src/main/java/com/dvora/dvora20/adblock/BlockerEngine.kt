@@ -248,6 +248,10 @@ class BlockerEngine {
 
         /** registrable (eTLD+1-ish) host without a proper PSL — small suffix table. */
         fun registrable(host: String): String {
+            if (host.isEmpty()) return host
+            // single-label hosts (localhost) and IP literals ARE the registrable unit —
+            // "192.168.1.5" must not collapse to "1.5" (breaks whitelist + third-party checks)
+            if (!host.contains('.') || host.contains(':') || host.all { it.isDigit() || it == '.' }) return host
             val labels = host.split('.')
             if (labels.size >= 3) {
                 val two = labels.takeLast(2).joinToString(".")

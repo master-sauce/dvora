@@ -104,6 +104,10 @@ fun BrowserTab(repo: ListRepo) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 5.dp)) {
                 Column(Modifier.weight(1f)) {
                     Text(l.displayName, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = textColor)
+                    // live status — "updated · N rules" / "update failed (…)" / "empty – waiting for download"
+                    val st = repo.statuses[l]
+                        ?: if (repo.isDownloaded(l)) "ready" else "not downloaded yet"
+                    Text(st, fontSize = 9.sp, color = subColor, maxLines = 1)
                 }
                 IconButton(onClick = { repo.refresh(scope, l) }) {
                     Icon(

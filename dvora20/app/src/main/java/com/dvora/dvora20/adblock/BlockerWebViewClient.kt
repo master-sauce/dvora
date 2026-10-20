@@ -142,16 +142,31 @@ class BlockerWebViewClient(
             }
         }
 
-        // every http(s) sub-resource is logged to the media picker even while the block engine is
-        // still compiling or globally off — otherwise the page's very early requests (the video
-        // playlist arrives within milliseconds of the document) would never reach the downloads list.
+        // every http(s) request is logged to the resources panel even while blocking is
+        // off (master switch / whitelisted page / lists still loading) — the panel is
+        // the request inspector AND the media picker, not just the block list. Blocked
+        // ones below log with blocked=true + the rule.
         if (!repo.isMaster()) {
-            if (tag == "media") engine.noteReq(tag, url, false, "")
+            engine.noteReq(tag, url, false, "")
+            onActivity()
             return null
         }
-        for (a in allowedHosts()) if (host == a || host.endsWith(".$a")) return null    // per-site whitelist
+        // per-site whitelist — a whitelisted PAGE lets EVERYTHING it loads through:
+        // ads/trackers come from third-party hosts, so matching only the RESOURCE
+        // host never disabled blocking on the site. An allowed resource host stays
+        // reachable from any page, as before. Requests stay visible in the panel.
+        for (a in allowedHosts()) {
+            if ((docHost.isNotEmpty() && (docHost == a || docHost.endsWith(".$a"))) ||
+                host == a || host.endsWith(".$a")
+            ) {
+                engine.noteReq(tag, url, false, "")
+                onActivity()
+                return null
+            }
+        }
         if (engine.totalRules + engine.totalException == 0) {                                       // lists still loading
-            if (tag == "media") engine.noteReq(tag, url, false, "")
+            engine.noteReq(tag, url, false, "")
+            onActivity()
             return null
         }
 

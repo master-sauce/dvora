@@ -642,7 +642,9 @@ fun BrowserScreen(
     fun newTab(url: String, incognito: Boolean) {
         tabs.add(
             WebTab(
-                context, repo, url.ifBlank { BROWSER_HOME }, incognito, { allowed.toSet() },
+                // the whitelist is read live from its cache (not this screen's state) —
+                // session-restored tabs must see toggles made in a later composition
+                context, repo, url.ifBlank { BROWSER_HOME }, incognito, { Whitelist.hosts(context).toSet() },
                 onCrossNav = { tab, u, h -> crossNav = Triple(tab, u, h) },
                 onActivity = { if (sheetVisible) resTick++ },
                 onPick = { cb, params -> pendingChooser = cb; pickFile(params) },
@@ -1163,6 +1165,33 @@ fun BrowserScreen(
                     )
                 }
                 Spacer(Modifier.weight(1f))
+                // per-site ad-block toggle — shield: green = filtering this site,
+                // red-crossed = the site is whitelisted, nothing is blocked here
+                val siteAllowed = tab.pageHost.isNotEmpty() && Whitelist.isAllowed(tab.pageHost, allowed)
+                IconButton(
+                    onClick = {
+                        val h = tab.pageHost
+                        if (h.isNotEmpty()) {
+                            if (siteAllowed) Whitelist.remove(context, h)
+                            else Whitelist.add(context, BlockerEngine.registrable(h).ifBlank { h })
+                            allowed = Whitelist.hosts(context)   // live — the interceptor reads it per request
+                            tab.webView.reload()                  // refetch under the new rule
+                            Toast.makeText(
+                                context,
+                                localeStr(context, if (siteAllowed) R.string.ab_site_on else R.string.ab_site_off),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    },
+                    modifier = Modifier.size(44.dp)
+                ) {
+                    Icon(
+                        if (siteAllowed) Icons.Default.GppBad else Icons.Default.GppGood,
+                        L(R.string.cd_ab_toggle),
+                        tint = if (siteAllowed) BeeColors.NotFoundRed else BeeColors.FoundGreen,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
                 // pinned: new tab / history
                 IconButton(onClick = { newTab(BROWSER_HOME, false) }, modifier = Modifier.size(44.dp)) {
                     Icon(

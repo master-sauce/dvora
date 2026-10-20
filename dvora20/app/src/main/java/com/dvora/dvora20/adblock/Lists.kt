@@ -1,9 +1,13 @@
 package com.dvora.dvora20.adblock
 
 import android.content.Context
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -17,20 +21,31 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * The four EasyList-family filter lists shipped with the browser.
+ * Every filter list shipped with the browser.
  *
- * Every list is its official source (easylist.to / the EasyListHebrew project
- * on GitHub, https://github.com/easylist/EasyListHebrew). A bundled copy in
- * `assets/filters/` acts as an offline fallback for the very first run, and
- * every downloaded copy is cached under `filesDir/filter_lists/` so a later
- * failed or corrupted (checksum mismatch) download never breaks blocking —
- * the last-known-good copy keeps being served.
+ * Each list is its official source — bundled into `assets/filters/` so the
+ * very first run blocks out of the box, offline included. (`asset` empty =
+ * no bundled copy; such a list simply arrives on first start.) Every
+ * downloaded copy is cached under `filesDir/filter_lists/` so a later failed
+ * or corrupted (checksum mismatch) download never breaks blocking — the
+ * last-known-good copy keeps being served.
+ *
+ * [enforceChecksum] is false only for lists whose published `! Checksum:`
+ * header does not follow the standard Adblock Plus tooling (ABP's own
+ * anti-adblock list) — those would otherwise be rejected on every update.
+ *
+ * [defaultEnabled] keeps languages the user is unlikely to need (and the
+ * 233k-rule oisd list) OFF until switched on in settings — 600k rules at
+ * once is an OutOfMemory risk on a phone. Disabled lists are neither parsed
+ * nor refreshed: they cost nothing until enabled.
  */
 enum class ListInfo(
     val id: String,             // prefs + cache-file key
     val url: String,            // official HTTPS source
-    val asset: String,          // bundled fallback file name under assets/filters/
-    val displayName: String
+    val asset: String,          // bundled fallback file name under assets/filters/ ("" = none)
+    val displayName: String,
+    val enforceChecksum: Boolean = true,
+    val defaultEnabled: Boolean = true
 ) {
     EASYLIST(
         "easylist",
@@ -55,6 +70,90 @@ enum class ListInfo(
         "https://easylist.to/list/easylistcookie.txt",
         "easylistcookie.txt",
         "EasyList Cookie (banners)"
+    ),
+
+    // ── uBlock Origin's own lists ────────────────────────────────────────────
+    UBLOCK(
+        "ublock", "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/filters.txt",
+        "ublock.txt", "uBlock filters (ads)"
+    ),
+    UBLOCK_UNBREAK(
+        "ublock_unbreak", "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/unbreak.txt",
+        "ublock_unbreak.txt", "uBlock — Unbreak (exceptions)"
+    ),
+    UBLOCK_ABUSE(
+        "ublock_abuse", "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/resource-abuse.txt",
+        "ublock_abuse.txt", "uBlock — Resource abuse"
+    ),
+    UBLOCK_ANNOY(
+        "ublock_annoy", "https://raw.githubusercontent.com/uBlockOrigin/uAssets/master/filters/annoyances-others.txt",
+        "ublock_annoy.txt", "uBlock — Other annoyances"
+    ),
+
+    // ── AdGuard lists ────────────────────────────────────────────────────────
+    ADGUARD_BASE(
+        "adguard_base", "https://filters.adtidy.org/extension/ublock/filters/2_without_easylist.txt",
+        "adguard_base.txt", "AdGuard Base (no EasyList)"
+    ),
+    ADGUARD_MOBILE(
+        "adguard_mobile", "https://filters.adtidy.org/extension/ublock/filters/11.txt",
+        "adguard_mobile.txt", "AdGuard Mobile Ads"
+    ),
+    ADGUARD_ANNOY(
+        "adguard_annoy", "https://filters.adtidy.org/extension/ublock/filters/14.txt",
+        "adguard_annoy.txt", "AdGuard Annoyances"
+    ),
+    ADGUARD_SOCIAL(
+        "adguard_social", "https://filters.adtidy.org/extension/ublock/filters/9.txt",
+        "adguard_social.txt", "AdGuard Social media"
+    ),
+    ADGUARD_RU(
+        "adguard_ru", "https://filters.adtidy.org/windows/filters/1.txt?id=1",
+        "adguard_ru.txt", "AdGuard Russian",
+        defaultEnabled = false
+    ),
+    ADGUARD_TR(
+        "adguard_tr", "https://filters.adtidy.org/windows/filters/13.txt?id=13",
+        "adguard_tr.txt", "AdGuard Turkish",
+        defaultEnabled = false
+    ),
+
+    // ── Fanboy lists ─────────────────────────────────────────────────────────
+    FANBOY_ANNOY(
+        "fanboy_annoy", "https://secure.fanboy.co.nz/fanboy-annoyance.txt",
+        "fanboy_annoy.txt", "Fanboy Annoyances",
+        defaultEnabled = false                       // AdGuard Annoyances already covers these
+    ),
+    FANBOY_INDIAN(
+        "fanboy_indian", "https://secure.fanboy.co.nz/fanboy-indian.txt",
+        "fanboy_indian.txt", "Fanboy Indian",
+        defaultEnabled = false
+    ),
+
+    // ── anti-adblock ─────────────────────────────────────────────────────────
+    ANTIADB_ABP(
+        "antiadb_abp", "https://easylist-downloads.adblockplus.org/antiadblockfilters.txt",
+        "antiadb_abp.txt", "Anti-Adblock filters (ABP)",
+        enforceChecksum = false            // its published header ≠ the standard tooling digest
+    ),
+    ANTIADB_REEK(
+        "antiadb_reek", "https://raw.githubusercontent.com/reek/anti-adblock-killer/master/anti-adblock-killer-filters.txt",
+        "antiadb_reek.txt", "Anti-Adblock Killer (Reek)"
+    ),
+    FUCKFUCK(
+        "fuckfuck", "https://raw.githubusercontent.com/bogachenko/fuckfuckadblock/master/fuckfuckadblock.txt",
+        "fuckfuck.txt", "Fuck Fuckadblock"
+    ),
+
+    // ── big community blocklists ─────────────────────────────────────────────
+    YOYO_HOSTS(
+        "yoyo_hosts", "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=1&mimetype=plaintext",
+        "yoyo_hosts.txt", "Peter Lowe ads+trackers (hosts)"
+    ),
+    OISD_BIG(
+        "oisd_big", "https://abp.oisd.nl",
+        "oisd_big.txt", "oisd big (233k rules — heavy)",
+        defaultEnabled = false
     );
 
     companion object {
@@ -90,9 +189,8 @@ class ListRepo(private val appCtx: Context) {
     private val net = ConcurrentHashMap<ListInfo, ArrayList<FilterRule>>()
     private val cos = ConcurrentHashMap<ListInfo, ArrayList<CosmeticRule>>()
 
-    /** short human status per list for the settings UI. */
-    @Volatile
-    var statuses: Map<ListInfo, String> = emptyMap()
+    /** short human status per list for the settings UI — Compose state so rows live-update. */
+    var statuses by mutableStateOf<Map<ListInfo, String>>(emptyMap())
         private set
 
     @Volatile
@@ -104,11 +202,24 @@ class ListRepo(private val appCtx: Context) {
 
     // ── simple persisted settings (shared prefs file with the whole app) ─────
 
-    fun isEnabled(l: ListInfo): Boolean = prefs.getBoolean("fl_${l.id}", true)
+    fun isEnabled(l: ListInfo): Boolean = prefs.getBoolean("fl_${l.id}", l.defaultEnabled)
 
+    /** enabling loads the list (parse from cache/asset) lazily; disabling frees its rules. */
     fun setEnabled(l: ListInfo, enabled: Boolean) {
         prefs.edit().putBoolean("fl_${l.id}", enabled).apply()
-        if (loaded) scope.launch { recompile() }
+        if (!loaded) return
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                if (enabled) {
+                    if (net[l] == null) runCatching { readStored(l) }
+                } else {
+                    net.remove(l)
+                    cos.remove(l)
+                    setStatus(l, "off — enable to load")
+                }
+                recompile()
+            }
+        }
     }
 
     fun isMaster(): Boolean = prefs.getBoolean("adblock_master", true)
@@ -141,6 +252,9 @@ class ListRepo(private val appCtx: Context) {
         if (!initFlag.compareAndSet(false, true)) return
         scope.launch {
             withContext(Dispatchers.IO) {
+                // a killed process can leave half-written "<id>.txt.tmp" updates behind —
+                // they are never read (the real cache is "<id>.txt") and only waste space
+                runCatching { dir.listFiles { f -> f.name.endsWith(".txt.tmp") }?.forEach { it.delete() } }
                 for (l in ListInfo.all) readStored(l)
                 loaded = true
                 recompile()
@@ -150,12 +264,23 @@ class ListRepo(private val appCtx: Context) {
     }
 
     /**
-     * Automatic (on start) refresh — only EasyList is kept fresh here on a
-     * rolling 7-day interval; the other three lists are updated manually
-     * from their settings rows.
+     * Automatic (on start) refresh — every ENABLED stale/missing list, strictly
+     * one at a time with a short gap, then ONE engine rebuild at the end.
+     * (Parallel downloads + a recompile per list were the startup OOM/lag:
+     * 17 lists × full parse × whole-engine rebuild at once.)
      */
     fun maybeRefresh(scope: CoroutineScope) {
-        if (stale(ListInfo.EASYLIST)) refresh(scope, ListInfo.EASYLIST)
+        val todo = ListInfo.all.filter { isEnabled(it) && stale(it) }
+        if (todo.isEmpty()) return
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                for (l in todo) {
+                    runCatching { doRefresh(l, recompiling = false) }
+                    delay(500)             // keep the phone calm between downloads
+                }
+                runCatching { recompile() }     // one rebuild for the whole batch
+            }
+        }
     }
 
     /** manual (settings button) or automatic single-list refresh — background. */
@@ -172,7 +297,7 @@ class ListRepo(private val appCtx: Context) {
         }
     }
 
-    private fun doRefresh(l: ListInfo) {
+    private fun doRefresh(l: ListInfo, recompiling: Boolean = true) {
         val text = try {
             val req = Request.Builder().url(l.url)
                 .header("Accept", "text/plain;q=1.0,*/*;q=0.8")
@@ -186,12 +311,18 @@ class ListRepo(private val appCtx: Context) {
             setStatus(l, "update failed (${e.message?.take(60) ?: "network"})")
             return                                    // cached / bundled copy stays active
         }
-        val problem = validate(text)
+        val problem = validate(text, l)
         if (problem != null) {
             setStatus(l, "rejected: $problem")        // corrupted download — cache survives
             return
         }
-        val p = parseAll(text, l)
+        val p = try {
+            // line sequence — no split array of a multi-MB list in the heap at once
+            parseAll(text.lineSequence(), l)
+        } catch (t: Throwable) {
+            setStatus(l, "parse failed (${t.message?.take(40) ?: "out of memory"})")
+            return
+        }
         if (!dir.exists()) dir.mkdirs()
         val dst = File(dir, "${l.id}.txt")
         val tmp = File(dir, "${l.id}.txt.tmp")
@@ -201,7 +332,7 @@ class ListRepo(private val appCtx: Context) {
         net[l] = p.first
         cos[l] = p.second
         setStatus(l, "updated · ${p.first.size} rules")
-        if (loaded) recompile()
+        if (recompiling && loaded) recompile()
     }
 
     private fun stale(l: ListInfo): Boolean {
@@ -219,15 +350,18 @@ class ListRepo(private val appCtx: Context) {
 
     /**
      * Integrity gate: when the list ships a `! Checksum:` header (EasyList
-     * Hebrew does; easylist.to's lists don't), verify it against our own
-     * digest of the same text, plus require a sensible rule count. A failed
-     * check ⇒ the download is rejected and the cached copy keeps being served.
+     * Hebrew and the AdGuard / Fanboy families do) verify it against our own
+     * digest of the same text, plus require a sensible rule count. Lists whose
+     * published header does not follow the standard tooling (see
+     * [ListInfo.enforceChecksum]) skip the digest. A failed check ⇒ the
+     * download is rejected and the cached copy keeps being served.
      * Returns a short problem note, or null = accepted.
      */
-    fun validate(text: String): String? {
+    fun validate(text: String, l: ListInfo? = null): String? {
         val lines = text.split(Regex("\\r\\n|\\n|\\r"))
         val rules = lines.count { val t = it.trim(); t.isNotEmpty() && !t.startsWith("!") && !t.startsWith("[") }
         if (rules < 40) return "too few rules ($rules)"
+        if (l != null && !l.enforceChecksum) return null
         val header = lines.firstNotNullOfOrNull {
             val t = it.trim()
             if (t.startsWith("! Checksum:")) t.substringAfter("! Checksum:").trim() else null
@@ -250,57 +384,75 @@ class ListRepo(private val appCtx: Context) {
         return java.util.Base64.getEncoder().encodeToString(digest).replace("=", "")
     }
 
-    private fun parseAll(text: String, l: ListInfo): Pair<ArrayList<FilterRule>, ArrayList<CosmeticRule>> {
+    /** hosts-file line — `0.0.0.0 domain.tld` / `127.0.0.1 domain.tld` (/ echo lines). */
+    private val hostsLine = Regex("""^(?:0\.0\.0\.0|127\.0\.0\.1|::1?)\s+([^#\s]+)""")
+
+    private fun parseAll(lines: Sequence<String>, l: ListInfo): Pair<ArrayList<FilterRule>, ArrayList<CosmeticRule>> {
         val nr = ArrayList<FilterRule>()
         val cr = ArrayList<CosmeticRule>()
         val list = l.displayName
-        for (line in text.lines()) {
+        for (line in lines) {
             val t = line.trim()
             if (t.isEmpty() || t.startsWith("!") || t.startsWith("[") || t.startsWith("=")) continue
-            if (t.startsWith("@!") || t.startsWith("@@") || t.startsWith("##")) {
-                FilterParser.parseCosmetic(t, list)?.let { cr += it }
+            // hosts-format lists (Peter Lowe & co.) → the same ||domain^ rule the ABP
+            // lists use; the raw "0.0.0.0 domain" text never matches a url by itself
+            val rule = hostsLine.find(t)?.let { "||${it.groupValues[1]}^" } ?: t
+            if (rule.startsWith("@!") || rule.startsWith("@@") || rule.startsWith("##")) {
+                FilterParser.parseCosmetic(rule, list)?.let { cr += it }
             } else {
-                FilterParser.parse(t, list)?.let { nr += it }
+                FilterParser.parse(rule, list)?.let { nr += it }
             }
         }
         return nr to cr
     }
 
+    /**
+     * Loads one list from the cached download or the bundled asset. Only
+     * ENABLED lists are ever parsed — a disabled list costs nothing, which is
+     * what keeps 21 shipped lists from blowing the heap. Streaming line parse
+     * + a Throwable guard per list: one oversized/broken list can never crash
+     * or freeze the app start.
+     */
     private fun readStored(l: ListInfo) {
-        val f = File(dir, "${l.id}.txt")
-        var text = if (f.exists()) try {
-            f.readText()
-        } catch (_: Exception) {
-            null
-        } else null
-        if (text == null) {
-            try {
-                text = appCtx.assets.open("filters/${l.asset}").bufferedReader().use { it.readText() }
-            } catch (_: Exception) {
-                null
-            }
-        }
-        if (text == null) {
-            setStatus(l, "empty – waiting for download")
+        if (!isEnabled(l)) {
+            setStatus(l, "off — enable to load")
             return
         }
-        val p = parseAll(text, l)
-        net[l] = p.first
-        cos[l] = p.second
-        setStatus(l, if (f.exists()) "ready · ${p.first.size} rules" else "bundled fallback · ${p.first.size} rules")
+        try {
+            val f = File(dir, "${l.id}.txt")
+            val p = if (f.exists()) {
+                f.bufferedReader().useLines { lines -> parseAll(lines, l) }
+            } else {
+                appCtx.assets.open("filters/${l.asset}").bufferedReader().useLines { lines -> parseAll(lines, l) }
+            }
+            net[l] = p.first
+            cos[l] = p.second
+            setStatus(l, if (f.exists()) "ready · ${p.first.size} rules" else "bundled fallback · ${p.first.size} rules")
+        } catch (t: Throwable) {
+            // OOM / corrupt cache / missing asset — that ONE list stays empty, the rest work
+            net.remove(l)
+            cos.remove(l)
+            setStatus(l, "load failed (${t.message?.take(40) ?: "out of memory"})")
+        }
     }
 
-    /** recompiles every enabled list's rules into one fresh engine and swaps it in. */
+    /**
+     * Recompiles every enabled list's rules into one fresh engine and swaps it
+     * in. Duplicate lines across lists (the blocklists overlap heavily — hosts
+     * lists inside oisd, uBO inside EasyList) collapse to ONE rule each, which
+     * is the single biggest memory saver at 21 shipped lists.
+     */
     fun recompile() {
         if (!loaded) return
         val all = ArrayList<FilterRule>()
         val allCos = ArrayList<CosmeticRule>()
+        val seenNet = HashSet<String>()
+        val seenCos = HashSet<String>()
         for (l in ListInfo.all) {
             if (!isEnabled(l)) continue
-            val n = net[l]
-            val c = cos[l] ?: continue
-            if (n != null) all += n
-            allCos += c
+            val n = net[l] ?: continue
+            for (r in n) if (seenNet.add(r.raw)) all += r
+            cos[l]?.let { c -> for (r in c) if (seenCos.add(r.raw)) allCos += r }
         }
         engine = BlockerEngine(all, allCos, persistedLifetime())
     }

@@ -25,13 +25,21 @@ object Whitelist {
     @Volatile
     private var prefs: SharedPreferences? = null
 
+    /** in-memory snapshot — read on EVERY intercepted request, so never touch disk there */
+    @Volatile
+    private var cached: List<String>? = null
+
     private fun prefs(context: Context): SharedPreferences =
         prefs ?: synchronized(lock) {
             prefs ?: context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
                 .also { prefs = it }
         }
 
-    fun hosts(context: Context): List<String> = try {
+    fun hosts(context: Context): List<String> = cached ?: synchronized(lock) {
+        cached ?: load(context).also { cached = it }
+    }
+
+    private fun load(context: Context): List<String> = try {
         val raw = prefs(context).getString(KEY, "") ?: ""
         if (raw.isEmpty()) emptyList()
         else gson.fromJson(raw, listType) ?: emptyList()
@@ -54,5 +62,6 @@ object Whitelist {
 
     private fun save(context: Context, hosts: Collection<String>) {
         prefs(context).edit().putString(KEY, gson.toJson(ArrayDeque(hosts))).apply()
+        cached = hosts.toList()   // the interceptor reads this live — keep it current
     }
 }
