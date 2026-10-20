@@ -23,14 +23,14 @@ import okhttp3.Response
 import org.xmlpull.v1.XmlPullParser
 
 /**
- * The native fallback download engine, replicating 1DM's approach:
- *  - direct files → multi-thread ranged download (1DM's aspsine multithread
+ * The native fallback download engine, following the classic download-manager approach:
+ *  - direct files → multi-thread ranged download (multi-thread ranged download
  *    pattern — parallel block writes into one pre-sized file, no merge pass,
  *    206-verified so a Range-ignoring server falls back to a single stream)
  *  - HLS (m3u8) → master playlist → highest-BANDWIDTH variant → every segment
  *    fetched in order with retries, AES-128-CBC decrypted when the playlist
  *    carries #EXT-X-KEY, appended into one container
- *  - ts/aac outputs get remuxed to mp4/m4a by [MediaRemux] — 1DM's converter
+ *  - ts/aac outputs get remuxed to mp4/m4a by [MediaRemux] — the runtime converter
  * Runs only when yt-dlp already failed — unsupported page, broken extractor,
  * geo-block. DASH (mpd) stays yt-dlp-only: native DASH assembly is out of scope.
  */
@@ -63,9 +63,9 @@ object NativeDl {
     // ── shared ────────────────────────────────────────────────────────────────
 
     /**
-     * 1DM's engine stack: OkHttp — HTTP/2 + a modern TLS fingerprint. Gateways that
+     * the probe engine stack: OkHttp — HTTP/2 + a modern TLS fingerprint. Gateways that
      * 403/502 HttpURLConnection and python-urllib requests accept OkHttp traffic,
-     * which is exactly why 1DM's engine gets through where others don't.
+     * which is exactly why the probe engine gets through where others don't.
      */
     private val http: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -149,7 +149,7 @@ object NativeDl {
         return out
     }
 
-    // ── direct files — 1DM's aspsine multithread pattern ───────────────────────
+    // ── direct files — the classic multi-thread ranged pattern ───────────────────────
 
     private fun direct(
         url: String, dir: File, name: String?,
@@ -206,7 +206,7 @@ object NativeDl {
         }
     }
 
-    /** a finished file — ts/aac get remuxed to mp4/m4a (1DM's converter). */
+    /** a finished file — ts/aac get remuxed to mp4/m4a (the runtime converter). */
     private fun finish(f: File): File {
         val ext = f.extension.lowercase()
         if (ext == "ts" || ext == "aac") {
@@ -299,7 +299,7 @@ object NativeDl {
         }
     }
 
-    // ── HLS — playlist walk + AES-128 segment assembly (1DM's approach) ───────
+    // ── HLS — playlist walk + AES-128 segment assembly (the classic download-manager approach) ───────
 
     private fun hls(
         url: String, dir: File, name: String?,
@@ -319,7 +319,7 @@ object NativeDl {
         }
         var body = text(url) ?: return null
         var base = url
-        // master playlist → the variant with the highest BANDWIDTH (1DM picks the best stream)
+        // master playlist → the variant with the highest BANDWIDTH (the best stream wins)
         if (body.contains("#EXT-X-STREAM-INF", true)) {
             var best: Pair<Long, String>? = null
             val lines = body.lines()
@@ -382,7 +382,7 @@ object NativeDl {
                 }
                 for ((i, seg) in segments.withIndex()) {
                     if (isCancelled()) throw Exception("cancelled")
-                    // CDNs flake under bursts — 1DM retries segments, so does this
+                    // CDNs flake under bursts — segments are retried, so does this
                     var bytes: ByteArray? = null
                     for (attempt in 1..3) {
                         bytes = fetchBytes(seg, ref, ua, cookie, cached)
@@ -399,7 +399,7 @@ object NativeDl {
                     onPct((((i + 1) * 99) / segments.size).coerceIn(0, 99))
                 }
             }
-            // the assembled .ts converts to .mp4 (1DM's ts→mp4 feature) — remux
+            // the assembled .ts converts to .mp4 (the ts-to-mp4 remux) — remux
             // failure keeps the playable .ts
             val merged = rename(part, out)
             val mp4 = File(dir, merged.nameWithoutExtension + ".mp4")
@@ -410,7 +410,7 @@ object NativeDl {
         }
     }
 
-    // ── DASH (mpd) — 1DM downloads these natively, so does this ─────────────────
+    // ── DASH (mpd) — the download manager downloads these natively, so does this ─────────────────
 
     /** one representation of one adaptation set (SegmentTemplate / SegmentList). */
     private class Rep(
@@ -433,7 +433,7 @@ object NativeDl {
             }
             ?: return null
         val reps = parseMpd(xml, url) ?: return null
-        // best video + best audio representation — 1DM's stream picker
+        // best video + best audio representation — best-rendition selection
         val chosen = listOfNotNull(
             reps.filter { it.isVideo }.maxByOrNull { it.bw },
             reps.filter { !it.isVideo }.maxByOrNull { it.bw }
@@ -676,7 +676,7 @@ object NativeDl {
 }
 
 /**
- * 1DM's ts/aac→mp4 conversion, the native way: Android's own MediaExtractor +
+ * the engine's ts/aac→mp4 conversion, the native way: Android's own MediaExtractor +
  * MediaMuxer copy the h264/aac (or ADTS aac) streams into an mp4/m4a container —
  * no re-encode, no ffmpeg process, seconds even for long files.
  */

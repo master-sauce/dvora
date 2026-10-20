@@ -88,12 +88,12 @@ class WebTab(
     private val jsInterface = SnifferJsInterface(context) { webView.settings.userAgentString }
 
     init {
-        webView.addJavascriptInterface(jsInterface, "JSInterface")     // 1DM's JSInterface bridge
+        webView.addJavascriptInterface(jsInterface, "JSInterface")     // the engine's JSInterface bridge
         webView.webViewClient = client
         webView.webChromeClient = chrome
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, !incognito)
         webView.setDownloadListener { url, _, contentDisposition, mimeType, contentLength ->
-            // forced downloads join the capture list (1DM marks these so they never double-list)
+            // forced downloads join the capture list (the download manager marks these so they never double-list)
             if (url.startsWith("http")) {
                 val mime = mimeType ?: ""
                 SnifferStore.add(
@@ -139,7 +139,7 @@ class WebTab(
             favicon = null
             blocked = 0
             blockLog = emptyList()
-            SnifferStore.newPage()                       // 1DM keeps one capture list per page
+            SnifferStore.newPage()                       // the download manager keeps one capture list per page
             ytWatchUrl(url)?.let { probeYouTube(it) }    // a YouTube page loads → its download row
             address = url                                // bar always tracks the page actually loaded (redirects / history)
             navTick++
@@ -149,7 +149,7 @@ class WebTab(
         client.onPageEnd = {
             blockLog = repo.engine.blockSnapshot()
             blocked = repo.engine.pageBlocks
-            // 1DM scans every body it can reach — the page's own DOM too: <video>/<source>
+            // the download manager scans every body it can reach — the page's own DOM too: <video>/<source>
             // elements and iframes that never issue an XHR still carry captureable media
             runCatching {
                 webView.evaluateJavascript(

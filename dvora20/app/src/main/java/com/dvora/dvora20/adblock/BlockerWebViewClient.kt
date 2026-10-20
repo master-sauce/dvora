@@ -89,7 +89,7 @@ class BlockerWebViewClient(
         val host = uri.host?.lowercase() ?: return null
         if (host.isEmpty()) return null
 
-        // 1DM's localhost block-and-capture: the sniffer script rerouted a disallowed XHR/fetch
+        // the localhost block-and-capture: the sniffer script rerouted a disallowed XHR/fetch
         // to `https://localhost:<random>/?url=<btoa(url)>` — decode it, log it, return nothing.
         // The page's player sees a failed/empty response while the real URL joins the capture list.
         if (host == "localhost") {
@@ -119,10 +119,10 @@ class BlockerWebViewClient(
         val tag = tagOf(request, kind)
         val url = uri.toString()
 
-        // 1DM's urlHeadersCache — the exact request headers per url, replayed by the probe
+        // the url-to-headers cache — the exact request headers per url, replayed by the probe
         if (request.requestHeaders.isNotEmpty()) SnifferStore.noteHeaders(url, request.requestHeaders)
 
-        // 1DM's loadResource unwrap — media urls hidden behind ?url= / ?subtitle= proxy
+        // proxy-param unwrap — media urls hidden behind ?url= / ?subtitle= proxy
         // params (Akamai-style proxies, playlist subtitle carriers) get their own row
         Sniff.embeddedUrl(url)?.let { embedded ->
             val k = Sniff.kind(embedded, "", null, -1)

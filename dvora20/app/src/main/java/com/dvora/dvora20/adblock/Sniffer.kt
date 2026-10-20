@@ -21,7 +21,7 @@ import okhttp3.Request
 import okhttp3.Response
 
 /**
- * The 1DM-style media sniffer core.
+ * The Media sniffer core.
  *
  * Three pieces:
  *  - [SnifferStore]  — the per-page capture list (deduped, cleared on every page start)
@@ -29,7 +29,7 @@ import okhttp3.Response
  *                      decoding) → url filename/title query params → path segment →
  *                      mime-derived extension with wrong-extension correction
  *  - [SnifferJsInterface] — the `JSInterface` bridge installed on the WebView; the injected
- *                      script (1DM's XMLHttpRequest/fetch overrides) calls into it on every
+ *                      script (the engine's XMLHttpRequest/fetch overrides) calls into it on every
  *                      ajax response so classification sees the REAL response headers and
  *                      body, not just the request url.
  */
@@ -44,9 +44,9 @@ data class CapturedMedia(
     val iv: String? = null,  // HLS AES-128 IV (hex) — present only for kind == "aeskey"
     val duration: Double = -1.0,   // seconds, -1 unknown — #EXTINF sums of a playlist body
     val parts: Int = -1,           // segment count (variant count for masters), -1 unknown
-    val finalUrl: String? = null,  // redirect-resolved url (1DM's Connect follows to the end); the row keeps the original
+    val finalUrl: String? = null,  // redirect-resolved url (the probe engine follows to the end); the row keeps the original
     // every header the page's own JS set on the request (auth tokens, custom X-*) —
-    // 1DM's additionalHeaders: replayed by probe + both download engines
+    // the player's extra headers: replayed by probe + both download engines
     val extraHeaders: Map<String, String>? = null,
     val master: Boolean = false,    // m3u8 master (variant list) — THE row to pick for the full video
     val qualities: String? = null   // master's variant ladder "1080p·720p", highest first
@@ -83,7 +83,7 @@ object SnifferStore {
         synchronized(lock) { captures.clear(); probed.clear() }
     }
 
-    /** 1DM's urlHeadersCache — the probe must look EXACTLY like the page's own request. */
+    /** the url-to-headers cache — the probe must look EXACTLY like the page's own request. */
     fun noteHeaders(url: String, headers: Map<String, String>) {
         if (headers.isEmpty()) return
         synchronized(lock) {
@@ -136,7 +136,7 @@ object SnifferStore {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// URL / MIME classification (1DM extension sets, trimmed to what browsers hit)
+// URL / MIME classification (the download manager extension sets, trimmed to what browsers hit)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 internal object Sniff {
@@ -198,7 +198,7 @@ internal object Sniff {
             // plain html page bodies are never media — but anything else gets a body scan
             if (m.contains("text/html") || m.contains("application/json")) return null
             if (body != null && body.startsWith("<")) return null
-            if (size >= 0 && size < 10_240) return null               // 1DM's ≥10KB gate kills beacons/icons
+            if (size >= 0 && size < 10_240) return null               // the ≥10 KB gate kills beacons/icons
             return null
         } catch (_: Exception) {
             return null
@@ -244,7 +244,7 @@ internal object Sniff {
     internal fun extForMime(mime: String): String? = MIME_EXT[mime.substringBefore(';').trim()]?.let { ".$it" }
 
     /**
-     * 1DM-style playlist metrics: the #EXTINF sum is the stream duration and the
+     * Playlist metrics: the #EXTINF sum is the stream duration and the
      * segment-line count its parts; a master playlist (no #EXTINF yet) returns
      * its variant count instead of parts.
      */
@@ -265,15 +265,15 @@ internal object Sniff {
         return if (parts > 0) dur to parts else -1.0 to variants
     }
 
-    // ── 1DM body scanner (Extract's generic half) ────────────────────────────
+    // ── the download manager body scanner (Extract's generic half) ────────────────────────────
 
-    /** 1DM's captureExtensions + subtitles — what the body scan looks for. */
+    /** capture extensions + subtitles — what the body scan looks for. */
     internal val CAPTURE_EXT = Regex(
         """\.(?:m3u8|mpd|mkv|flv|vob|avi|wmv|mp4|mpg|mp2|mpeg|mpe|mpv|m2v|m4v|3gp|3g2|vtt|srt|sub|ttml|sbv)(?![a-z0-9])""",
         RegexOption.IGNORE_CASE
     )
 
-    /** social-share junk — 1DM never captures these */
+    /** social-share junk — never captured */
     private val JUNK_LINK = Regex(
         """facebook\.com/sharer\.php\?|twitter\.com/share\?|plus\.google\.com/share\?|whatsapp://send\?""",
         RegexOption.IGNORE_CASE
@@ -283,7 +283,7 @@ internal object Sniff {
 
     /**
      * `?url=http…` / `&subtitle=http…` / `?u=https…` → the wrapped media url
-     * (1DM's loadResource slice — proxied/aliased media endpoints).
+     * (the engine's loadResource slice — proxied/aliased media endpoints).
      */
     fun embeddedUrl(url: String): String? {
         val m = Regex("""[?&](?:subtitle|url|u|src|target|file|media|video)=(https?[^&]+)""", RegexOption.IGNORE_CASE).find(url)
@@ -318,7 +318,7 @@ internal object Sniff {
     }
 
     /**
-     * 1DM's `getAdditionalHeadersMapFromJavascriptJsonHeaders` — EVERY header the page's
+     * every header the page's JS set on the request
      * JS set on the XHR (setRequestHeader/fetch-init) comes back as a map: auth tokens,
      * custom X-*, API keys. These are the headers the player itself used, so replaying
      * them is what gets past token-checked CDNs that plain referer/cookie can't.
@@ -333,7 +333,7 @@ internal object Sniff {
             for (i in 0 until names.length()) {
                 val k = names.getString(i)
                 val v = obj.get(k)
-                // an array-valued header (fetch init) → its first entry (1DM's behavior)
+                // an array-valued header (fetch init) → its first entry (expected behavior)
                 out[k] = if (v is JSONArray) v.optString(0) else v.toString()
             }
             out
@@ -343,7 +343,7 @@ internal object Sniff {
     }
 
     /**
-     * 1DM's `getGenericVideoLink` — the token around an extension hit: walk back
+     * the token around an extension hit: walk back
      * and forward to the nearest delimiter (quote / angle bracket / whitespace),
      * reject anything over 4096 chars, unfold JSON/html escapes, resolve against
      * [base]. [endRef] advances past the closing delimiter so the scan continues.
@@ -379,7 +379,7 @@ internal object Sniff {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Filename resolution (1DM's algorithm, condensed)
+// Filename resolution (condensed filename resolution)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 object SniffName {
@@ -423,7 +423,7 @@ object SniffName {
             var name = fromDisposition(disposition)
 
             if (name == null) {
-                // query params of the url (1DM parses filename / title / mime)
+                // query params of the url (the download manager parses filename / title / mime)
                 val query = url.substringAfter('?', "").substringBefore('#')
                 for (key in listOf("filename", "title")) {
                     val m = Regex("""[?&]$key=([^&]+)""", RegexOption.IGNORE_CASE).find(query)
@@ -522,7 +522,7 @@ class SnifferJsInterface(
 
     /**
      * The classifier hook — fired on every ajax/fetch response with its real headers + body.
-     * Ported from 1DM's `JSInterface.handleM3u8Url`.
+     * HLS playlist handling behind the JS bridge.
      */
     @JavascriptInterface
     fun handleM3u8Url(
@@ -563,7 +563,7 @@ class SnifferJsInterface(
                         }
                     }
                 }
-                // 1DM's getAdditionalHeadersMapFromJavascriptJsonHeaders — EVERY header the
+                // the engine's getAdditionalHeadersMapFromJavascriptJsonHeaders — EVERY header the
                 // player itself set (tokens, authorization, custom X-*) is captured and
                 // replayed later; cookie/referer ride in their own fields
                 extraHeaders = Sniff.jsonHeaders(headersJson)
@@ -571,7 +571,7 @@ class SnifferJsInterface(
                     ?.takeIf { it.isNotEmpty() }
             }
 
-            // 1DM's Extract — ANY body over 10 chars that isn't itself media gets scanned
+            // the generic extractor — ANY body over 10 chars that isn't itself media gets scanned
             // for embedded media urls: html fragments, json player configs, frame pages
             if (b.length > 10 && kind != "m3u8" &&
                 !mime.startsWith("video/") && !mime.startsWith("audio/") && !mime.startsWith("image/")
@@ -624,7 +624,7 @@ class SnifferJsInterface(
         }
     }
 
-    /** m3u8 body → child playlists + per-attribute URI="…" tracks + AES-128 keys (1DM's Extract) */
+    /** m3u8 body → child playlists + per-attribute URI="…" tracks + AES-128 keys (the generic extractor) */
     private fun extractM3u8Children(body: String, baseUrl: String, pageUrl: String, referer: String?, cookie: String?) {
         try {
             // #EXT-X-KEY:METHOD=AES-128,URI="…",IV=0x…  →  captured as kind "aeskey" with iv
@@ -664,10 +664,10 @@ class SnifferJsInterface(
         }
     }
 
-    /** html/json body scan — absolute media urls only (conservative; 1DM uses Jsoup on the same idea) */
+    /** html/json body scan — absolute media urls only (conservative; the download manager uses Jsoup on the same idea) */
     /**
-     * 1DM's `Extract`, generic half — the capture-extension pattern runs over the
-     * WHOLE body and every hit becomes the token around it (1DM's getGenericVideoLink:
+     * the generic extractor: the capture-extension pattern runs over the
+     * WHOLE body and every hit becomes the token around it (the engine's getGenericVideoLink:
      * relative urls resolve, JSON/html escapes unfold); `<video>/<source>/<audio>`
      * src attributes are scanned too — media elements never touch XHR — and one
      * level of iframe/frame targets gets fetched and scanned again.
@@ -681,7 +681,7 @@ class SnifferJsInterface(
                 endRef.set(m.range.last + 1)
                 val link = Sniff.genericLink(baseUrl, b, m.range.first, endRef) ?: continue
                 captureScanned(link, pageUrl, referer, cookie)
-                // 1DM: a link ending in "?a=view" also captures its bare form
+                // the download manager: a link ending in "?a=view" also captures its bare form
                 if (link.endsWith("?a=view", true)) {
                     captureScanned(link.substring(0, link.length - 7), pageUrl, referer, cookie)
                 }
@@ -744,7 +744,7 @@ class SnifferJsInterface(
 
         /**
          * Injected on every page start (idempotent — the `realOpen`/`realFetch` guards make
-         * re-injection a no-op). Ported from 1DM's injectAjaxOverrideScript: wraps
+         * re-injection a no-op). The AJAX override script: wraps
          * XMLHttpRequest + fetch so every response's headers and body reach native exactly once.
          */
         val SCRIPT = """
@@ -922,7 +922,7 @@ object BlobSaver {
 // ═══════════════════════════════════════════════════════════════════════════════
 // ResourceProbe — HttpURLConnection ranged GET that fills real size / mime /
 // filename after redirects, replaying the page's own referer / cookie / UA.
-// 1DM does this with OkHttp on a per-tab executor; HttpURLConnection needs no
+// This uses OkHttp on a per-tab executor; HttpURLConnection needs no
 // extra dependency and stops reading after headers.
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -937,7 +937,7 @@ object ResourceProbe {
 
     fun probeAsync(url: String, referer: String?, cookie: String?, ua: String? = null) {
         exec.execute {
-            // 1DM's Connect replays the page's request headers AND the player's own JS-set
+            // the probe engine replays the page's request headers AND the player's own JS-set
             // headers (tokens) — the JS-set ones win, they are what the media host accepted
             val capHeaders = SnifferStore.byUrl(url)?.extraHeaders
             val cached = if (capHeaders != null)
@@ -956,7 +956,7 @@ object ResourceProbe {
                         kind = kind,
                         duration = if (r.duration > 0) r.duration else c.duration,
                         parts = if (r.parts > 0) r.parts else c.parts,
-                        // 1DM's Connect resolves redirects to the END — the engine gets the final url
+                        // the probe engine resolves redirects to the END — the engine gets the final url
                         finalUrl = if (!r.finalUrl.equals(url, ignoreCase = true)) r.finalUrl else c.finalUrl,
                         master = c.master || r.master,
                         qualities = r.qualities ?: c.qualities
@@ -983,9 +983,9 @@ object ResourceProbe {
     }
 
     /**
-     * 1DM's engine stack: OkHttp — HTTP/2 + a modern TLS fingerprint. Gateways that
+     * the probe engine stack: OkHttp — HTTP/2 + a modern TLS fingerprint. Gateways that
      * 403/502 HttpURLConnection and python-urllib traffic accept OkHttp — the exact
-     * reason 1DM's Connect probe succeeds where plain-Java requests don't.
+     * reason the probe engine probe succeeds where plain-Java requests don't.
      */
     private val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -1158,7 +1158,7 @@ object ResourceProbe {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// MediaMeta — duration (seconds) from a container's own header bytes, 1DM-style,
+// MediaMeta — duration (seconds) from a container's own header bytes, the download manager-style,
 // for every captured url. Only the head/tail window of the file is ever fetched.
 // ═══════════════════════════════════════════════════════════════════════════════
 

@@ -202,7 +202,7 @@ class YtDownloadService : Service() {
             }
         }
 
-        /** "k: v" lines → map (the page's exact request headers, 1DM's urlHeadersCache). */
+        /** "k: v" lines → map (the page's exact request headers, the url-to-headers cache). */
         fun parseHeaders(csv: String?): Map<String, String>? {
             if (csv.isNullOrBlank()) return null
             val m = HashMap<String, String>()
@@ -322,7 +322,7 @@ class YtDownloadService : Service() {
                 // best video + separate best audio when offered, else single best — merged to one mp4 by ffmpeg
                 req.addOption("-f", "bv*+ba/b")
                 req.addOption("--merge-output-format", "mp4")
-                // 1DM-style header replay — many CDNs 403 without the page's own referer / cookies / UA.
+                // full header replay — many CDNs 403 without the page's own referer / cookies / UA.
                 // The page's cached Referer (the one the WebView actually sent and the server
                 // accepted — hotlink gates check it) beats the guessed page referer.
                 val effReferer = headers?.get("Referer")?.takeIf { it.isNotBlank() } ?: referer
@@ -402,7 +402,7 @@ class YtDownloadService : Service() {
                     YtCtl.pushDone(newest)
                     job?.let { jobDone(it, newest.name, dir) }
                 } else {
-                    // yt-dlp landed nothing — the native engine (1DM-style) gets its shot
+                    // yt-dlp landed nothing — the native engine (the download manager-style) gets its shot
                     note(tail, "yt-dlp empty → native engine")
                     val fb = nativeFallback(job, clean, dir, base, referer, userAgent, cookie, headers)
                     if (fb != null) {
@@ -456,7 +456,7 @@ class YtDownloadService : Service() {
     }
 
     /**
-     * yt-dlp failed — the 1DM-style native engine gets its shot: multi-thread
+     * yt-dlp failed — the native fallback engine gets its shot: multi-thread
      * ranged download for direct files, playlist walk + AES-128 segment assembly
      * for HLS. Progress flows into the job + summary notification like yt-dlp's.
      */

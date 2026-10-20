@@ -253,7 +253,7 @@ fun BrowserScreen(
     fun startYt(given: String, baseName: String? = null) {
         val t = tabs.getOrNull(active) ?: return
         val url = given.substringBefore('#')     // page hash fragments are noise for yt-dlp
-        // 1DM resolves media urls to the END (redirects already followed by the probe) before
+        // the download manager resolves media urls to the END (redirects already followed by the probe) before
         // any engine sees them — the row keeps the original, the engine gets the final url
         val cap = SnifferStore.byUrl(url)
         val target = cap?.finalUrl?.takeIf { it.startsWith("http") } ?: url
@@ -308,12 +308,12 @@ fun BrowserScreen(
         yt = 0
         ytCount = YtCtl.count
         ytUrl = target
-        // 1DM-style header replay: prefer the exact referer/cookie the page used for this
+        // full header replay: prefer the exact referer/cookie the page used for this
         // resource (from the sniffer capture), fall back to the page itself + cookie jar
         val referer = cap?.referer ?: t.address.takeIf { it.startsWith("http") }
         val cookie = cap?.cookie ?: CookieManager.getInstance().getCookie(url)
         // the page's EXACT request headers (urlHeadersCache) + the player's own JS-set
-        // headers (auth tokens, custom X-* — 1DM's additionalHeaders) — the engines
+        // headers (auth tokens, custom X-* — the player's extra headers) — the engines
         // replay them verbatim; JS-set headers win, they are what the media host accepted.
         // Accept-Encoding stays out (raw gzip would corrupt everything that isn't yt-dlp)
         val capHeaders = cap?.extraHeaders
@@ -359,7 +359,7 @@ fun BrowserScreen(
                 .setDescription(context.getString(R.string.dl_started_desc))
                 .setMimeType(mimeType ?: "application/octet-stream")
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                // 1DM-style header replay — the page's own UA / referer / cookies, not a fake one
+                // full header replay — the page's own UA / referer / cookies, not a fake one
                 .addRequestHeader("User-Agent", tabs.getOrNull(active)?.webView?.settings?.userAgentString ?: "")
             tabs.getOrNull(active)?.address?.takeIf { it.startsWith("http") }?.let {
                 req.addRequestHeader("Referer", it)
@@ -409,7 +409,7 @@ fun BrowserScreen(
         close()
     }
 
-    // ── sniffer merges — 1DM-style captures (JS bridge: real headers/body) + reqLog url-only rows ──
+    // ── sniffer merges — rich captures (JS bridge: real headers/body) + reqLog url-only rows ──
     fun sniffRows(): List<SniffRow> {
         val fromStore = SnifferStore.all().map { c ->
             SniffRow(
@@ -431,7 +431,7 @@ fun BrowserScreen(
             )
         }
         val known = fromStore.mapTo(mutableSetOf()) { it.url.lowercase().substringBefore('#') }
-        // ── 1DM's Connect on the request log: candidates get probed (media-tagged
+        // ── the probe engine on the request log: candidates get probed (media-tagged
         // first, then newest-first) and the RESPONSE decides — extension-less media
         // endpoints never hide behind a weird url shape. Only a video/audio/playlist
         // answer promotes into a capture row; static-file extensions never burn a slot. ──
@@ -505,7 +505,7 @@ fun BrowserScreen(
         else -> "$bytes B"
     }
 
-    /** seconds → m:ss / h:mm:ss — the 1DM-style duration chip on every media row */
+    /** seconds → m:ss / h:mm:ss — the duration chip on every media row */
     fun fmtDur(sec: Double): String {
         if (sec <= 0) return ""
         val t = sec.toInt()
