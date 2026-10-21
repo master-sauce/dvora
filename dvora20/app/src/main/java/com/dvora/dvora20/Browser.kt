@@ -701,11 +701,19 @@ fun BrowserScreen(
     }
 
     // entering the browser: restore the session's tabs as they were; a tapped
-    // link (initialUrl ≠ plain home open) opens as its own NEW tab instead
+    // link (initialUrl ≠ plain home open) opens as its own NEW tab instead.
+    // After an activity recreation (theme switch) the snapshot taken in
+    // MainActivity.onDestroy reopens the regular tabs.
     var opened by remember { mutableStateOf(false) }
     if (!opened) {
         opened = true
-        if (tabs.isEmpty()) newTab(initialUrl.ifBlank { BROWSER_HOME }, false)
+        val restore = TabCtl.restore
+        val restoreActive = TabCtl.restoreActive
+        TabCtl.restore = null
+        if (tabs.isEmpty() && !restore.isNullOrEmpty()) {
+            restore.forEach { u -> newTab(u, false) }
+            if (tabs.isNotEmpty()) active = restoreActive.coerceIn(0, tabs.lastIndex)
+        } else if (tabs.isEmpty()) newTab(initialUrl.ifBlank { BROWSER_HOME }, false)
         else if (initialUrl.isNotBlank() && initialUrl != BROWSER_HOME) newTab(initialUrl, false)
     }
 

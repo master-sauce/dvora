@@ -25,6 +25,12 @@ object TabCtl {
     /** selected tab index into [tabs] — outlives the browser screen with them */
     val activeState = mutableIntStateOf(0)
 
+    /** urls (regular tabs only) to reopen after an ACTIVITY recreation — theme switch */
+    var restore: List<String>? = null
+
+    /** which restored tab was selected */
+    var restoreActive: Int = 0
+
     /** tears the whole session down — WebViews of a dead Activity must never render again */
     fun destroyAll() {
         tabs.toList().forEach { it.destroy() }

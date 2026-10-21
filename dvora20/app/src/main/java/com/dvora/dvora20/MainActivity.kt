@@ -428,7 +428,18 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         // the browser tabs' WebViews belong to this Activity — the app-session
-        // tab store (regular tabs) must never survive its death
+        // tab store (regular tabs) must never survive its death. A theme switch
+        // RECREATES the activity though: snapshot the regular tabs' urls so the
+        // browser session comes back (incognito tabs stay ephemeral and die).
+        if (!isFinishing) {
+            val regular = TabCtl.tabs.filter { !it.incognito }
+            if (regular.isNotEmpty()) {
+                TabCtl.restore = regular.map { it.address }
+                val activeTab = TabCtl.tabs.getOrNull(TabCtl.activeState.intValue)
+                TabCtl.restoreActive = if (activeTab != null && !activeTab.incognito)
+                    regular.indexOf(activeTab).coerceAtLeast(0) else 0
+            }
+        }
         TabCtl.destroyAll()
     }
 }
@@ -1461,13 +1472,6 @@ fun SubtitlesScreen(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f)
             )
-            IconButton(onClick = onToggleDark) {
-                Icon(
-                    if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode,
-                    "Theme",
-                    tint = BeeColors.HoneyGold
-                )
-            }
         }
 
         Column(modifier = Modifier.padding(16.dp)) {
@@ -1759,13 +1763,6 @@ fun ImdbScreen(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f)
             )
-            IconButton(onClick = onToggleDark) {
-                Icon(
-                    if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode,
-                    "Theme",
-                    tint = BeeColors.HoneyGold
-                )
-            }
         }
         Column(modifier = Modifier.padding(16.dp)) {
             OutlinedTextField(
@@ -2187,13 +2184,6 @@ fun BookmarksScreen(
                 color = BeeColors.HoneyGold.copy(alpha = 0.7f),
                 modifier = Modifier.padding(end = 4.dp)
             )
-            IconButton(onClick = onToggleDark) {
-                Icon(
-                    if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode,
-                    "Theme",
-                    tint = BeeColors.HoneyGold
-                )
-            }
         }
 
         // Search bar — filter bookmarks by title / year / IMDb ID / mediaType
