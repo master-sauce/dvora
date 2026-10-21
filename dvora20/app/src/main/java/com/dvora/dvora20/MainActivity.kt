@@ -320,8 +320,7 @@ private fun localeOf(ctx: Context, lang: String): android.content.res.Resources 
 }
 
 /** non-Composable localized lookup (uses the stored language). */
-fun localeStr(context: Context, @StringRes id: Int): String =
-    try {
+fun localeStr(context: Context, @StringRes id: Int): String =    try {
         localeOf(context, appLang(context)).getString(id)
     } catch (_: Exception) {
         context.getString(id)
@@ -343,6 +342,29 @@ fun L(@StringRes id: Int): String {
 fun beeAdapt(light: Color, dark: Color): Color =
     if (LocalDarkMode.current.value) dark else light
 
+/**
+ * Applies the app's dark/light choice to the activity's own resources configuration.
+ * Android WebView takes a page's `prefers-color-scheme` — and whether algorithmic
+ * darkening may run at all — from the host app's configuration, not from a
+ * per-WebView context. Without this, sites like DuckDuckGo and YouTube stayed in
+ * the system's mode regardless of the in-app toggle.
+ */
+private fun applyNightMode(activity: android.app.Activity, dark: Boolean) {
+    try {
+        val res = activity.resources
+        val cfg = android.content.res.Configuration(res.configuration)
+        val want = if (dark) android.content.res.Configuration.UI_MODE_NIGHT_YES
+        else android.content.res.Configuration.UI_MODE_NIGHT_NO
+        if ((cfg.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+            (want and android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+        ) return
+        cfg.uiMode = (cfg.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK.inv()) or want
+        @Suppress("DEPRECATION")
+        res.updateConfiguration(cfg, res.displayMetrics)
+    } catch (_: Exception) {
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // ACTIVITY
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -353,8 +375,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         BookmarksManager.load(this)
         BookmarksManager.rescheduleAllReminders(this)
-        HistoryStore.load(this)   // persisted browsing history — incognito pages were never recorded
-        // yt-dlp + ffmpeg — the in-app browser's media-download feature
+        HistoryStore.load(this)   // persisted browsing history — incognito pages were never recorded        // yt-dlp + ffmpeg — the in-app browser's media-download feature
         try {
             YoutubeDL.getInstance().init(this)
             FFmpeg.getInstance().init(this)
@@ -368,6 +389,10 @@ class MainActivity : ComponentActivity() {
             }
         } catch (_: Exception) {
         }
+        // the app's dark/light choice reaches the ACTIVITY configuration — Android
+        // WebView derives a page's prefers-color-scheme (DuckDuckGo, YouTube, …)
+        // and the algorithmic-darkening gate from it, not from a per-view context
+        applyNightMode(this, getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE).getBoolean("dark_mode", false))
         setContent {
             val prefs = getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE)
             val darkModeState = remember { mutableStateOf(prefs.getBoolean("dark_mode", false)) }
@@ -381,6 +406,7 @@ class MainActivity : ComponentActivity() {
                         onToggleDarkMode = {
                             darkModeState.value = !darkModeState.value
                             prefs.edit().putBoolean("dark_mode", darkModeState.value).apply()
+                            applyNightMode(this, darkModeState.value)
                         }
                     )
                 }

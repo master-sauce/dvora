@@ -209,6 +209,9 @@ fun BrowserScreen(
     // the vertical tab list — the only tab UI: a count button in the top bar
     // opens the slide-in list over the page
     var tabsPanelOpen by remember { mutableStateOf(false) }
+    // panel search — filters open tabs by title / url
+    var tabQuery by remember { mutableStateOf("") }
+    LaunchedEffect(tabsPanelOpen) { if (!tabsPanelOpen) tabQuery = "" }
 
     // ── launchers ─────────────────────────────────────────────────────────────
     val dlPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -685,6 +688,16 @@ fun BrowserScreen(
             else -> active
         }
         syncCookies()
+    }
+
+    /** closes EVERY tab (incognito included) and leaves one fresh home tab behind. */
+    fun closeAllTabs() {
+        if (tabs.isEmpty()) return
+        tabs.toList().forEach { it.destroy() }
+        tabs.clear()
+        active = 0
+        newTab(BROWSER_HOME, false)
+        syncCookies()   // the incognito tabs died — the app-wide cookie jar reopens
     }
 
     // entering the browser: restore the session's tabs as they were; a tapped
@@ -1553,7 +1566,13 @@ fun BrowserScreen(
                         color = BeeColors.HoneyGold,
                         modifier = Modifier.weight(1f)
                     )
-                    // history lives here; tab actions stay on the top bar
+                    // history + close-all live here; tab actions stay on the top bar
+                    IconButton(onClick = { tabsPanelOpen = false; closeAllTabs() }, modifier = Modifier.size(44.dp)) {
+                        Icon(
+                            Icons.Default.DeleteSweep, L(R.string.cd_close_all),
+                            tint = BeeColors.NotFoundRed, modifier = Modifier.size(22.dp)
+                        )
+                    }
                     IconButton(onClick = { tabsPanelOpen = false; historyOpen = true }, modifier = Modifier.size(44.dp)) {
                         Icon(
                             Icons.Default.History, L(R.string.cd_history),
@@ -1561,8 +1580,41 @@ fun BrowserScreen(
                         )
                     }
                 }
+                // search across open tabs — matches title, host and full url
+                OutlinedTextField(
+                    value = tabQuery,
+                    onValueChange = { tabQuery = it },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                    singleLine = true,
+                    textStyle = TextStyle(fontSize = 12.sp, color = textColor),
+                    placeholder = {
+                        Text(L(R.string.tab_search), fontSize = 12.sp, color = textColor.copy(alpha = 0.35f))
+                    },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = textColor,
+                        unfocusedTextColor = textColor,
+                        focusedBorderColor = BeeColors.HoneyGold,
+                        unfocusedBorderColor = BeeColors.HoneyGold.copy(alpha = 0.25f),
+                        focusedContainerColor = BeeColors.DarkStripe,
+                        unfocusedContainerColor = BeeColors.DarkStripe
+                    )
+                )
+                val q = tabQuery.trim().lowercase()
+                val shownTabs = if (q.isEmpty()) tabs.withIndex().toList()
+                else tabs.withIndex().filter { (_, t) ->
+                    t.pageTitle.contains(q, true) || t.address.contains(q, true) || t.pageHost.contains(q, true)
+                }
+                if (q.isNotEmpty() && shownTabs.isEmpty()) {
+                    Text(
+                        L(R.string.tab_search_none),
+                        fontSize = 11.sp, color = subColor,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
+                }
                 LazyColumn(Modifier.weight(1f)) {
-                    itemsIndexed(tabs) { i, t ->
+                    items(shownTabs) { iv ->
+                        val i = iv.index
+                        val t = iv.value
                         val sel = i == active
                         Row(
                             verticalAlignment = Alignment.CenterVertically,

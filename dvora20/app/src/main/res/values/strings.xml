@@ -26,6 +26,9 @@
     <string name="cd_close_tab">Close tab</string>
     <string name="cd_history">Browsing history</string>
     <string name="cd_tabs_panel">Open the tabs list</string>
+    <string name="tab_search">Search tabs by name or link</string>
+    <string name="tab_search_none">No matching tabs</string>
+    <string name="cd_close_all">Close all tabs</string>
     <string name="cd_ab_toggle">Ad-block on this site</string>
     <string name="ab_site_on">Ad-block enabled on this site</string>
     <string name="ab_site_off">Ad-block disabled on this site</string>
