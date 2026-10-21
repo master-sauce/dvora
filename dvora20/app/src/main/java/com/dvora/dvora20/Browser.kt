@@ -209,6 +209,8 @@ fun BrowserScreen(
     // the vertical tab list — the only tab UI: a count button in the top bar
     // opens the slide-in list over the page
     var tabsPanelOpen by remember { mutableStateOf(false) }
+    // close-all needs an explicit yes — it destroys incognito tabs too
+    var confirmCloseAll by remember { mutableStateOf(false) }
     // panel search — filters open tabs by title / url
     var tabQuery by remember { mutableStateOf("") }
     LaunchedEffect(tabsPanelOpen) { if (!tabsPanelOpen) tabQuery = "" }
@@ -1184,6 +1186,21 @@ fun BrowserScreen(
         )
     }
 
+    // ── close all tabs — explicit yes (incognito tabs are destroyed too) ──
+    if (confirmCloseAll) {
+        ConfirmDeleteDialog(
+            title = L(R.string.close_all_q),
+            message = L(R.string.close_all_msg),
+            confirmText = L(R.string.cd_close_all),
+            onDismiss = { confirmCloseAll = false },
+            onConfirm = {
+                confirmCloseAll = false
+                tabsPanelOpen = false
+                closeAllTabs()
+            }
+        )
+    }
+
     // ── UI ──────────────────────────────────────────────────────────────────────
     // edge-to-edge; the toolbar is a collapsible row at the bottom of the screen
     val tab = tabs.getOrNull(active) ?: return
@@ -1575,7 +1592,7 @@ fun BrowserScreen(
                         modifier = Modifier.weight(1f)
                     )
                     // history + close-all live here; tab actions stay on the top bar
-                    IconButton(onClick = { tabsPanelOpen = false; closeAllTabs() }, modifier = Modifier.size(44.dp)) {
+                    IconButton(onClick = { confirmCloseAll = true }, modifier = Modifier.size(44.dp)) {
                         Icon(
                             Icons.Default.DeleteSweep, L(R.string.cd_close_all),
                             tint = BeeColors.NotFoundRed, modifier = Modifier.size(22.dp)
@@ -1928,8 +1945,11 @@ private val MEDIA_EXTS = setOf(
 
 /** a picker row holding genuine media — everything else is a plain file. */
 private fun isMediaRow(r: SniffRow): Boolean {
-    if (r.label.equals("video", true) || r.label.equals("audio", true)) return true
-    if (r.label.lowercase() in MEDIA_EXTS) return true
+    val label = r.label.lowercase()
+    // "YOUTUBE" rows carry a watch url (no media extension) — yt-dlp's own entry point;
+    // "VIDEO"/"AUDIO" are the loose sniffer's extension-less media hits
+    if (label == "youtube" || label == "video" || label == "audio") return true
+    if (label in MEDIA_EXTS) return true
     val ext = r.url.substringBefore('?').substringBefore('#').lowercase().substringAfterLast('.', "")
     return ext in MEDIA_EXTS
 }

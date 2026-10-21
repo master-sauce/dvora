@@ -29,6 +29,8 @@
     <string name="tab_search">Search tabs by name or link</string>
     <string name="tab_search_none">No matching tabs</string>
     <string name="cd_close_all">Close all tabs</string>
+    <string name="close_all_q">Close all tabs?</string>
+    <string name="close_all_msg">Every open tab — including incognito tabs — will be closed. One fresh home tab will open.</string>
     <string name="cd_ab_toggle">Ad-block on this site</string>
     <string name="ab_site_on">Ad-block enabled on this site</string>
     <string name="ab_site_off">Ad-block disabled on this site</string>
