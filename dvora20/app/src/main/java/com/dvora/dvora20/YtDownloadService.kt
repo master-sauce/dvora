@@ -394,8 +394,8 @@ class YtDownloadService : Service() {
                     it.isFile && it.lastModified() >= started &&
                         !it.name.endsWith(".part") && !it.name.endsWith(".ytdl") && !it.name.endsWith(".tmp")
                 }
-                val newest = base?.let { b -> fresh.firstOrNull { it.name.startsWith("$b.") } }
-                    ?: fresh.maxByOrNull { it.lastModified() }
+                val newest = (base?.let { b -> fresh.firstOrNull { it.name.startsWith("$b.") } }
+                    ?: fresh.maxByOrNull { it.lastModified() })?.let { fixUnknownExt(it) }
                 if (newest != null) {
                     job?.pct = 100
                     saved++
@@ -428,6 +428,42 @@ class YtDownloadService : Service() {
             }
             if (YtCtl.count == 0) finishBatch()
         }
+    }
+
+    /**
+     * yt-dlp names anything it can't type as `<name>.unknown_video` — for images that's
+     * almost always a genuinely fine file from an extension-less / octet-stream URL.
+     * Identify it by magic bytes and rename to the real extension so pictures (and
+     * stray files) never land in the folder with that bogus suffix.
+     */
+    private fun fixUnknownExt(f: File): File {
+        if (!f.name.lowercase().endsWith(".unknown_video")) return f
+        val ext = try {
+            f.inputStream().use { ins ->
+                val b = ByteArray(12)
+                val n = ins.read(b)
+                fun at(i: Int) = if (i < n) b[i].toInt() and 0xFF else -1
+                when {
+                    at(0) == 0xFF && at(1) == 0xD8 && at(2) == 0xFF -> "jpg"
+                    at(0) == 0x89 && at(1) == 0x50 && at(2) == 0x4E && at(3) == 0x47 -> "png"
+                    at(0) == 'G'.code && at(1) == 'I'.code && at(2) == 'F'.code -> "gif"
+                    at(0) == 'R'.code && at(1) == 'I'.code && at(2) == 'F'.code && at(3) == 'F'.code &&
+                        at(8) == 'W'.code && at(9) == 'E'.code && at(10) == 'B'.code && at(11) == 'P'.code -> "webp"
+                    at(0) == 'B'.code && at(1) == 'M'.code -> "bmp"
+                    at(0) == 0x25 && at(1) == 'P'.code && at(2) == 'D'.code && at(3) == 'F'.code -> "pdf"
+                    at(0) == 0x50 && at(1) == 0x4B && at(2) == 0x03 && at(3) == 0x04 -> "zip"
+                    else -> null
+                }
+            }
+        } catch (_: Exception) {
+            null
+        } ?: return f
+        val parent = f.parentFile ?: return f
+        val out = File(parent, f.name.removeSuffix(".unknown_video").trimEnd('.') + "." + ext)
+        return runCatching {
+            if (out.exists()) out.delete()
+            if (f.renameTo(out)) out else f
+        }.getOrDefault(f)
     }
 
     private fun fail(job: YtCtl.Job?, url: String, tail: StringBuilder) {

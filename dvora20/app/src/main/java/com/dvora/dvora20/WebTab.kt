@@ -55,7 +55,9 @@ class WebTab(
     /** `<input type="file">` picker is a screen-level launcher */
     onPick: (ValueCallback<Array<Uri>>, WebChromeClient.FileChooserParams) -> Unit,
     /** a forced download (Content-Disposition) goes to the DownloadManager */
-    onEnqueue: (String, String?, String?) -> Unit
+    onEnqueue: (String, String?, String?) -> Unit,
+    /** long-press on an image / link — (url, isImage); images route to the yt-dlp manager */
+    onLongDownload: (String, Boolean) -> Unit
 ) {
     // ── per-page UI state (own state per tab — background tabs update silently) ──
     var address by mutableStateOf(startUrl)
@@ -164,6 +166,27 @@ class WebTab(
         }
         client.onBlocked = { blocked = repo.engine.pageBlocks }
         client.onSsl = { uri, handler -> ssl = uri to handler }
+
+        // long-press an image / link (an "icon", a thumbnail, a download link) →
+        // its url goes to the download flow; text long-press keeps the native menu
+        webView.setOnLongClickListener {
+            val hit = webView.hitTestResult
+            val hitUrl = hit.extra
+            if (hitUrl.isNullOrBlank() || !hitUrl.startsWith("http")) {
+                false
+            } else when (hit.type) {
+                WebView.HitTestResult.IMAGE_TYPE,
+                WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> {
+                    onLongDownload(hitUrl, true)
+                    true
+                }
+                WebView.HitTestResult.SRC_ANCHOR_TYPE -> {
+                    onLongDownload(hitUrl, false)
+                    true
+                }
+                else -> false       // text selection & friends keep their default behavior
+            }
+        }
 
         webView.loadUrl(startUrl)
     }

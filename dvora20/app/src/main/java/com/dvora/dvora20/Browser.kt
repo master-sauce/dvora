@@ -648,7 +648,20 @@ fun BrowserScreen(
                 onCrossNav = { tab, u, h -> crossNav = Triple(tab, u, h) },
                 onActivity = { if (sheetVisible) resTick++ },
                 onPick = { cb, params -> pendingChooser = cb; pickFile(params) },
-                onEnqueue = { u, d, m -> clickDownload(u, d, m) }
+                onEnqueue = { u, d, m -> clickDownload(u, d, m) },
+                // long-press: an IMAGE goes straight into the yt-dlp manager (job + live
+                // downloads screen); a LINK follows the normal click-download routing
+                // (media → yt-dlp manager, plain files → DownloadManager, real names kept)
+                onLongDownload = { u, img ->
+                    if (img) {
+                        // no-ish filename → a sane "image" base; the service fixes the real
+                        // extension from the file's magic bytes if yt-dlp can't type it
+                        val stem = u.substringBefore('?').substringBefore('#').substringAfterLast('/')
+                            .substringBeforeLast('.', "").takeIf { it.isNotBlank() } ?: "image"
+                        startYt(u, stem)
+                        ytSheet = true
+                    } else clickDownload(u, null, null)
+                }
             )
         )
         active = tabs.lastIndex
