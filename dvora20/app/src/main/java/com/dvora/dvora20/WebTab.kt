@@ -88,8 +88,8 @@ class WebTab(
         settings.setGeolocationEnabled(false)
         setBackgroundColor(0xFF1C1500.toInt())
     }.also { wv ->
-        // 1DM parity: algorithmic darkening as the single darkener (their FORCE_DARK
-        // gate maps to this API on modern WebViews)
+        // algorithmic darkening as the single darkener (the legacy FORCE_DARK gate
+        // maps onto this API on modern WebViews)
         runCatching {
             if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.ALGORITHMIC_DARKENING)) {
                 androidx.webkit.WebSettingsCompat.setAlgorithmicDarkeningAllowed(wv.settings, darkMode)
@@ -172,7 +172,7 @@ class WebTab(
             blocked = repo.engine.pageBlocks
             // element hiding (cosmetic '##selector' rules from the enabled lists):
             // hides now and keeps hiding dynamically injected elements — this is what
-            // removes YouTube's "Open app" banner / promo strips, like 1DM does
+            // removes YouTube's "Open app" banner / promo strips
             runCatching {
                 repo.engine.cosmeticJs(pageHost)?.let { js -> webView.evaluateJavascript(js, null) }
             }
