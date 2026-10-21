@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -635,11 +636,13 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
     // Load user-defined custom API types (v2, v3, etc.)
     LaunchedEffect(Unit) { CustomApiTypeManager.load(context) }
 
-    var showSettings by remember { mutableStateOf(false) }
-    var showSubtitles by remember { mutableStateOf(false) }
-    var showImdb by remember { mutableStateOf(false) }
-    var showBookmarks by remember { mutableStateOf(false) }
-    var showBrowser by remember { mutableStateOf(false) }
+    // screen flags survive an activity recreation (the theme switch recreates the
+    // activity) — the user stays on the screen they toggled the theme from
+    var showSettings by rememberSaveable { mutableStateOf(false) }
+    var showSubtitles by rememberSaveable { mutableStateOf(false) }
+    var showImdb by rememberSaveable { mutableStateOf(false) }
+    var showBookmarks by rememberSaveable { mutableStateOf(false) }
+    var showBrowser by rememberSaveable { mutableStateOf(false) }
     var browserUrl by remember { mutableStateOf("") }
 
     // kicks the ad-block list load (cache/asset, then background refresh) at startup
