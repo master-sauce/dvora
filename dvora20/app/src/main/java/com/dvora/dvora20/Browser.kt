@@ -203,6 +203,9 @@ fun BrowserScreen(
     val tabs = TabCtl.tabs
     var active by TabCtl.activeState
 
+    // the app's light/dark choice — every tab's WebView is built to follow it
+    val isDark = LocalDarkMode.current.value
+
     // the vertical tab list — the only tab UI: a count button in the top bar
     // opens the slide-in list over the page
     var tabsPanelOpen by remember { mutableStateOf(false) }
@@ -644,7 +647,7 @@ fun BrowserScreen(
             WebTab(
                 // the whitelist is read live from its cache (not this screen's state) —
                 // session-restored tabs must see toggles made in a later composition
-                context, repo, url.ifBlank { BROWSER_HOME }, incognito, { Whitelist.hosts(context).toSet() },
+                context, repo, url.ifBlank { BROWSER_HOME }, incognito, isDark, { Whitelist.hosts(context).toSet() },
                 onCrossNav = { tab, u, h -> crossNav = Triple(tab, u, h) },
                 onActivity = { if (sheetVisible) resTick++ },
                 onPick = { cb, params -> pendingChooser = cb; pickFile(params) },
@@ -700,6 +703,21 @@ fun BrowserScreen(
             TabCtl.dropIncognito()
             syncCookies()
         }
+    }
+
+    // the theme toggle flips the app; a WebView bakes its color scheme at creation,
+    // so live tabs are rebuilt in place (same urls / incognito flags) to carry the
+    // new light/dark into their pages
+    var lastDark by remember { mutableStateOf(isDark) }
+    LaunchedEffect(isDark) {
+        if (isDark == lastDark) return@LaunchedEffect
+        lastDark = isDark
+        val snap = tabs.map { it.address to it.incognito }
+        val prevActive = active
+        tabs.forEach { it.destroy() }
+        tabs.clear()
+        snap.forEach { (addr, inc) -> newTab(addr, inc) }
+        if (tabs.isNotEmpty()) active = prevActive.coerceIn(0, tabs.lastIndex)
     }
 
     // ── one-time wiring ───────────────────────────────────────────────────────
@@ -1177,6 +1195,13 @@ fun BrowserScreen(
                         color = textColor
                     )
                 }
+                // the ACTIVE tab is incognito → the eye mark sits LEFT, next to the tabs pill
+                if (tab.incognito) {
+                    Icon(
+                        Icons.Default.VisibilityOff, L(R.string.cd_incognito),
+                        tint = BeeColors.DarkOnSurface, modifier = Modifier.padding(start = 8.dp).size(22.dp)
+                    )
+                }
                 Spacer(Modifier.weight(1f))
                 // per-site ad-block toggle — shield: green = filtering this site,
                 // red-crossed = the site is whitelisted, nothing is blocked here
@@ -1205,24 +1230,22 @@ fun BrowserScreen(
                         modifier = Modifier.size(22.dp)
                     )
                 }
-                // pinned: new tab / history
+                // right end: close current tab → open incognito tab → open regular tab (rightmost)
+                IconButton(onClick = { closeTab(active) }, modifier = Modifier.size(44.dp)) {
+                    Icon(
+                        Icons.Default.Close, L(R.string.cd_close_tab),
+                        tint = BeeColors.DeepAmber, modifier = Modifier.size(22.dp)
+                    )
+                }
+                // OPEN a new incognito tab — the detective emoji marks the ACTION, so it
+                // can't be confused with the on-state mark
+                IconButton(onClick = { newTab(BROWSER_HOME, true) }, modifier = Modifier.size(44.dp)) {
+                    Text("🕵", fontSize = 20.sp)
+                }
                 IconButton(onClick = { newTab(BROWSER_HOME, false) }, modifier = Modifier.size(44.dp)) {
                     Icon(
                         Icons.Default.Add, L(R.string.cd_newtab),
                         tint = BeeColors.HoneyGold, modifier = Modifier.size(22.dp)
-                    )
-                }
-                IconButton(onClick = { historyOpen = true }, modifier = Modifier.size(44.dp)) {
-                    Icon(
-                        Icons.Default.History, L(R.string.cd_history),
-                        tint = BeeColors.HoneyGold, modifier = Modifier.size(22.dp)
-                    )
-                }
-                // the ACTIVE tab is incognito → the 🕵 mark sits at the bar's right end
-                if (tab.incognito) {
-                    Icon(
-                        Icons.Default.VisibilityOff, L(R.string.cd_incognito),
-                        tint = BeeColors.DarkOnSurface, modifier = Modifier.size(22.dp)
                     )
                 }
             }
@@ -1530,17 +1553,11 @@ fun BrowserScreen(
                         color = BeeColors.HoneyGold,
                         modifier = Modifier.weight(1f)
                     )
-                    IconButton(onClick = { newTab(BROWSER_HOME, false) }, modifier = Modifier.size(44.dp)) {
+                    // history lives here; tab actions stay on the top bar
+                    IconButton(onClick = { tabsPanelOpen = false; historyOpen = true }, modifier = Modifier.size(44.dp)) {
                         Icon(
-                            Icons.Default.Add, L(R.string.cd_newtab),
+                            Icons.Default.History, L(R.string.cd_history),
                             tint = BeeColors.HoneyGold, modifier = Modifier.size(22.dp)
-                        )
-                    }
-                    // the incognito button — up top, on the right
-                    IconButton(onClick = { newTab(BROWSER_HOME, true) }, modifier = Modifier.size(44.dp)) {
-                        Icon(
-                            Icons.Default.VisibilityOff, L(R.string.cd_incognito),
-                            tint = BeeColors.DarkOnSurface, modifier = Modifier.size(22.dp)
                         )
                     }
                 }

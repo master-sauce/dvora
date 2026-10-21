@@ -79,6 +79,9 @@ dependencies {
     implementation(libs.youtubedl.android)
     implementation(libs.youtubedl.ffmpeg)
 
+    // forced dark / light for the in-app browser's WebView
+    implementation("androidx.webkit:webkit:1.12.1")
+
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

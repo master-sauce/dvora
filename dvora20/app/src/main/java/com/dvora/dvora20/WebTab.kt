@@ -47,6 +47,8 @@ class WebTab(
     private val repo: ListRepo,
     startUrl: String,
     val incognito: Boolean,
+    /** app theme at creation — the page's prefers-color-scheme + algorithmic darkening follow it */
+    dark: Boolean,
     allowedHosts: () -> Set<String>,
     /** cross-site navigation needs the user's ok — (tab, url, host) */
     onCrossNav: (WebTab, String, String) -> Unit,
@@ -72,7 +74,18 @@ class WebTab(
     var navTick by mutableIntStateOf(0)    // back/fwd availability moved → refresh the toolbar
 
     // ── one-time objects ──────────────────────────────────────────────────────
-    val webView: WebView = WebView(context).apply {
+    // the WebView is built on a configuration context whose night mode is FORCED to
+    // the app's theme — that's what drives the page's prefers-color-scheme (dark sites
+    // follow the app's dark mode, light stays light regardless of the system setting)
+    val webView: WebView = WebView(
+        run {
+            val cfg = android.content.res.Configuration(context.resources.configuration)
+            cfg.uiMode = (cfg.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK.inv()) or
+                if (dark) android.content.res.Configuration.UI_MODE_NIGHT_YES
+                else android.content.res.Configuration.UI_MODE_NIGHT_NO
+            context.createConfigurationContext(cfg)
+        }
+    ).apply {
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = !incognito      // incognito: nothing persists to disk
         settings.databaseEnabled = !incognito
@@ -82,6 +95,19 @@ class WebTab(
         settings.mediaPlaybackRequiresUserGesture = false
         settings.setGeolocationEnabled(false)
         setBackgroundColor(0xFF1C1500.toInt())
+    }.also { wv ->
+        // dark app → light-only sites get darkened too; light app → darkening off
+        runCatching {
+            if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.ALGORITHMIC_DARKENING)) {
+                androidx.webkit.WebSettingsCompat.setAlgorithmicDarkeningAllowed(wv.settings, dark)
+            } else if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.FORCE_DARK)) {
+                androidx.webkit.WebSettingsCompat.setForceDark(
+                    wv.settings,
+                    if (dark) androidx.webkit.WebSettingsCompat.FORCE_DARK_ON
+                    else androidx.webkit.WebSettingsCompat.FORCE_DARK_OFF
+                )
+            }
+        }
     }
     val client = BlockerWebViewClient(context, repo, allowedHosts).also { c ->
         c.injectSniffer = { wv -> runCatching { wv.evaluateJavascript(SnifferJsInterface.SCRIPT, null) } }
