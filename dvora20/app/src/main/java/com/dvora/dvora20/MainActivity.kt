@@ -343,24 +343,25 @@ fun beeAdapt(light: Color, dark: Color): Color =
     if (LocalDarkMode.current.value) dark else light
 
 /**
- * Applies the app's dark/light choice to the activity's own resources configuration.
- * Android WebView takes a page's `prefers-color-scheme` — and whether algorithmic
- * darkening may run at all — from the host app's configuration, not from a
- * per-WebView context. Without this, sites like DuckDuckGo and YouTube stayed in
- * the system's mode regardless of the in-app toggle.
+ * Applies the app's dark/light choice to the app-wide configuration (night uiMode),
+ * so pages that ask for `prefers-color-scheme` get the matching answer. The window
+ * THEME (switched in onCreate) is what powers WebView's darkening gate — this only
+ * covers the media-query side. No activity recreation here: the caller recreates.
  */
 private fun applyNightMode(activity: android.app.Activity, dark: Boolean) {
+    val app = activity.applicationContext
+    val want = if (dark) android.content.res.Configuration.UI_MODE_NIGHT_YES
+    else android.content.res.Configuration.UI_MODE_NIGHT_NO
     try {
-        val res = activity.resources
-        val cfg = android.content.res.Configuration(res.configuration)
-        val want = if (dark) android.content.res.Configuration.UI_MODE_NIGHT_YES
-        else android.content.res.Configuration.UI_MODE_NIGHT_NO
-        if ((cfg.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
-            (want and android.content.res.Configuration.UI_MODE_NIGHT_MASK)
-        ) return
-        cfg.uiMode = (cfg.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK.inv()) or want
-        @Suppress("DEPRECATION")
-        res.updateConfiguration(cfg, res.displayMetrics)
+        for (res in listOf(app.resources, activity.resources)) {
+            val cfg = android.content.res.Configuration(res.configuration)
+            if ((cfg.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                (want and android.content.res.Configuration.UI_MODE_NIGHT_MASK)
+            ) continue
+            cfg.uiMode = (cfg.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK.inv()) or want
+            @Suppress("DEPRECATION")
+            res.updateConfiguration(cfg, res.displayMetrics)
+        }
     } catch (_: Exception) {
     }
 }
@@ -372,6 +373,13 @@ private fun applyNightMode(activity: android.app.Activity, dark: Boolean) {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // the WINDOW theme carries the dark flag WebView's darkening gate reads —
+        // a permanently light theme silently disabled algorithmic darkening
+        setTheme(
+            if (getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE).getBoolean("dark_mode", false))
+                R.style.Theme_Dvora20_Dark
+            else R.style.Theme_Dvora20
+        )
         enableEdgeToEdge()
         BookmarksManager.load(this)
         BookmarksManager.rescheduleAllReminders(this)
@@ -407,6 +415,9 @@ class MainActivity : ComponentActivity() {
                             darkModeState.value = !darkModeState.value
                             prefs.edit().putBoolean("dark_mode", darkModeState.value).apply()
                             applyNightMode(this, darkModeState.value)
+                            // re-apply the window theme (light ↔ dark) — WebView's darkening
+                            // eligibility comes from the theme, not from WebSettings
+                            recreate()
                         }
                     )
                 }

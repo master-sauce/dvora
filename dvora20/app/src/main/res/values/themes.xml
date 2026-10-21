@@ -14,4 +14,20 @@
         <item name="android:colorPrimaryDark">@color/bee_deep_amber</item>
         <item name="android:colorAccent">@color/bee_honey_gold</item>
     </style>
+
+    <!--
+      Dark twin of the window theme. WebView decides whether algorithmic darkening
+      may run at all from the host app's THEME (a light theme disables it, no matter
+      what WebSettings say) — this theme is what makes the browser's dark mode work.
+    -->
+    <style name="Theme.Dvora20.Dark" parent="android:Theme.Material.NoActionBar">
+        <item name="android:isLightTheme">false</item>
+        <item name="android:windowBackground">@color/bee_dark_comb</item>
+        <item name="android:colorBackground">@color/bee_dark_comb</item>
+        <item name="android:statusBarColor">@color/bee_dark_comb</item>
+        <item name="android:navigationBarColor">@color/bee_dark_comb</item>
+        <item name="android:colorPrimary">@color/bee_honey_gold</item>
+        <item name="android:colorPrimaryDark">@color/bee_deep_amber</item>
+        <item name="android:colorAccent">@color/bee_honey_gold</item>
+    </style>
 </resources>

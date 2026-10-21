@@ -48,7 +48,7 @@ class WebTab(
     startUrl: String,
     val incognito: Boolean,
     /** app theme at creation — the page's prefers-color-scheme + algorithmic darkening follow it */
-    dark: Boolean,
+    private val darkMode: Boolean,
     allowedHosts: () -> Set<String>,
     /** cross-site navigation needs the user's ok — (tab, url, host) */
     onCrossNav: (WebTab, String, String) -> Unit,
@@ -74,18 +74,10 @@ class WebTab(
     var navTick by mutableIntStateOf(0)    // back/fwd availability moved → refresh the toolbar
 
     // ── one-time objects ──────────────────────────────────────────────────────
-    // the WebView is built on a configuration context whose night mode is FORCED to
-    // the app's theme — that's what drives the page's prefers-color-scheme (dark sites
-    // follow the app's dark mode, light stays light regardless of the system setting)
-    val webView: WebView = WebView(
-        run {
-            val cfg = android.content.res.Configuration(context.resources.configuration)
-            cfg.uiMode = (cfg.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK.inv()) or
-                if (dark) android.content.res.Configuration.UI_MODE_NIGHT_YES
-                else android.content.res.Configuration.UI_MODE_NIGHT_NO
-            context.createConfigurationContext(cfg)
-        }
-    ).apply {
+    // the WebView is built on the ACTIVITY context so it inherits the app's real
+    // window theme — algorithmic darkening is refused by Chromium when the host
+    // theme is light, and a createConfigurationContext wrapper loses that theme
+    val webView: WebView = WebView(context).apply {
         settings.javaScriptEnabled = true
         settings.domStorageEnabled = !incognito      // incognito: nothing persists to disk
         settings.databaseEnabled = !incognito
@@ -96,14 +88,15 @@ class WebTab(
         settings.setGeolocationEnabled(false)
         setBackgroundColor(0xFF1C1500.toInt())
     }.also { wv ->
-        // dark app → light-only sites get darkened too; light app → darkening off
+        // 1DM parity: algorithmic darkening as the single darkener (their FORCE_DARK
+        // gate maps to this API on modern WebViews)
         runCatching {
             if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.ALGORITHMIC_DARKENING)) {
-                androidx.webkit.WebSettingsCompat.setAlgorithmicDarkeningAllowed(wv.settings, dark)
+                androidx.webkit.WebSettingsCompat.setAlgorithmicDarkeningAllowed(wv.settings, darkMode)
             } else if (androidx.webkit.WebViewFeature.isFeatureSupported(androidx.webkit.WebViewFeature.FORCE_DARK)) {
                 androidx.webkit.WebSettingsCompat.setForceDark(
                     wv.settings,
-                    if (dark) androidx.webkit.WebSettingsCompat.FORCE_DARK_ON
+                    if (darkMode) androidx.webkit.WebSettingsCompat.FORCE_DARK_ON
                     else androidx.webkit.WebSettingsCompat.FORCE_DARK_OFF
                 )
             }
@@ -177,6 +170,12 @@ class WebTab(
         client.onPageEnd = {
             blockLog = repo.engine.blockSnapshot()
             blocked = repo.engine.pageBlocks
+            // element hiding (cosmetic '##selector' rules from the enabled lists):
+            // hides now and keeps hiding dynamically injected elements — this is what
+            // removes YouTube's "Open app" banner / promo strips, like 1DM does
+            runCatching {
+                repo.engine.cosmeticJs(pageHost)?.let { js -> webView.evaluateJavascript(js, null) }
+            }
             // the download manager scans every body it can reach — the page's own DOM too: <video>/<source>
             // elements and iframes that never issue an XHR still carry captureable media
             runCatching {

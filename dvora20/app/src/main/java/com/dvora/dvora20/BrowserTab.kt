@@ -58,8 +58,8 @@ fun BrowserTab(repo: ListRepo) {
             withContext(Dispatchers.IO) {
                 try {
                     val cm = CookieManager.getInstance()
-                    cm.flush()
                     cm.removeAllCookies(null)
+                    cm.flush()                       // persist the wipe — flush must come AFTER the removal
                     WebStorage.getInstance().deleteAllData()
                     File(context.cacheDir, "webview_cache").deleteRecursively()
                     File(context.cacheDir, "webview").deleteRecursively()
@@ -67,6 +67,9 @@ fun BrowserTab(repo: ListRepo) {
                 } catch (_: Exception) {
                 }
             }
+            // the session store outlives this screen — without closing it, re-entering the
+            // browser restores every tab with its in-memory page state and cookies
+            TabCtl.destroyAll()
             Toast.makeText(context, localeStr(context, R.string.btab_cleared), Toast.LENGTH_SHORT).show()
         }
     }
