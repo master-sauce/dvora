@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">dvora2.0</string>
+    <string name="app_name">dvora</string>
 
     <!-- icon / button content descriptions -->
     <string name="cd_back">Back</string>

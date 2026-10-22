@@ -1,3 +1,7 @@
+# private signing key + its credentials — NEVER commit (this repo is public)
+keystore/
+keystore.properties
+
 *.iml
 .gradle
 /local.properties
