@@ -50,7 +50,7 @@ fun BrowserTab(repo: ListRepo) {
     // live UI state — flipped instantly on tap, prefs written straight behind it
     var master by remember { mutableStateOf(repo.isMaster()) }
     var listOn by remember { mutableStateOf(ListInfo.all.map { repo.isEnabled(it) }) }
-    var useDvora by remember { mutableStateOf(prefs.getBoolean("use_dvora_browser", false)) }
+    var useDvora by remember { mutableStateOf(prefs.getBoolean("use_dvora_browser", true)) }
 
     fun clearAll() {
         confirmClear = false

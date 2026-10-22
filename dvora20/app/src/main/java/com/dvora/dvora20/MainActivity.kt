@@ -568,15 +568,15 @@ fun openUrl(context: Context, url: String) {
  * Click handler of every result card in the app.
  *
  * A Stremio detail page ALWAYS goes to the Stremio app when installed — in
- * both link-handler modes. Otherwise: "use Dvora browser" (settings, pref
- * `use_dvora_browser`) → deep-link the in-app ad-blocking browser; else the
- * classic external chain (Stremio → IDM → Brave → default browser).
+ * both link-handler modes. Otherwise the in-app browser is the DEFAULT
+ * (pref `use_dvora_browser`); users who prefer the classic chain
+ * (Stremio → IDM → Brave → default browser) can switch it in settings.
  */
 fun openCard(context: Context, url: String, onBrowser: (String) -> Unit) {
     val cleanUrl = if (url.startsWith("http")) url else "https://$url"
     if (tryOpenInStremio(context, cleanUrl)) return
     val prefs = context.getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE)
-    if (prefs.getBoolean("use_dvora_browser", false)) onBrowser(cleanUrl) else openUrl(context, cleanUrl)
+    if (prefs.getBoolean("use_dvora_browser", true)) onBrowser(cleanUrl) else openUrl(context, cleanUrl)
 }
 
 
