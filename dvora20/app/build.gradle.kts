@@ -79,11 +79,12 @@ android {
         }
     }
 
-    // Rename the output APK to dvora.apk
+    // Rename the output APK to carry its version — dvora-3.X.apk, so release-tag
+    // users can tell at a glance an update is up
     applicationVariants.all {
         outputs.all {
             val output = this as? com.android.build.gradle.internal.api.ApkVariantOutputImpl
-            output?.outputFileName = "dvora.apk"
+            output?.outputFileName = "dvora-$majorNo.$buildNo.apk"
         }
     }
 
