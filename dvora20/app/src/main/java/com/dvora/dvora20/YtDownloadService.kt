@@ -686,13 +686,16 @@ class YtDownloadService : Service() {
     /** swipe-proof progress — the notification comes straight back on the swipe. */
     override fun onTaskRemoved(rootIntent: Intent?) {
         val n = last ?: return
+        // repost under the SAME id the foreground service is bound to — using the
+        // summary id here created a SECOND, duplicate notification whose twin stayed
+        // stale and unresponsive after the app was closed
         fun repost() {
             if (!can()) return
-            runCatching { nm.notify(ID, n) }
+            runCatching { nm.notify(fgId, n) }
         }
         repost()                               // immediately
         // rare race: service still processing the swipe → one short retry
-        if (!runCatching { nm.activeNotifications.any { it.id == ID } }.getOrDefault(false))
+        if (!runCatching { nm.activeNotifications.any { it.id == fgId } }.getOrDefault(false))
             Handler(Looper.getMainLooper()).postDelayed({ repost() }, 150)
     }
 
