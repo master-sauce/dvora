@@ -1,6 +1,8 @@
 package com.dvora.dvora20
 
 import android.content.Context
+import android.content.Intent
+import android.os.Build
 import android.webkit.CookieManager
 import android.webkit.WebStorage
 import android.widget.Toast
@@ -14,6 +16,7 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.AddToHomeScreen
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,6 +26,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.pm.ShortcutInfoCompat
+import androidx.core.content.pm.ShortcutManagerCompat
+import androidx.core.graphics.drawable.IconCompat
 import com.dvora.dvora20.adblock.ListInfo
 import com.dvora.dvora20.adblock.ListRepo
 import kotlinx.coroutines.Dispatchers
@@ -31,11 +37,40 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * The settings tab for the in-app browser + the whole-app extras that hang
- * off it: master ad-block switch, every filter list on/off with its live
- * status and manual refresh, lifetime stats, the result-link handler mode,
- * the EN/HE app language, and browsing-data clearing.
+ * Pins a "Dvora Browser" shortcut on the home screen — tapping it opens the app
+ * straight into the built-in browser (the shortcut intent carries the
+ * `open_browser` extra; CLEAR_TASK guarantees a fresh launch that sees it).
  */
+private fun requestBrowserShortcut(context: Context) {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+        Toast.makeText(context, localeStr(context, R.string.btab_shortcut_old), Toast.LENGTH_SHORT).show()
+        return
+    }
+    val shortcutIntent = Intent(context, MainActivity::class.java).apply {
+        action = Intent.ACTION_MAIN
+        putExtra("open_browser", true)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+    }
+    val info = ShortcutInfoCompat.Builder(context, "dvora_browser")
+        .setShortLabel("Browser")
+        .setLongLabel("Dvora Browser")
+        .setIcon(IconCompat.createWithResource(context, R.mipmap.ic_launcher))
+        .setIntent(shortcutIntent)
+        .build()
+    val ok = ShortcutManagerCompat.requestPinShortcut(context, info, null)
+    Toast.makeText(
+        context,
+        if (ok) localeStr(context, R.string.btab_shortcut_ok)
+        else localeStr(context, R.string.btab_shortcut_fail),
+        Toast.LENGTH_SHORT
+    ).show()
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// The settings tab for the in-app browser + the whole-app extras that hang
+// off it: master ad-block switch, every filter list on/off with its live
+// status and manual refresh, lifetime stats, the result-link handler mode,
+// the browser-shortcut creation, and browsing-data clearing.
 @Composable
 fun BrowserTab(repo: ListRepo) {
     val context = LocalContext.current
@@ -185,6 +220,27 @@ fun BrowserTab(repo: ListRepo) {
             )
         }
         Spacer(Modifier.height(14.dp))
+
+        // ── browser shortcut ───────────────────────────────────────────────────
+        // pins a shortcut on the home screen that opens Dvora straight into the browser
+        Button(
+            onClick = { requestBrowserShortcut(context) },
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkStripe),
+                contentColor = BeeColors.HoneyGold
+            )
+        ) {
+            Icon(
+                Icons.Default.AddToHomeScreen, null,
+                tint = BeeColors.HoneyGold, modifier = Modifier.size(20.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(L(R.string.btab_shortcut), fontWeight = FontWeight.Bold)
+        }
+
+        Spacer(Modifier.height(8.dp))
 
         // ── browsing data ─────────────────────────────────────────────────────
         Button(

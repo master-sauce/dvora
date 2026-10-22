@@ -412,6 +412,7 @@ class MainActivity : ComponentActivity() {
             ) {
                 MaterialTheme(colorScheme = if (darkModeState.value) BeeDarkScheme else BeeLightScheme) {
                     DvoraApp(
+                        openBrowser = intent?.getBooleanExtra("open_browser", false) == true,
                         onToggleDarkMode = {
                             darkModeState.value = !darkModeState.value
                             prefs.edit().putBoolean("dark_mode", darkModeState.value).apply()
@@ -586,7 +587,7 @@ fun openCard(context: Context, url: String, onBrowser: (String) -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DvoraApp(onToggleDarkMode: () -> Unit) {
+fun DvoraApp(openBrowser: Boolean = false, onToggleDarkMode: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val scanner = remember { DvoraScanner() }
@@ -642,7 +643,7 @@ fun DvoraApp(onToggleDarkMode: () -> Unit) {
     var showSubtitles by rememberSaveable { mutableStateOf(false) }
     var showImdb by rememberSaveable { mutableStateOf(false) }
     var showBookmarks by rememberSaveable { mutableStateOf(false) }
-    var showBrowser by rememberSaveable { mutableStateOf(false) }
+    var showBrowser by rememberSaveable { mutableStateOf(openBrowser) }
     var browserUrl by remember { mutableStateOf("") }
 
     // kicks the ad-block list load (cache/asset, then background refresh) at startup
