@@ -41,12 +41,12 @@ const val ENGINE_DUCKDUCKGO = "duckduckgo"
 private const val PREFS = "dvora_prefs"
 private const val KEY_ENGINE = "search_engine"
 
-/** the configured engine — unknown / missing values fall back to DuckDuckGo. */
+/** the configured engine — unknown / missing values fall back to Google. */
 fun searchEngine(context: Context): String =
     context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        .getString(KEY_ENGINE, ENGINE_DUCKDUCKGO)
+        .getString(KEY_ENGINE, ENGINE_GOOGLE)
         ?.takeIf { it == ENGINE_GOOGLE || it == ENGINE_DUCKDUCKGO }
-        ?: ENGINE_DUCKDUCKGO
+        ?: ENGINE_GOOGLE
 
 fun setSearchEngine(context: Context, engine: String) {
     context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
@@ -61,6 +61,22 @@ fun searchUrl(context: Context, query: String): String {
         "https://www.google.com/search?q=$q"
     else
         "https://duckduckgo.com/?q=$q"
+}
+
+/**
+ * Text direction of a typed field: the first strong directional character wins.
+ * Hebrew / Arabic read right-to-left, so their text is right-aligned while
+ * English keeps the usual left alignment.
+ */
+fun isRtlText(text: String): Boolean {
+    for (ch in text) {
+        when (Character.getDirectionality(ch)) {
+            Character.DIRECTIONALITY_RIGHT_TO_LEFT,
+            Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC -> return true
+            Character.DIRECTIONALITY_LEFT_TO_RIGHT -> return false
+        }
+    }
+    return false
 }
 
 /**
@@ -84,6 +100,8 @@ fun BrowserHomePage(
     val fg = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
     val sub = fg.copy(alpha = 0.6f)
     val fieldBg = beeAdapt(BeeColors.HoneycombYellow.copy(alpha = 0.4f), BeeColors.DarkCell)
+    // Hebrew / Arabic input sits on the right, English on the left
+    val rtl = isRtlText(query)
 
     fun go() {
         val q = query.trim()
@@ -146,7 +164,11 @@ fun BrowserHomePage(
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
             shape = RoundedCornerShape(14.dp),
-            textStyle = TextStyle(fontSize = 14.sp, color = fg),
+            textStyle = TextStyle(
+                fontSize = 14.sp,
+                color = fg,
+                textAlign = if (rtl) TextAlign.End else TextAlign.Start
+            ),
             leadingIcon = {
                 Icon(
                     Icons.Default.Search, null,

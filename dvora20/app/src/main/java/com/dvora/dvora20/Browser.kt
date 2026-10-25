@@ -65,6 +65,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -1297,6 +1298,10 @@ fun BrowserScreen(
 
             // ── top row: live url / search — toggleable by the toolbar button ──
             val onHome = tab.address == BROWSER_HOME
+            // the row text — empty on the start page, user-owned while editing.
+            // Hebrew / Arabic input is right-aligned, English stays left
+            val barText = if (urlEditing) urlDraft else if (onHome) "" else tab.address
+            val barRtl = isRtlText(barText)
             if (urlBar) {
                 LaunchedEffect(active) {
                     urlEditing = false
@@ -1330,11 +1335,15 @@ fun BrowserScreen(
                     )
                     Spacer(Modifier.width(8.dp))
                     OutlinedTextField(
-                        value = if (urlEditing) urlDraft else if (onHome) "" else tab.address,
+                        value = barText,
                         onValueChange = { urlEditing = true; urlDraft = it },
                         modifier = Modifier.weight(1f).focusRequester(urlFocus),
                         singleLine = true,
-                        textStyle = TextStyle(fontSize = 12.sp, color = textColor),
+                        textStyle = TextStyle(
+                            fontSize = 12.sp,
+                            color = textColor,
+                            textAlign = if (barRtl) TextAlign.End else TextAlign.Start
+                        ),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = textColor,
                             unfocusedTextColor = textColor,
