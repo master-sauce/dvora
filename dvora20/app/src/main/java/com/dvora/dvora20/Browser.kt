@@ -85,8 +85,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** default page shown when the top-bar browser button is tapped. */
-const val BROWSER_HOME = "https://duckduckgo.com/"
+/**
+ * The browser's start page sentinel — the home tab renders [BrowserHomePage]
+ * (the bee-themed Compose start screen) instead of loading a search engine's
+ * website. The tab's WebView stays on a blank page until something is opened.
+ */
+const val BROWSER_HOME = "dvora://home"
 
 /**
  * Opens a folder in the system Files app (DocumentsUI via ExternalStorageProvider).
@@ -563,12 +567,15 @@ fun BrowserScreen(
 
     /**
      * submits the url/search row: url-like input navigates directly, anything else
-     * becomes a duckduckgo search. `address` snaps to the target so the row reflects
-     * what is loading even if the page client reports nothing yet.
+     * becomes a search with the engine chosen in the browser settings tab. `address`
+     * snaps to the target so the row reflects what is loading even if the page
+     * client reports nothing yet.
      */
     fun submitUrl() {
         val t = tabs.getOrNull(active) ?: return
-        val raw = if (urlEditing) urlDraft.trim() else t.address.trim()
+        // the home sentinel is not a real url — an empty row while the start page is up
+        val raw = (if (urlEditing) urlDraft else t.address).trim()
+            .takeUnless { it == BROWSER_HOME } ?: ""
         if (raw.isEmpty()) return
         // a url must carry a scheme or a dotted host — bare words / phrases are searches
         val host = raw.substringBefore('/').substringBefore('?').substringBefore('#')
@@ -576,7 +583,7 @@ fun BrowserScreen(
         val target = if (looksLikeUrl) {
             if (raw.startsWith("http://", true) || raw.startsWith("https://", true)) raw else "https://$raw"
         } else {
-            "https://duckduckgo.com/?q=" + Uri.encode(raw, "")
+            searchUrl(context, raw)
         }
         urlEditing = false
         urlDraft = ""
@@ -1289,6 +1296,7 @@ fun BrowserScreen(
             }
 
             // ── top row: live url / search — toggleable by the toolbar button ──
+            val onHome = tab.address == BROWSER_HOME
             if (urlBar) {
                 LaunchedEffect(active) {
                     urlEditing = false
@@ -1322,7 +1330,7 @@ fun BrowserScreen(
                     )
                     Spacer(Modifier.width(8.dp))
                     OutlinedTextField(
-                        value = if (urlEditing) urlDraft else tab.address,
+                        value = if (urlEditing) urlDraft else if (onHome) "" else tab.address,
                         onValueChange = { urlEditing = true; urlDraft = it },
                         modifier = Modifier.weight(1f).focusRequester(urlFocus),
                         singleLine = true,
@@ -1348,27 +1356,42 @@ fun BrowserScreen(
             }
 
             // the active tab's webview is reparented in/out — every tab keeps its own
-            // renderer, scroll and page state while it sits in the background
-            AndroidView(
-                factory = { FrameLayout(it) },
-                update = { frame ->
-                    val wv = tab.webView
-                    if (wv.parent !== frame) {
-                        (wv.parent as? ViewGroup)?.removeView(wv)
-                        frame.removeAllViews()
-                        frame.addView(
-                            wv,
-                            FrameLayout.LayoutParams(
-                                FrameLayout.LayoutParams.MATCH_PARENT,
-                                FrameLayout.LayoutParams.MATCH_PARENT
+            // renderer, scroll and page state while it sits in the background.
+            // On the home sentinel the blank WebView stays behind and the Compose
+            // start page covers it, so navigating away/back never rebuilds the tab.
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                AndroidView(
+                    factory = { FrameLayout(it) },
+                    update = { frame ->
+                        val wv = tab.webView
+                        if (wv.parent !== frame) {
+                            (wv.parent as? ViewGroup)?.removeView(wv)
+                            frame.removeAllViews()
+                            frame.addView(
+                                wv,
+                                FrameLayout.LayoutParams(
+                                    FrameLayout.LayoutParams.MATCH_PARENT,
+                                    FrameLayout.LayoutParams.MATCH_PARENT
+                                )
                             )
-                        )
-                    }
-                },
-                modifier = Modifier.weight(1f).fillMaxWidth()
-            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+                if (onHome) {
+                    BrowserHomePage(
+                        incognito = tab.incognito,
+                        onSearch = { q ->
+                            urlEditing = false
+                            urlDraft = ""
+                            tab.load(searchUrl(context, q))
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
 
-            if (tab.progress < 100) {
+            if (!onHome && tab.progress < 100) {
                 LinearProgressIndicator(
                     progress = { tab.progress / 100f },
                     modifier = Modifier.fillMaxWidth().height(4.dp),
@@ -1641,6 +1664,7 @@ fun BrowserScreen(
                         val i = iv.index
                         val t = iv.value
                         val sel = i == active
+                        val isHome = t.address == BROWSER_HOME
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
@@ -1659,6 +1683,7 @@ fun BrowserScreen(
                         ) {
                             when {
                                 t.incognito -> Text("🕵", fontSize = 14.sp)
+                                isHome -> Text("🐝", fontSize = 14.sp)
                                 t.favicon != null -> Image(
                                     t.favicon!!.asImageBitmap(), null,
                                     modifier = Modifier.size(18.dp)
@@ -1668,19 +1693,23 @@ fun BrowserScreen(
                             Spacer(Modifier.width(8.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(
-                                    t.pageTitle.ifBlank { t.pageHost.ifBlank { "…" } },
+                                    t.pageTitle.ifBlank {
+                                        if (isHome) L(R.string.home_title) else t.pageHost.ifBlank { "…" }
+                                    },
                                     fontSize = 12.sp,
                                     color = textColor,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Text(
-                                    t.address,
-                                    fontSize = 9.sp,
-                                    color = subColor,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                                if (!isHome) {
+                                    Text(
+                                        t.address,
+                                        fontSize = 9.sp,
+                                        color = subColor,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
                             }
                             Spacer(Modifier.width(8.dp))
                             Icon(

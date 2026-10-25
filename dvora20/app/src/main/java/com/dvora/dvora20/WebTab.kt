@@ -30,6 +30,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
+/** the document a home-sentinel tab rests on while its Compose start page is shown. */
+private const val BLANK_PAGE = "about:blank"
+
 /**
  * One open browser tab: its OWN WebView + page client + chrome client and all
  * of its per-page UI state (address / title / favicon / progress / blocked
@@ -145,12 +148,13 @@ class WebTab(
         }
         chrome.onProgress = { progress = it; navTick++ }
         chrome.onIcon = { favicon = it }
-        client.onUrl = { address = it; navTick++ }
+        client.onUrl = { address = pageAddress(it); navTick++ }
         // the real-time address fix: every committed url incl. SPA pushState lands here
         client.onVisited = { url ->
             if (!incognito) HistoryStore.add(url)   // history keeps every committed page — incognito never records
             ytWatchUrl(url)?.let { probeYouTube(it) }   // SPA route change on youtube → the new video
-            if (url != address) { address = url; navTick++ }
+            val shown = pageAddress(url)
+            if (shown != address) { address = shown; navTick++ }
         }
         client.onPageStart = { host, url ->
             video?.let { it.second.onCustomViewHidden() }   // page changed → leave fullscreen video
@@ -162,7 +166,7 @@ class WebTab(
             blockLog = emptyList()
             SnifferStore.newPage()                       // the download manager keeps one capture list per page
             ytWatchUrl(url)?.let { probeYouTube(it) }    // a YouTube page loads → its download row
-            address = url                                // bar always tracks the page actually loaded (redirects / history)
+            address = pageAddress(url)                   // bar always tracks the page actually loaded (redirects / history)
             navTick++
         }
         client.onActivity = onActivity
@@ -213,7 +217,7 @@ class WebTab(
             }
         }
 
-        webView.loadUrl(startUrl)
+        webView.loadUrl(if (startUrl == BROWSER_HOME) BLANK_PAGE else startUrl)
     }
 
     /** address snaps to the target so the row reflects what is loading even before commit. */
@@ -221,6 +225,10 @@ class WebTab(
         address = url
         webView.loadUrl(url)
     }
+
+    /** the start page is Compose, not a page — its tab's WebView rests on a blank document. */
+    private fun pageAddress(url: String?): String =
+        if (url.isNullOrBlank() || url == BLANK_PAGE) BROWSER_HOME else url
 
     /** back/fwd availability — reading navTick makes Compose refresh these on every history change. */
     fun canBack(): Boolean = navTick.let { webView.canGoBack() }

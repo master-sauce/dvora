@@ -86,6 +86,7 @@ fun BrowserTab(repo: ListRepo) {
     var master by remember { mutableStateOf(repo.isMaster()) }
     var listOn by remember { mutableStateOf(ListInfo.all.map { repo.isEnabled(it) }) }
     var useDvora by remember { mutableStateOf(prefs.getBoolean("use_dvora_browser", true)) }
+    var engine by remember { mutableStateOf(searchEngine(context)) }
 
     fun clearAll() {
         confirmClear = false
@@ -215,6 +216,34 @@ fun BrowserTab(repo: ListRepo) {
                 {
                     useDvora = true
                     prefs.edit().putBoolean("use_dvora_browser", true).apply()
+                },
+                Modifier.weight(1f)
+            )
+        }
+        Spacer(Modifier.height(14.dp))
+
+        // ── search engine — powers the browser start page + the address bar ──
+        Text(L(R.string.btab_engine), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textColor)
+        Spacer(Modifier.height(2.dp))
+        Text(L(R.string.btab_engine_hint), fontSize = 10.sp, color = subColor)
+        Spacer(Modifier.height(6.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            BeeRadioOption(
+                L(R.string.btab_engine_google),
+                engine == ENGINE_GOOGLE,
+                {
+                    engine = ENGINE_GOOGLE
+                    setSearchEngine(context, ENGINE_GOOGLE)
+                },
+                Modifier.weight(1f)
+            )
+            Spacer(Modifier.width(8.dp))
+            BeeRadioOption(
+                L(R.string.btab_engine_ddg),
+                engine == ENGINE_DUCKDUCKGO,
+                {
+                    engine = ENGINE_DUCKDUCKGO
+                    setSearchEngine(context, ENGINE_DUCKDUCKGO)
                 },
                 Modifier.weight(1f)
             )

@@ -162,6 +162,19 @@
     <string name="btab_clear_q">Clear browsing data?</string>
     <string name="btab_clear_msg">The in-app browser cache, cookies and history will be wiped.</string>
     <string name="btab_cleared">Browsing data cleared</string>
+    <string name="btab_engine">SEARCH ENGINE</string>
+    <string name="btab_engine_hint">Used by the browser start page and the address bar</string>
+    <string name="btab_engine_google">Google</string>
+    <string name="btab_engine_ddg">DuckDuckGo</string>
+
+    <!-- browser start page -->
+    <string name="home_tagline">Private, ad-free browsing</string>
+    <string name="home_title">Dvora home</string>
+    <string name="home_search_hint">Search the web</string>
+    <string name="home_search_go">SEARCH</string>
+    <string name="home_engine_google">Searches with Google</string>
+    <string name="home_engine_ddg">Searches with DuckDuckGo</string>
+    <string name="home_incognito">Incognito tab · nothing is saved</string>
 
     <!-- dialogs / toasts (shared) -->
     <string name="toast_open_url_failed">Could not open URL</string>

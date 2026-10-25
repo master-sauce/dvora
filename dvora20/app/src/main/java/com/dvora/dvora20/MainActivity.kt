@@ -683,7 +683,7 @@ fun DvoraApp(openBrowser: Boolean = false, onToggleDarkMode: () -> Unit) {
                     ),
                     actions = {
                         IconButton(onClick = {
-                            browserUrl = "https://duckduckgo.com/"
+                            browserUrl = BROWSER_HOME
                             showBrowser = true; showSubtitles = false; showSettings = false; showImdb =
                             false; showBookmarks = false
                         }) {
