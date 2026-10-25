@@ -141,7 +141,9 @@ class WebTab(
         chrome.onVideo = { v, cb -> video = v to cb }
         chrome.onVideoExited = { video = null }
         chrome.onTitle = {
-            if (it.isNotBlank()) {
+            // a blank document reports its own url as the title ("about:blank") and the
+            // start page would inherit it — home tabs keep their own name in the tab list
+            if (it.isNotBlank() && it != BLANK_PAGE && address != BROWSER_HOME) {
                 pageTitle = it
                 if (!incognito) HistoryStore.setTitle(address, it)   // incognito pages never record
             }
