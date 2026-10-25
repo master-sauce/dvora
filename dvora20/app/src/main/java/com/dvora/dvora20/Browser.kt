@@ -1643,7 +1643,11 @@ fun BrowserScreen(
                     onValueChange = { tabQuery = it },
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
                     singleLine = true,
-                    textStyle = TextStyle(fontSize = 12.sp, color = textColor),
+                    textStyle = TextStyle(
+                        fontSize = 12.sp,
+                        color = textColor,
+                        textAlign = if (isRtlText(tabQuery)) TextAlign.End else TextAlign.Start
+                    ),
                     placeholder = {
                         Text(L(R.string.tab_search), fontSize = 12.sp, color = textColor.copy(alpha = 0.35f))
                     },

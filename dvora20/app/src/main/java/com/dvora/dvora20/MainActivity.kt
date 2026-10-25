@@ -64,6 +64,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.ui.text.withStyle
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -841,7 +842,10 @@ fun DvoraApp(openBrowser: Boolean = false, onToggleDarkMode: () -> Unit) {
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .focusRequester(searchFieldFocusRequester),
-                                        singleLine = true, colors = beeTextFieldColors()
+                                        singleLine = true, colors = beeTextFieldColors(),
+                                        textStyle = LocalTextStyle.current.copy(
+                                            textAlign = if (isRtlText(searchTerm)) TextAlign.End else TextAlign.Start
+                                        )
                                     )
 
                                     // IMDb suggestions dropdown
@@ -1485,7 +1489,10 @@ fun SubtitlesScreen(
                 label = { Text("Movie or Show Name") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                colors = beeTextFieldColors()
+                colors = beeTextFieldColors(),
+                textStyle = LocalTextStyle.current.copy(
+                    textAlign = if (isRtlText(searchTerm)) TextAlign.End else TextAlign.Start
+                )
             )
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -1775,7 +1782,10 @@ fun ImdbScreen(
                 label = { Text("Movie or Show Name") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                colors = beeTextFieldColors()
+                colors = beeTextFieldColors(),
+                textStyle = LocalTextStyle.current.copy(
+                    textAlign = if (isRtlText(searchTerm)) TextAlign.End else TextAlign.Start
+                )
             )
             if (isSearching) {
                 Spacer(Modifier.height(8.dp)); LinearProgressIndicator(
