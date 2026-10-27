@@ -868,8 +868,13 @@ fun BrowserScreen(
     hitMenu?.let { (url, image, linkText) ->
         val hitHost = Uri.parse(url).host ?: url
         val incognitoTab = tabs.getOrNull(active)?.incognito == true
+        // the menu pops while the finger is still down — an outside tap right after
+        // (the same press being lifted) must not close it again
+        val openedAt = remember(url) { android.os.SystemClock.uptimeMillis() }
         AlertDialog(
-            onDismissRequest = { hitMenu = null },
+            onDismissRequest = {
+                if (android.os.SystemClock.uptimeMillis() - openedAt > 450) hitMenu = null
+            },
             containerColor = BeeColors.DarkComb,
             title = { Text(L(R.string.lp_title), color = BeeColors.HoneyGold) },
             text = {

@@ -119,16 +119,13 @@ class WebTab(
     /** the first navigation — held until the WebView is attached (see init) */
     private var pendingUrl: String? = null
 
-    /** true while a finger is on the page — a menu never opens mid-gesture (its own
-     *  release would land on the dialog's scrim and dismiss it instantly) */
-    private var fingerDown = false
-    private var pendingMenu: Triple<String, Boolean, String?>? = null
-    private var lastOfferAt = 0L
-    private var lastOfferUrl = ""
-
     /** what the finger was over when the long press fired — the node query's fallback */
     private var pressHitUrl: String? = null
     private var pressHitImage = false
+
+    /** the last menu handed to the screen — the two long-press paths answer twice */
+    private var lastOfferAt = 0L
+    private var lastOfferUrl = ""
 
     /**
      * Long-press answer: the page tells us the focused node — link href, <img> src
@@ -148,24 +145,15 @@ class WebTab(
         true
     }
 
-    /** the gesture path and the node query both answer — dedupe into one menu. */
+    /** the gesture path and the node query both answer — one menu, richer data wins. */
     private fun offerLongPress(u: String, image: Boolean, text: String?) {
         val now = SystemClock.uptimeMillis()
-        if (now - lastOfferAt < 1200 && u == lastOfferUrl) {
-            // the node query lands right after the gesture with richer data (link text) —
-            // upgrade the pending menu instead of opening a second one
-            val pending = pendingMenu
-            if (text != null && pending != null) pendingMenu = Triple(u, image, text)
-            return
-        }
+        val duplicate = now - lastOfferAt < 1200 && u == lastOfferUrl
+        if (duplicate && text == null) return      // same target, nothing new to add
         lastOfferAt = now
         lastOfferUrl = u
-        val item = Triple(u, image, text)
-        if (fingerDown) {
-            pendingMenu = item       // delivered on release, see the touch listener
-        } else {
-            webView.postDelayed({ onLongPress(item.first, item.second, item.third) }, 60)
-        }
+        // shown as soon as the press resolves — no need to lift the finger
+        webView.postDelayed({ onLongPress(u, image, text) }, 40)
     }
 
     init {
@@ -295,17 +283,6 @@ class WebTab(
         }
 
         webView.setOnTouchListener { _, ev ->
-            when (ev.actionMasked) {
-                MotionEvent.ACTION_DOWN -> fingerDown = true
-                MotionEvent.ACTION_UP,
-                MotionEvent.ACTION_CANCEL -> {
-                    fingerDown = false
-                    pendingMenu?.let { p ->
-                        pendingMenu = null
-                        webView.postDelayed({ onLongPress(p.first, p.second, p.third) }, 140)
-                    }
-                }
-            }
             detector.onTouchEvent(ev)
             false
         }
