@@ -2015,75 +2015,76 @@ private fun LinkPreviewDialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
-        Box(Modifier.fillMaxSize().background(Color.Black)) {
-            AndroidView(factory = { preview }, modifier = Modifier.fillMaxSize())
-            Column(Modifier.fillMaxSize()) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(BeeColors.DarkComb.copy(alpha = 0.94f))
-                        .statusBarsPadding()
-                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                ) {
-                    IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
-                        Icon(
-                            Icons.Default.Close, L(R.string.cd_close),
-                            tint = BeeColors.HoneyGold, modifier = Modifier.size(22.dp)
-                        )
-                    }
-                    Text(
-                        url,
-                        fontSize = 10.sp,
-                        color = BeeColors.DarkOnSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
+        // the bars own their space — the page starts BELOW the url strip instead of
+        // running underneath it
+        Column(Modifier.fillMaxSize().background(Color.Black)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(BeeColors.DarkComb)
+                    .statusBarsPadding()
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            ) {
+                IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
+                    Icon(
+                        Icons.Default.Close, L(R.string.cd_close),
+                        tint = BeeColors.HoneyGold, modifier = Modifier.size(22.dp)
                     )
                 }
-                if (progress < 100) {
-                    LinearProgressIndicator(
-                        progress = { progress / 100f },
-                        modifier = Modifier.fillMaxWidth().height(3.dp),
-                        color = BeeColors.DeepAmber,
-                        trackColor = BeeColors.DeepAmber.copy(alpha = 0.2f)
-                    )
-                }
-                Spacer(Modifier.weight(1f))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(BeeColors.DarkComb.copy(alpha = 0.94f))
-                        .navigationBarsPadding()
-                        .padding(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    if (canDownload) {
-                        Button(
-                            onClick = onDownload,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = BeeColors.FoundGreen, contentColor = Color.White
-                            )
-                        ) {
-                            Icon(Icons.Default.Download, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text(L(R.string.lp_download), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                        }
-                    }
+                Text(
+                    url,
+                    fontSize = 10.sp,
+                    color = BeeColors.DarkOnSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).padding(end = 8.dp)
+                )
+            }
+            if (progress < 100) {
+                LinearProgressIndicator(
+                    progress = { progress / 100f },
+                    modifier = Modifier.fillMaxWidth().height(3.dp),
+                    color = BeeColors.DeepAmber,
+                    trackColor = BeeColors.DeepAmber.copy(alpha = 0.2f)
+                )
+            }
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+                AndroidView(factory = { preview }, modifier = Modifier.fillMaxSize())
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(BeeColors.DarkComb)
+                    .navigationBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                if (canDownload) {
                     Button(
-                        onClick = onOpenTab,
+                        onClick = onDownload,
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(10.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = BeeColors.DarkStripe, contentColor = BeeColors.HoneyGold
+                            containerColor = BeeColors.FoundGreen, contentColor = Color.White
                         )
                     ) {
-                        Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(18.dp))
+                        Icon(Icons.Default.Download, null, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text(L(R.string.lp_open_tab), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(L(R.string.lp_download), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
+                }
+                Button(
+                    onClick = onOpenTab,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = BeeColors.DarkStripe, contentColor = BeeColors.HoneyGold
+                    )
+                ) {
+                    Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(L(R.string.lp_open_tab), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
