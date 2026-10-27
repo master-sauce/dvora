@@ -183,6 +183,13 @@
     <string name="lp_open_bg">Open in background tab</string>
     <string name="lp_bg_opened">Opened in background tab</string>
     <string name="lp_preview">Preview</string>
+    <string name="lp_open_incognito">Open in incognito tab</string>
+    <string name="lp_open_app">Open in app</string>
+    <string name="lp_copy_link">Copy link</string>
+    <string name="lp_copy_text">Copy link text</string>
+    <string name="lp_copied_link">Link copied</string>
+    <string name="lp_copied_text">Text copied</string>
+    <string name="lp_share">Share link</string>
 
     <!-- dialogs / toasts (shared) -->
     <string name="toast_open_url_failed">Could not open URL</string>

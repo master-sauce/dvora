@@ -189,8 +189,9 @@ fun BrowserScreen(
     var urlEditing by remember { mutableStateOf(false) }                           // true once the row text is user-owned
     var historyOpen by remember { mutableStateOf(false) }                           // the 🕘 history dialog
     var histClear by remember { mutableStateOf(false) }                             // history wipe awaiting confirm
-    var hitMenu by remember { mutableStateOf<Pair<String, Boolean>?>(null) }        // long-pressed (url, isImage) → action menu
+    var hitMenu by remember { mutableStateOf<Triple<String, Boolean, String?>?>(null) } // long-pressed (url, isImage, linkText)
     var previewUrl by remember { mutableStateOf<String?>(null) }                     // 1DM-style preview overlay
+    var previewImage by remember { mutableStateOf(false) }                            // preview target is an image
     val urlFocus = remember { FocusRequester() }
     var pendingChooser by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }   // active <input type=file> picker
     var hasStorage by remember { mutableStateOf(Build.VERSION.SDK_INT >= 29) }
@@ -689,9 +690,9 @@ fun BrowserScreen(
                 onActivity = { if (sheetVisible) resTick++ },
                 onPick = { cb, params -> pendingChooser = cb; pickFile(params) },
                 onEnqueue = { u, d, m -> clickDownload(u, d, m) },
-                // long-press: the screen pops the action menu (download / new tab /
-                // background tab / preview) — the hit only reports what was pressed
-                onLongPress = { u, img -> hitMenu = u to img }
+                // long-press: the screen pops the 1DM action menu (download / preview /
+                // new tab / background / incognito / external app / copy / share)
+                onLongPress = { u, img, text -> hitMenu = Triple(u, img, text) }
             )
         )
         active = tabs.lastIndex
@@ -863,8 +864,8 @@ fun BrowserScreen(
         )
     }
 
-    // ── long-press action menu — download / new tab / background tab / preview ──
-    hitMenu?.let { (url, image) ->
+    // ── long-press action menu — the 1DM item set ─────────────────────────────
+    hitMenu?.let { (url, image, linkText) ->
         val hitHost = Uri.parse(url).host ?: url
         val incognitoTab = tabs.getOrNull(active)?.incognito == true
         AlertDialog(
@@ -872,40 +873,104 @@ fun BrowserScreen(
             containerColor = BeeColors.DarkComb,
             title = { Text(L(R.string.lp_title), color = BeeColors.HoneyGold) },
             text = {
-                Column {
-                    Text(
-                        hitHost,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = textColor,
-                        maxLines = 1
-                    )
-                    Text(url, fontSize = 9.sp, color = subColor, maxLines = 2)
-                    Spacer(Modifier.height(8.dp))
-                    LinkMenuRow(
-                        Icons.Default.Download, L(R.string.lp_download), BeeColors.FoundGreen
-                    ) {
-                        hitMenu = null
-                        downloadHit(url, image)
-                    }
-                    LinkMenuRow(
-                        Icons.Default.OpenInNew, L(R.string.lp_open_tab), BeeColors.HoneyGold
-                    ) {
-                        hitMenu = null
-                        newTab(url, incognitoTab)
-                    }
-                    LinkMenuRow(
-                        Icons.Default.Tab, L(R.string.lp_open_bg), BeeColors.HoneyGold
-                    ) {
-                        hitMenu = null
-                        newTab(url, incognitoTab, background = true)
-                        Toast.makeText(context, localeStr(context, R.string.lp_bg_opened), Toast.LENGTH_SHORT).show()
-                    }
-                    LinkMenuRow(
-                        Icons.Default.Visibility, L(R.string.lp_preview), BeeColors.DeepAmber
-                    ) {
-                        hitMenu = null
-                        previewUrl = url
+                Box(Modifier.heightIn(max = 430.dp)) {
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
+                        Text(
+                            hitHost,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = textColor,
+                            maxLines = 1
+                        )
+                        Text(url, fontSize = 9.sp, color = subColor, maxLines = 2)
+                        Spacer(Modifier.height(8.dp))
+
+                        LinkMenuRow(
+                            Icons.Default.Download, L(R.string.lp_download), BeeColors.FoundGreen
+                        ) {
+                            hitMenu = null
+                            downloadHit(url, image)
+                        }
+                        LinkMenuRow(
+                            Icons.Default.Visibility, L(R.string.lp_preview), BeeColors.DeepAmber
+                        ) {
+                            hitMenu = null
+                            previewImage = image
+                            previewUrl = url
+                        }
+                        LinkMenuRow(
+                            Icons.Default.OpenInNew, L(R.string.lp_open_tab), BeeColors.HoneyGold
+                        ) {
+                            hitMenu = null
+                            newTab(url, incognitoTab)
+                        }
+                        LinkMenuRow(
+                            Icons.Default.Tab, L(R.string.lp_open_bg), BeeColors.HoneyGold
+                        ) {
+                            hitMenu = null
+                            newTab(url, incognitoTab, background = true)
+                            Toast.makeText(
+                                context,
+                                localeStr(context, R.string.lp_bg_opened),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        LinkMenuRow(
+                            Icons.Default.VisibilityOff, L(R.string.lp_open_incognito), BeeColors.HoneyGold
+                        ) {
+                            hitMenu = null
+                            newTab(url, incognito = true)
+                        }
+                        LinkMenuRow(
+                            Icons.Default.Public, L(R.string.lp_open_app), BeeColors.HoneyGold
+                        ) {
+                            hitMenu = null
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            }
+                        }
+                        LinkMenuRow(
+                            Icons.Default.ContentCopy, L(R.string.lp_copy_link), BeeColors.HoneyGold
+                        ) {
+                            hitMenu = null
+                            copyToClipboard(context, url)
+                            Toast.makeText(
+                                context,
+                                localeStr(context, R.string.lp_copied_link),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                        if (!linkText.isNullOrBlank()) {
+                            LinkMenuRow(
+                                Icons.Default.ContentCopy, L(R.string.lp_copy_text), BeeColors.HoneyGold
+                            ) {
+                                hitMenu = null
+                                copyToClipboard(context, linkText)
+                                Toast.makeText(
+                                    context,
+                                    localeStr(context, R.string.lp_copied_text),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                        LinkMenuRow(
+                            Icons.Default.Share, L(R.string.lp_share), BeeColors.HoneyGold
+                        ) {
+                            hitMenu = null
+                            runCatching {
+                                context.startActivity(
+                                    Intent.createChooser(
+                                        Intent(Intent.ACTION_SEND)
+                                            .setType("text/plain")
+                                            .putExtra(Intent.EXTRA_TEXT, url),
+                                        null
+                                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            }
+                        }
                     }
                 }
             },
@@ -926,7 +991,7 @@ fun BrowserScreen(
             onDismiss = { previewUrl = null },
             onDownload = {
                 previewUrl = null
-                downloadHit(url, false)
+                downloadHit(url, previewImage)
             },
             onOpenTab = {
                 previewUrl = null

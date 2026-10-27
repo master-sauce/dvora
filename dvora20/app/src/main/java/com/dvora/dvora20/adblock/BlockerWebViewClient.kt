@@ -46,9 +46,6 @@ class BlockerWebViewClient(
     var onBlocked: () -> Unit = {}              // page-block counter just moved → refresh badge
     var onActivity: () -> Unit = {}             // another page request happened → live the resources panel
     var onCrossNav: ((String, String) -> Unit)? = null   // (target url, host) — confirm-site-change dialog
-    /** true while the browser itself owns the gesture (a just-released long press) —
-     *  the click it must not act on is cancelled silently, without any prompt */
-    var navGuard: (() -> Boolean)? = null
     var onSsl: ((Uri?, SslErrorHandler) -> Unit)? = null
 
     /** sniffer script injection — called on every http(s) page start (script itself is idempotent) */
@@ -60,9 +57,6 @@ class BlockerWebViewClient(
     // ── navigation ────────────────────────────────────────────────────────────────
 
     override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest): Boolean {
-        // the release of a long-press still looks like a tap to the page — drop it
-        // before it can navigate or raise the cross-site prompt
-        if (navGuard?.invoke() == true) return true
         val uri = request.url
         val scheme = (uri.scheme ?: "").lowercase()
         if (scheme !in setOf("http", "https")) {

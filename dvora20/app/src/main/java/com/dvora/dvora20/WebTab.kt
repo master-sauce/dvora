@@ -3,6 +3,10 @@ package com.dvora.dvora20
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -62,8 +66,8 @@ class WebTab(
     onPick: (ValueCallback<Array<Uri>>, WebChromeClient.FileChooserParams) -> Unit,
     /** a forced download (Content-Disposition) goes to the DownloadManager */
     onEnqueue: (String, String?, String?) -> Unit,
-    /** long-press on an image / link — (url, isImage); the screen shows the action menu */
-    onLongPress: (String, Boolean) -> Unit
+    /** long-press on an image / link — (url, isImage, linkText); the screen shows the action menu */
+    private val onLongPress: (String, Boolean, String?) -> Unit
 ) {
     // ── per-page UI state (own state per tab — background tabs update silently) ──
     var address by mutableStateOf(startUrl)
@@ -115,30 +119,53 @@ class WebTab(
     /** the first navigation — held until the WebView is attached (see init) */
     private var pendingUrl: String? = null
 
-    /** a long-press found a url — held until the finger lifts (see the touch listener) */
-    private var pendingPress: Pair<String, Boolean>? = null
+    /** true while a finger is on the page — a menu never opens mid-gesture (its own
+     *  release would land on the dialog's scrim and dismiss it instantly) */
+    private var fingerDown = false
+    private var pendingMenu: Triple<String, Boolean, String?>? = null
+    private var lastOfferAt = 0L
+    private var lastOfferUrl = ""
 
-    /** when the last long-press claimed its gesture — its release must not navigate */
-    private var lastLongPressAt = 0L
+    /** what the finger was over when the long press fired — the node query's fallback */
+    private var pressHitUrl: String? = null
+    private var pressHitImage = false
 
-    private var downAtX = 0f
-    private var downAtY = 0f
-    private val touchSlop = android.view.ViewConfiguration.get(context).scaledTouchSlop.toFloat()
+    /**
+     * 1DM's long-press answer (same as Lightning's WebViewHandler): the page tells us
+     * the focused node — link href, <img> src and the anchor text — far more reliably
+     * than HitTestResult alone.
+     */
+    private val longPressHandler = Handler(Looper.getMainLooper()) { msg ->
+        val data = msg.data
+        val href = data.getString("url")?.takeIf { it.startsWith("http") }
+        val src = data.getString("src")?.takeIf { it.startsWith("http") }
+        val text = data.getString("title")?.takeIf { it.isNotBlank() }
+        // the page has no focused node (or the message came back empty) → the
+        // element the finger was over when the long press fired
+        val target = src ?: href ?: pressHitUrl
+        val image = src != null ||
+            (target != null && target == pressHitUrl && pressHitImage)
+        if (target != null) offerLongPress(target, image, text)
+        true
+    }
 
-    /** fallback long-press detection: the element under a held finger (native long
-     *  clicks are not delivered on every page / WebView build) */
-    private val pressBackstop = Runnable {
-        if (pendingPress != null) return@Runnable
-        val hit = webView.hitTestResult
-        val u = hit.extra
-        if (u.isNullOrBlank() || !u.startsWith("http")) return@Runnable
-        when (hit.type) {
-            WebView.HitTestResult.IMAGE_TYPE,
-            WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> pendingPress = u to true
-            WebView.HitTestResult.ANCHOR_TYPE,
-            WebView.HitTestResult.SRC_ANCHOR_TYPE,
-            WebView.HitTestResult.UNKNOWN_TYPE -> pendingPress = u to false
-            else -> {}
+    /** the gesture path and the node query both answer — dedupe into one menu. */
+    private fun offerLongPress(u: String, image: Boolean, text: String?) {
+        val now = SystemClock.uptimeMillis()
+        if (now - lastOfferAt < 1200 && u == lastOfferUrl) {
+            // the node query lands right after the gesture with richer data (link text) —
+            // upgrade the pending menu instead of opening a second one
+            val pending = pendingMenu
+            if (text != null && pending != null) pendingMenu = Triple(u, image, text)
+            return
+        }
+        lastOfferAt = now
+        lastOfferUrl = u
+        val item = Triple(u, image, text)
+        if (fingerDown) {
+            pendingMenu = item       // delivered on release, see the touch listener
+        } else {
+            webView.postDelayed({ onLongPress(item.first, item.second, item.third) }, 60)
         }
     }
 
@@ -229,84 +256,58 @@ class WebTab(
         client.onBlocked = { blocked = repo.engine.pageBlocks }
         client.onSsl = { uri, handler -> ssl = uri to handler }
 
-        // ── long press on a link / image → the screen's action menu ──────────────
-        // Two triggers feed the same slot: the view-level long click (images and
-        // most links) and a timed fallback that reads the hit test itself (pages /
-        // WebView builds that never deliver the long click). The menu opens on
-        // RELEASE — opened mid-gesture, the finger-up lands on the dialog's scrim and
-        // dismisses it instantly, which reads as "the popup never opens".
-        fun pressAt(u: String, image: Boolean) {
-            if (pendingPress == null) pendingPress = u to image
-        }
-
-        webView.setOnLongClickListener {
-            val hit = webView.hitTestResult
-            val u = hit.extra
-            if (u.isNullOrBlank() || !u.startsWith("http")) {
-                false
-            } else when (hit.type) {
-                WebView.HitTestResult.IMAGE_TYPE,
-                WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> {
-                    pressAt(u, true); true
-                }
-                // ANCHOR_TYPE is a plain <a>, SRC_ANCHOR_TYPE an <area>; a player can
-                // report UNKNOWN with a real url — all of them are links for this menu
-                WebView.HitTestResult.ANCHOR_TYPE,
-                WebView.HitTestResult.SRC_ANCHOR_TYPE,
-                WebView.HitTestResult.UNKNOWN_TYPE -> {
-                    pressAt(u, false); true
-                }
-                else -> false       // text selection keeps its default behavior
+        // ── long press — 1DM's own pipeline ───────────────────────────────────────
+        // The WebView's long click only SUPPRESSES Chromium's long-press UI for
+        // links / images (text keeps text selection); the menu comes from a
+        // GestureDetector, which asks the page for the pressed node the way 1DM does.
+        // Nothing is consumed from the touch stream — a swallowed UP leaves the
+        // WebView stuck, unresponsive until it navigates again.
+        val detector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+            override fun onLongPress(e: MotionEvent) {
+                // remember the element under the finger, then ask the page for the
+                // focused node's href / img src / anchor text (1DM's WebViewHandler)
+                val hit = webView.hitTestResult
+                pressHitUrl = hit.extra?.takeIf { it.startsWith("http") }
+                pressHitImage = hit.type == WebView.HitTestResult.IMAGE_TYPE ||
+                    hit.type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE
+                val msg = longPressHandler.obtainMessage()
+                msg.target = longPressHandler
+                runCatching { webView.requestFocusNodeHref(msg) }
+                // safety net: a WebView that never delivers the node message still gets
+                // the menu from the element under the finger
+                val firedAt = SystemClock.uptimeMillis()
+                webView.postDelayed({
+                    if (lastOfferAt < firedAt) {
+                        pressHitUrl?.let { u -> offerLongPress(u, pressHitImage, null) }
+                    }
+                }, 400L)
             }
+        })
+
+        webView.setOnLongClickListener { v ->
+            // exactly 1DM's set: images and image/area links are claimed by the app,
+            // plain links keep Chromium's own long-press (it cancels their click),
+            // text keeps text selection
+            val type = (v as? WebView)?.hitTestResult?.type ?: 0
+            type == WebView.HitTestResult.IMAGE_TYPE ||
+                type == WebView.HitTestResult.SRC_ANCHOR_TYPE ||
+                type == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE
         }
 
-        webView.setOnTouchListener { v, ev ->
+        webView.setOnTouchListener { _, ev ->
             when (ev.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    pendingPress = null
-                    downAtX = ev.x
-                    downAtY = ev.y
-                    v.removeCallbacks(pressBackstop)
-                    v.postDelayed(
-                        pressBackstop,
-                        android.view.ViewConfiguration.getLongPressTimeout().toLong() + 150L
-                    )
-                    false
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    // moving means scrolling, not pressing
-                    if (kotlin.math.abs(ev.x - downAtX) > touchSlop ||
-                        kotlin.math.abs(ev.y - downAtY) > touchSlop
-                    ) {
-                        v.removeCallbacks(pressBackstop)
-                        pendingPress = null
-                    }
-                    false
-                }
-                MotionEvent.ACTION_UP -> {
-                    v.removeCallbacks(pressBackstop)
-                    val p = pendingPress
-                    pendingPress = null
-                    if (p != null) {
-                        // the page still sees this release as a tap — navGuard drops
-                        // the click it would fire, then the menu opens just after
-                        lastLongPressAt = android.os.SystemClock.uptimeMillis()
-                        v.postDelayed({ onLongPress(p.first, p.second) }, 140)
-                    }
-                    false       // never swallow the event — a lost UP freezes the WebView
-                }
+                MotionEvent.ACTION_DOWN -> fingerDown = true
+                MotionEvent.ACTION_UP,
                 MotionEvent.ACTION_CANCEL -> {
-                    v.removeCallbacks(pressBackstop)
-                    pendingPress = null
-                    false
+                    fingerDown = false
+                    pendingMenu?.let { p ->
+                        pendingMenu = null
+                        webView.postDelayed({ onLongPress(p.first, p.second, p.third) }, 140)
+                    }
                 }
-                else -> false
             }
-        }
-
-        // a long-press owns its release: the tap it looks like must not navigate
-        client.navGuard = {
-            android.os.SystemClock.uptimeMillis() - lastLongPressAt < 900
+            detector.onTouchEvent(ev)
+            false
         }
 
         // the first navigation waits for the window: a WebView that starts loading
