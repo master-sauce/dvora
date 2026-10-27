@@ -20,6 +20,9 @@ import android.view.ViewGroup
 import android.webkit.CookieManager
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -55,6 +58,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -70,6 +74,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.dvora.dvora20.adblock.BlockerEngine
 import com.dvora.dvora20.adblock.ListRepo
 import com.dvora.dvora20.adblock.Media
@@ -182,6 +188,8 @@ fun BrowserScreen(
     var urlEditing by remember { mutableStateOf(false) }                           // true once the row text is user-owned
     var historyOpen by remember { mutableStateOf(false) }                           // the 🕘 history dialog
     var histClear by remember { mutableStateOf(false) }                             // history wipe awaiting confirm
+    var hitMenu by remember { mutableStateOf<Pair<String, Boolean>?>(null) }        // long-pressed (url, isImage) → action menu
+    var previewUrl by remember { mutableStateOf<String?>(null) }                     // 1DM-style preview overlay
     val urlFocus = remember { FocusRequester() }
     var pendingChooser by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }   // active <input type=file> picker
     var hasStorage by remember { mutableStateOf(Build.VERSION.SDK_INT >= 29) }
@@ -643,6 +651,20 @@ fun BrowserScreen(
         ytSheet = true      // the download menu opens with the live job
     }
 
+    /**
+     * Download from the long-press menu: an image goes to the yt-dlp manager (its
+     * magic-byte typing fixes the extension), anything else takes the normal
+     * click-download routing (media → yt-dlp, plain files → DownloadManager).
+     */
+    fun downloadHit(u: String, image: Boolean) {
+        if (image) {
+            val stem = u.substringBefore('?').substringBefore('#').substringAfterLast('/')
+                .substringBeforeLast('.', "").takeIf { it.isNotBlank() } ?: "image"
+            startYt(u, stem)
+            ytSheet = true
+        } else clickDownload(u, null, null)
+    }
+
     // ── tab management ────────────────────────────────────────────────────────
 
     /**
@@ -655,7 +677,8 @@ fun BrowserScreen(
         CookieManager.getInstance().setAcceptCookie(tabs.none { it.incognito })
     }
 
-    fun newTab(url: String, incognito: Boolean) {
+    fun newTab(url: String, incognito: Boolean, background: Boolean = false) {
+        val prevActive = active
         tabs.add(
             WebTab(
                 // the whitelist is read live from its cache (not this screen's state) —
@@ -665,22 +688,13 @@ fun BrowserScreen(
                 onActivity = { if (sheetVisible) resTick++ },
                 onPick = { cb, params -> pendingChooser = cb; pickFile(params) },
                 onEnqueue = { u, d, m -> clickDownload(u, d, m) },
-                // long-press: an IMAGE goes straight into the yt-dlp manager (job + live
-                // downloads screen); a LINK follows the normal click-download routing
-                // (media → yt-dlp manager, plain files → DownloadManager, real names kept)
-                onLongDownload = { u, img ->
-                    if (img) {
-                        // no-ish filename → a sane "image" base; the service fixes the real
-                        // extension from the file's magic bytes if yt-dlp can't type it
-                        val stem = u.substringBefore('?').substringBefore('#').substringAfterLast('/')
-                            .substringBeforeLast('.', "").takeIf { it.isNotBlank() } ?: "image"
-                        startYt(u, stem)
-                        ytSheet = true
-                    } else clickDownload(u, null, null)
-                }
+                // long-press: the screen pops the action menu (download / new tab /
+                // background tab / preview) — the hit only reports what was pressed
+                onLongPress = { u, img -> hitMenu = u to img }
             )
         )
         active = tabs.lastIndex
+        if (background) active = prevActive.coerceIn(0, tabs.lastIndex)   // load it, keep the current tab on screen
         syncCookies()
     }
 
@@ -844,6 +858,78 @@ fun BrowserScreen(
                 TextButton(onClick = { crossNav = null; navTab.address = navTab.webView.url ?: "" }) {
                     Text(L(R.string.cancel), color = BeeColors.DeepAmber)
                 }
+            }
+        )
+    }
+
+    // ── long-press action menu — download / new tab / background tab / preview ──
+    hitMenu?.let { (url, image) ->
+        val hitHost = Uri.parse(url).host ?: url
+        val incognitoTab = tabs.getOrNull(active)?.incognito == true
+        AlertDialog(
+            onDismissRequest = { hitMenu = null },
+            containerColor = BeeColors.DarkComb,
+            title = { Text(L(R.string.lp_title), color = BeeColors.HoneyGold) },
+            text = {
+                Column {
+                    Text(
+                        hitHost,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = textColor,
+                        maxLines = 1
+                    )
+                    Text(url, fontSize = 9.sp, color = subColor, maxLines = 2)
+                    Spacer(Modifier.height(8.dp))
+                    LinkMenuRow(
+                        Icons.Default.Download, L(R.string.lp_download), BeeColors.FoundGreen
+                    ) {
+                        hitMenu = null
+                        downloadHit(url, image)
+                    }
+                    LinkMenuRow(
+                        Icons.Default.OpenInNew, L(R.string.lp_open_tab), BeeColors.HoneyGold
+                    ) {
+                        hitMenu = null
+                        newTab(url, incognitoTab)
+                    }
+                    LinkMenuRow(
+                        Icons.Default.Tab, L(R.string.lp_open_bg), BeeColors.HoneyGold
+                    ) {
+                        hitMenu = null
+                        newTab(url, incognitoTab, background = true)
+                        Toast.makeText(context, localeStr(context, R.string.lp_bg_opened), Toast.LENGTH_SHORT).show()
+                    }
+                    LinkMenuRow(
+                        Icons.Default.Visibility, L(R.string.lp_preview), BeeColors.DeepAmber
+                    ) {
+                        hitMenu = null
+                        previewUrl = url
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { hitMenu = null }) {
+                    Text(L(R.string.cancel), color = BeeColors.DeepAmber)
+                }
+            }
+        )
+    }
+
+    // ── 1DM-style preview — the raw link rendered in a throwaway WebView ──
+    previewUrl?.let { url ->
+        val incognitoTab = tabs.getOrNull(active)?.incognito == true
+        LinkPreviewDialog(
+            url = url,
+            onDismiss = { previewUrl = null },
+            onDownload = {
+                previewUrl = null
+                downloadHit(url, false)
+            },
+            onOpenTab = {
+                previewUrl = null
+                newTab(url, incognitoTab)
             }
         )
     }
@@ -1750,6 +1836,142 @@ fun BrowserScreen(
                         colors = IconButtonDefaults.iconButtonColors(containerColor = Color.Black.copy(alpha = 0.55f))
                     ) {
                         Icon(Icons.Default.Close, contentDescription = L(R.string.cd_close), tint = Color.White)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** one tappable row of the long-press action menu. */
+@Composable
+private fun LinkMenuRow(icon: ImageVector, label: String, tint: Color, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp, vertical = 11.dp)
+    ) {
+        Icon(icon, null, tint = tint, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(label, fontSize = 13.sp, color = BeeColors.DarkOnSurface)
+    }
+}
+
+/**
+ * 1DM-style preview of a long-pressed link / media url: the raw target inside a
+ * throwaway WebView — images, video, audio and plain pages all render natively —
+ * with its own Download / New-tab / Close bar. Nothing here touches the tab
+ * session, the history or the ad-block accounting.
+ */
+@Composable
+private fun LinkPreviewDialog(
+    url: String,
+    onDismiss: () -> Unit,
+    onDownload: () -> Unit,
+    onOpenTab: () -> Unit
+) {
+    val context = LocalContext.current
+    var progress by remember { mutableIntStateOf(0) }
+
+    val preview = remember(url) {
+        WebView(context).apply {
+            setBackgroundColor(android.graphics.Color.BLACK)
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = false
+            settings.mediaPlaybackRequiresUserGesture = false
+            settings.builtInZoomControls = true
+            settings.displayZoomControls = false
+            webViewClient = object : WebViewClient() {
+                // everything stays inside the preview — never hand off to another app
+                override fun shouldOverrideUrlLoading(
+                    view: WebView?,
+                    request: WebResourceRequest?
+                ): Boolean = false
+            }
+            webChromeClient = object : WebChromeClient() {
+                override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                    progress = newProgress
+                }
+            }
+            loadUrl(url)
+        }
+    }
+    DisposableEffect(url) {
+        onDispose { runCatching { preview.destroy() } }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            AndroidView(factory = { preview }, modifier = Modifier.fillMaxSize())
+            Column(Modifier.fillMaxSize()) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(BeeColors.DarkComb.copy(alpha = 0.94f))
+                        .statusBarsPadding()
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    IconButton(onClick = onDismiss, modifier = Modifier.size(40.dp)) {
+                        Icon(
+                            Icons.Default.Close, L(R.string.cd_close),
+                            tint = BeeColors.HoneyGold, modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Text(
+                        url,
+                        fontSize = 10.sp,
+                        color = BeeColors.DarkOnSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                if (progress < 100) {
+                    LinearProgressIndicator(
+                        progress = { progress / 100f },
+                        modifier = Modifier.fillMaxWidth().height(3.dp),
+                        color = BeeColors.DeepAmber,
+                        trackColor = BeeColors.DeepAmber.copy(alpha = 0.2f)
+                    )
+                }
+                Spacer(Modifier.weight(1f))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(BeeColors.DarkComb.copy(alpha = 0.94f))
+                        .navigationBarsPadding()
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Button(
+                        onClick = onDownload,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = BeeColors.FoundGreen, contentColor = Color.White
+                        )
+                    ) {
+                        Icon(Icons.Default.Download, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(L(R.string.lp_download), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Button(
+                        onClick = onOpenTab,
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = BeeColors.DarkStripe, contentColor = BeeColors.HoneyGold
+                        )
+                    ) {
+                        Icon(Icons.Default.OpenInNew, null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(L(R.string.lp_open_tab), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }

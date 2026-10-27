@@ -61,8 +61,8 @@ class WebTab(
     onPick: (ValueCallback<Array<Uri>>, WebChromeClient.FileChooserParams) -> Unit,
     /** a forced download (Content-Disposition) goes to the DownloadManager */
     onEnqueue: (String, String?, String?) -> Unit,
-    /** long-press on an image / link — (url, isImage); images route to the yt-dlp manager */
-    onLongDownload: (String, Boolean) -> Unit
+    /** long-press on an image / link — (url, isImage); the screen shows the action menu */
+    onLongPress: (String, Boolean) -> Unit
 ) {
     // ── per-page UI state (own state per tab — background tabs update silently) ──
     var address by mutableStateOf(startUrl)
@@ -199,7 +199,8 @@ class WebTab(
         client.onSsl = { uri, handler -> ssl = uri to handler }
 
         // long-press an image / link (an "icon", a thumbnail, a download link) →
-        // its url goes to the download flow; text long-press keeps the native menu
+        // the url goes to the screen's action menu (download / new tab / background /
+        // preview); text long-press keeps the native selection menu
         webView.setOnLongClickListener {
             val hit = webView.hitTestResult
             val hitUrl = hit.extra
@@ -208,11 +209,11 @@ class WebTab(
             } else when (hit.type) {
                 WebView.HitTestResult.IMAGE_TYPE,
                 WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE -> {
-                    onLongDownload(hitUrl, true)
+                    onLongPress(hitUrl, true)
                     true
                 }
                 WebView.HitTestResult.SRC_ANCHOR_TYPE -> {
-                    onLongDownload(hitUrl, false)
+                    onLongPress(hitUrl, false)
                     true
                 }
                 else -> false       // text selection & friends keep their default behavior

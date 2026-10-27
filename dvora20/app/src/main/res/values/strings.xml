@@ -176,6 +176,14 @@
     <string name="home_engine_ddg">Searches with DuckDuckGo</string>
     <string name="home_incognito">Incognito tab · nothing is saved</string>
 
+    <!-- long-press link / media menu + preview -->
+    <string name="lp_title">Link actions</string>
+    <string name="lp_download">Download</string>
+    <string name="lp_open_tab">Open in new tab</string>
+    <string name="lp_open_bg">Open in background tab</string>
+    <string name="lp_bg_opened">Opened in background tab</string>
+    <string name="lp_preview">Preview</string>
+
     <!-- dialogs / toasts (shared) -->
     <string name="toast_open_url_failed">Could not open URL</string>
     <string name="ok">OK</string>
