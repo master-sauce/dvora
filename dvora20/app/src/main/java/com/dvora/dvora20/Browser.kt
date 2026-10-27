@@ -86,6 +86,7 @@ import com.dvora.dvora20.adblock.SniffName
 import com.dvora.dvora20.adblock.SnifferStore
 import com.dvora.dvora20.adblock.SniffRow
 import com.dvora.dvora20.adblock.Whitelist
+import coil.compose.AsyncImage
 import java.io.File
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
@@ -996,6 +997,7 @@ fun BrowserScreen(
         LinkPreviewDialog(
             url = url,
             canDownload = isDownloadableHit(url, previewImage),
+            isImage = previewImage,
             onDismiss = { previewUrl = null },
             onDownload = {
                 previewUrl = null
@@ -1968,15 +1970,16 @@ private fun LinkMenuRow(icon: ImageVector, label: String, tint: Color, onClick: 
 }
 
 /**
- * Fullscreen preview of a long-pressed link / media url: the raw target inside a
- * throwaway WebView — images, video, audio and plain pages all render natively —
- * with its own Download / New-tab / Close bar. Nothing here touches the tab
- * session, the history or the ad-block accounting.
+ * Fullscreen preview of a long-pressed link / media url: images render with the
+ * image loader, everything else inside a throwaway WebView, with its own
+ * Download / New-tab / Close bar. Nothing here touches the tab session, the
+ * history or the ad-block accounting.
  */
 @Composable
 private fun LinkPreviewDialog(
     url: String,
     canDownload: Boolean,
+    isImage: Boolean,
     onDismiss: () -> Unit,
     onDownload: () -> Unit,
     onOpenTab: () -> Unit
@@ -1984,8 +1987,9 @@ private fun LinkPreviewDialog(
     val context = LocalContext.current
     var progress by remember { mutableIntStateOf(0) }
 
-    val preview = remember(url) {
-        WebView(context).apply {
+    // an image needs no web engine — the loader fits it cleanly under the url bar
+    val preview = remember(url, isImage) {
+        if (isImage) null else WebView(context).apply {
             setBackgroundColor(android.graphics.Color.BLACK)
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = false
@@ -2007,8 +2011,8 @@ private fun LinkPreviewDialog(
             loadUrl(url)
         }
     }
-    DisposableEffect(url) {
-        onDispose { runCatching { preview.destroy() } }
+    DisposableEffect(url, isImage) {
+        onDispose { preview?.let { runCatching { it.destroy() } } }
     }
 
     Dialog(
@@ -2041,7 +2045,7 @@ private fun LinkPreviewDialog(
                     modifier = Modifier.weight(1f).padding(end = 8.dp)
                 )
             }
-            if (progress < 100) {
+            if (!isImage && progress < 100) {
                 LinearProgressIndicator(
                     progress = { progress / 100f },
                     modifier = Modifier.fillMaxWidth().height(3.dp),
@@ -2050,7 +2054,16 @@ private fun LinkPreviewDialog(
                 )
             }
             Box(Modifier.weight(1f).fillMaxWidth()) {
-                AndroidView(factory = { preview }, modifier = Modifier.fillMaxSize())
+                if (isImage) {
+                    AsyncImage(
+                        model = url,
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize().background(Color.Black)
+                    )
+                } else {
+                    AndroidView(factory = { preview!! }, modifier = Modifier.fillMaxSize())
+                }
             }
             Row(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
