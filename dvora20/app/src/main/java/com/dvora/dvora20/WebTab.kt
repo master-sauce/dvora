@@ -3,6 +3,7 @@ package com.dvora.dvora20
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -111,6 +112,12 @@ class WebTab(
     val chrome = BlockerChromeClient()
     private val jsInterface = SnifferJsInterface(context) { webView.settings.userAgentString }
 
+    /** the first navigation — held until the WebView is attached (see init) */
+    private var pendingUrl: String? = null
+
+    /** a handled long-press owns the rest of its gesture — the release must not click */
+    private var swallowGesture = false
+
     init {
         webView.addJavascriptInterface(jsInterface, "JSInterface")     // the engine's JSInterface bridge
         webView.webViewClient = client
@@ -200,11 +207,13 @@ class WebTab(
 
         // long-press an image / link (an "icon", a thumbnail, a download link) →
         // the url goes to the screen's action menu (download / new tab / background /
-        // preview); text long-press keeps the native selection menu
+        // preview); text long-press keeps the native selection menu.
+        // ANCHOR_TYPE is a plain <a>, SRC_ANCHOR_TYPE an <area>, the SRC_IMAGE_* the
+        // image inside a link — Android reports a different type per element.
         webView.setOnLongClickListener {
             val hit = webView.hitTestResult
             val hitUrl = hit.extra
-            if (hitUrl.isNullOrBlank() || !hitUrl.startsWith("http")) {
+            val handled = if (hitUrl.isNullOrBlank() || !hitUrl.startsWith("http")) {
                 false
             } else when (hit.type) {
                 WebView.HitTestResult.IMAGE_TYPE,
@@ -212,15 +221,57 @@ class WebTab(
                     onLongPress(hitUrl, true)
                     true
                 }
+                WebView.HitTestResult.ANCHOR_TYPE,
                 WebView.HitTestResult.SRC_ANCHOR_TYPE -> {
+                    onLongPress(hitUrl, false)
+                    true
+                }
+                // a media element / custom player can report UNKNOWN with a real url —
+                // still a link for this menu; anything without an http url stays native
+                WebView.HitTestResult.UNKNOWN_TYPE -> {
                     onLongPress(hitUrl, false)
                     true
                 }
                 else -> false       // text selection & friends keep their default behavior
             }
+            if (handled) swallowGesture = true    // the finger is still down — no click on release
+            handled
         }
 
-        webView.loadUrl(if (startUrl == BROWSER_HOME) BLANK_PAGE else startUrl)
+        // LONG vs SHORT press are separate gestures: once the action menu took the
+        // long-press, the MOVE/UP of that same finger must never reach the page —
+        // otherwise the WebView fires the link's click and navigates (the cross-site
+        // "continue to site?" prompt) right on top of the open menu.
+        webView.setOnTouchListener { _, ev ->
+            when (ev.actionMasked) {
+                MotionEvent.ACTION_DOWN,
+                MotionEvent.ACTION_CANCEL -> {
+                    swallowGesture = false
+                    false
+                }
+                MotionEvent.ACTION_MOVE,
+                MotionEvent.ACTION_UP -> swallowGesture
+                else -> false
+            }
+        }
+
+        // the first navigation waits for the window: a WebView that starts loading
+        // while detached can finish without ever painting (a blank page that only a
+        // tab switch / reload cures). Every (re)attach also kicks one layout + draw,
+        // because switching screens detaches the whole browser hierarchy.
+        pendingUrl = if (startUrl == BROWSER_HOME) BLANK_PAGE else startUrl
+        webView.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) {
+                pendingUrl?.let { u ->
+                    pendingUrl = null
+                    v.post { runCatching { webView.loadUrl(u) } }
+                }
+                v.requestLayout()
+                v.post { runCatching { v.invalidate() } }
+            }
+
+            override fun onViewDetachedFromWindow(v: View) {}
+        })
     }
 
     /** address snaps to the target so the row reflects what is loading even before commit. */
