@@ -131,9 +131,8 @@ class WebTab(
     private var pressHitImage = false
 
     /**
-     * 1DM's long-press answer (same as Lightning's WebViewHandler): the page tells us
-     * the focused node — link href, <img> src and the anchor text — far more reliably
-     * than HitTestResult alone.
+     * Long-press answer: the page tells us the focused node — link href, <img> src
+     * and the anchor text — which is far more reliable than the touch point alone.
      */
     private val longPressHandler = Handler(Looper.getMainLooper()) { msg ->
         val data = msg.data
@@ -256,16 +255,17 @@ class WebTab(
         client.onBlocked = { blocked = repo.engine.pageBlocks }
         client.onSsl = { uri, handler -> ssl = uri to handler }
 
-        // ── long press — 1DM's own pipeline ───────────────────────────────────────
+        // ── long press → action menu ──────────────────────────────────────────────
         // The WebView's long click only SUPPRESSES Chromium's long-press UI for
         // links / images (text keeps text selection); the menu comes from a
-        // GestureDetector, which asks the page for the pressed node the way 1DM does.
+        // GestureDetector, which asks the page for the pressed node rather than
+        // guessing from the touch point.
         // Nothing is consumed from the touch stream — a swallowed UP leaves the
         // WebView stuck, unresponsive until it navigates again.
         val detector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
             override fun onLongPress(e: MotionEvent) {
                 // remember the element under the finger, then ask the page for the
-                // focused node's href / img src / anchor text (1DM's WebViewHandler)
+                // focused node's href / img src / anchor text
                 val hit = webView.hitTestResult
                 pressHitUrl = hit.extra?.takeIf { it.startsWith("http") }
                 pressHitImage = hit.type == WebView.HitTestResult.IMAGE_TYPE ||
@@ -285,7 +285,7 @@ class WebTab(
         })
 
         webView.setOnLongClickListener { v ->
-            // exactly 1DM's set: images and image/area links are claimed by the app,
+            // images and image/area links are claimed by the app,
             // plain links keep Chromium's own long-press (it cancels their click),
             // text keeps text selection
             val type = (v as? WebView)?.hitTestResult?.type ?: 0

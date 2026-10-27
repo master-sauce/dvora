@@ -190,7 +190,7 @@ fun BrowserScreen(
     var historyOpen by remember { mutableStateOf(false) }                           // the 🕘 history dialog
     var histClear by remember { mutableStateOf(false) }                             // history wipe awaiting confirm
     var hitMenu by remember { mutableStateOf<Triple<String, Boolean, String?>?>(null) } // long-pressed (url, isImage, linkText)
-    var previewUrl by remember { mutableStateOf<String?>(null) }                     // 1DM-style preview overlay
+    var previewUrl by remember { mutableStateOf<String?>(null) }                     // fullscreen preview overlay
     var previewImage by remember { mutableStateOf(false) }                            // preview target is an image
     val urlFocus = remember { FocusRequester() }
     var pendingChooser by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }   // active <input type=file> picker
@@ -690,7 +690,7 @@ fun BrowserScreen(
                 onActivity = { if (sheetVisible) resTick++ },
                 onPick = { cb, params -> pendingChooser = cb; pickFile(params) },
                 onEnqueue = { u, d, m -> clickDownload(u, d, m) },
-                // long-press: the screen pops the 1DM action menu (download / preview /
+                // long-press: the screen pops the action menu (download / preview /
                 // new tab / background / incognito / external app / copy / share)
                 onLongPress = { u, img, text -> hitMenu = Triple(u, img, text) }
             )
@@ -864,7 +864,7 @@ fun BrowserScreen(
         )
     }
 
-    // ── long-press action menu — the 1DM item set ─────────────────────────────
+    // ── long-press action menu — download / preview / tabs / open / copy / share ──
     hitMenu?.let { (url, image, linkText) ->
         val hitHost = Uri.parse(url).host ?: url
         val incognitoTab = tabs.getOrNull(active)?.incognito == true
@@ -983,7 +983,7 @@ fun BrowserScreen(
         )
     }
 
-    // ── 1DM-style preview — the raw link rendered in a throwaway WebView ──
+    // ── fullscreen preview — the raw link rendered in a throwaway WebView ──
     previewUrl?.let { url ->
         val incognitoTab = tabs.getOrNull(active)?.incognito == true
         LinkPreviewDialog(
@@ -1960,7 +1960,7 @@ private fun LinkMenuRow(icon: ImageVector, label: String, tint: Color, onClick: 
 }
 
 /**
- * 1DM-style preview of a long-pressed link / media url: the raw target inside a
+ * Fullscreen preview of a long-pressed link / media url: the raw target inside a
  * throwaway WebView — images, video, audio and plain pages all render natively —
  * with its own Download / New-tab / Close bar. Nothing here touches the tab
  * session, the history or the ad-block accounting.
