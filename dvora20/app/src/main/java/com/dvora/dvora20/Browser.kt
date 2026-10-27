@@ -885,11 +885,13 @@ fun BrowserScreen(
                         Text(url, fontSize = 9.sp, color = subColor, maxLines = 2)
                         Spacer(Modifier.height(8.dp))
 
-                        LinkMenuRow(
-                            Icons.Default.Download, L(R.string.lp_download), BeeColors.FoundGreen
-                        ) {
-                            hitMenu = null
-                            downloadHit(url, image)
+                        if (isDownloadableHit(url, image)) {
+                            LinkMenuRow(
+                                Icons.Default.Download, L(R.string.lp_download), BeeColors.FoundGreen
+                            ) {
+                                hitMenu = null
+                                downloadHit(url, image)
+                            }
                         }
                         LinkMenuRow(
                             Icons.Default.Visibility, L(R.string.lp_preview), BeeColors.DeepAmber
@@ -988,6 +990,7 @@ fun BrowserScreen(
         val incognitoTab = tabs.getOrNull(active)?.incognito == true
         LinkPreviewDialog(
             url = url,
+            canDownload = isDownloadableHit(url, previewImage),
             onDismiss = { previewUrl = null },
             onDownload = {
                 previewUrl = null
@@ -1968,6 +1971,7 @@ private fun LinkMenuRow(icon: ImageVector, label: String, tint: Color, onClick: 
 @Composable
 private fun LinkPreviewDialog(
     url: String,
+    canDownload: Boolean,
     onDismiss: () -> Unit,
     onDownload: () -> Unit,
     onOpenTab: () -> Unit
@@ -2049,17 +2053,19 @@ private fun LinkPreviewDialog(
                         .navigationBarsPadding()
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
-                    Button(
-                        onClick = onDownload,
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = BeeColors.FoundGreen, contentColor = Color.White
-                        )
-                    ) {
-                        Icon(Icons.Default.Download, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text(L(R.string.lp_download), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    if (canDownload) {
+                        Button(
+                            onClick = onDownload,
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = BeeColors.FoundGreen, contentColor = Color.White
+                            )
+                        ) {
+                            Icon(Icons.Default.Download, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(L(R.string.lp_download), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                     Button(
                         onClick = onOpenTab,
@@ -2330,6 +2336,17 @@ private fun isSubtitleRow(r: SniffRow): Boolean =
 private fun isSubtitleUrl(url: String): Boolean =
     url.substringBefore('?').substringBefore('#').lowercase().substringAfterLast('.', "") in SUBTITLE_EXTS
 
+
+/** a long-pressed target the download pipeline can actually take: an image, or a url
+ *  whose path names real media / a playlist / a subtitle file. A page link is not. */
+private fun isDownloadableHit(url: String, image: Boolean): Boolean {
+    if (image) return true
+    val path = url.substringBefore('?').substringBefore('#').lowercase()
+    if (path.endsWith(".m3u8") || path.endsWith(".mpd")) return true
+    if (isSubtitleUrl(path)) return true
+    val ext = path.substringAfterLast('.', "")
+    return ext in MEDIA_EXTS || ext in setOf("jpg", "jpeg", "png", "gif", "webp", "bmp", "avif", "svg", "ico")
+}
 
 /** notification cancel action — kills the yt-dlp process + stops the download service. */
 class YtCancelReceiver : BroadcastReceiver() {
