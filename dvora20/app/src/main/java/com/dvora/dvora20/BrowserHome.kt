@@ -119,17 +119,18 @@ fun BrowserHomePage(
         if (q.isNotEmpty()) onSearch(q)
     }
 
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = modifier
-            .fillMaxSize()
-            .background(bg)
-            // the keyboard shortens the page instead of covering the search button
-            .imePadding()
-            .verticalScroll(scroll)
-            .padding(horizontal = 26.dp)
-    ) {
-        Spacer(Modifier.height(64.dp))
+    Box(modifier.fillMaxSize().background(bg)) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier
+                .fillMaxSize()
+                // the keyboard shortens the page instead of covering the search button;
+                // the Box behind keeps the inset area in the page's own colour
+                .imePadding()
+                .verticalScroll(scroll)
+                .padding(horizontal = 26.dp)
+        ) {
+            Spacer(Modifier.height(64.dp))
 
         // ── hive mark ─────────────────────────────────────────────────────────
         Text("🐝", fontSize = 46.sp)
@@ -239,7 +240,8 @@ fun BrowserHomePage(
             textAlign = TextAlign.Center
         )
 
-        // room to scroll the field above the keyboard when it opens
-        Spacer(Modifier.height(140.dp))
+            // room to scroll the field above the keyboard when it opens
+            Spacer(Modifier.height(140.dp))
+        }
     }
 }
