@@ -206,6 +206,8 @@ fun BrowserScreen(
 
     // the master ad-block switch — the shield's LONG press flips it for every site
     var masterOn by remember { mutableStateOf(repo.isMaster()) }
+    // the settings tab can change the master switch while the browser is away
+    LaunchedEffect(Unit) { masterOn = repo.isMaster() }
 
     // ── yt-dlp: media download of what was captured on this page — owned by the
     // foreground service from here on; here its live state is polled for badge / row ──
@@ -1439,7 +1441,8 @@ fun BrowserScreen(
                                     // blocking is off everywhere — one tap brings it back
                                     masterOn = true
                                     repo.setMaster(true)
-                                    tab.webView.reload()
+                                    // every open tab re-fetches, not just the visible one
+                                    tabs.forEach { t -> runCatching { t.webView.reload() } }
                                     Toast.makeText(
                                         context,
                                         localeStr(context, R.string.ab_global_on),
@@ -1452,7 +1455,9 @@ fun BrowserScreen(
                                     if (siteAllowed) Whitelist.remove(context, h)
                                     else Whitelist.add(context, BlockerEngine.registrable(h).ifBlank { h })
                                     allowed = Whitelist.hosts(context)   // live — the interceptor reads it per request
-                                    tab.webView.reload()                  // refetch under the new rule
+                                    // every tab on this site, not just the visible one
+                                    tabs.filter { it.pageHost == h || it.pageHost.endsWith(".$h") }
+                                        .forEach { t -> runCatching { t.webView.reload() } }
                                     Toast.makeText(
                                         context,
                                         localeStr(
@@ -1466,7 +1471,7 @@ fun BrowserScreen(
                             onLongClick = {
                                 masterOn = !masterOn
                                 repo.setMaster(masterOn)
-                                tab.webView.reload()
+                                tabs.forEach { t -> runCatching { t.webView.reload() } }
                                 Toast.makeText(
                                     context,
                                     localeStr(
