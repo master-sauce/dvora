@@ -2,11 +2,8 @@
 
 import android.content.Context
 import android.net.Uri
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.relocation.BringIntoViewRequester
-import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -19,11 +16,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -32,11 +27,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlinx.coroutines.launch
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BROWSER HOME + SEARCH ENGINES
-// The home tab is a Compose screen, not a duckduckgo.com page load: bee-themed,
+// The home tab is a Compose screen, not a search-engine page load: bee-themed,
 // following the app's light/dark choice. Free-text input searches with whichever
 // engine the browser settings tab (⚙ → browser) has selected.
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -86,11 +80,10 @@ fun isRtlText(text: String): Boolean {
 }
 
 /**
- * The browser's start page — logo, one search field, one action. Rendered over
- * the WebView while the tab sits on [BROWSER_HOME]; submitting a query hands the
- * resolved search url back to the caller, which navigates the very same tab.
+ * The browser's start page — logo above, one search field pinned to the bottom of
+ * the viewport. With the keyboard up that bottom bar sits directly on top of it,
+ * like an extra toolbar, so the field and its button are never covered.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun BrowserHomePage(
     incognito: Boolean,
@@ -103,9 +96,6 @@ fun BrowserHomePage(
 
     var query by remember { mutableStateOf("") }
     val scroll = rememberScrollState()
-    val bringField = remember { BringIntoViewRequester() }
-    val bringButton = remember { BringIntoViewRequester() }
-    val scope = rememberCoroutineScope()
 
     val bg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
     val fg = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
@@ -120,128 +110,126 @@ fun BrowserHomePage(
     }
 
     Box(modifier.fillMaxSize().background(bg)) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier
-                .fillMaxSize()
-                // the keyboard shortens the page instead of covering the search button;
-                // the Box behind keeps the inset area in the page's own colour
-                .imePadding()
-                .verticalScroll(scroll)
-                .padding(horizontal = 26.dp)
-        ) {
-            Spacer(Modifier.height(64.dp))
-
-        // ── hive mark ─────────────────────────────────────────────────────────
-        Text("🐝", fontSize = 46.sp)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "DVORA",
-            fontSize = 30.sp,
-            fontWeight = FontWeight.ExtraBold,
-            letterSpacing = 7.sp,
-            color = BeeColors.HoneyGold
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            L(R.string.home_tagline),
-            fontSize = 11.sp,
-            color = sub,
-            textAlign = TextAlign.Center
-        )
-
-        if (incognito) {
-            Spacer(Modifier.height(14.dp))
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
+        Column(Modifier.fillMaxSize().imePadding()) {
+            // ── hive mark — takes the space above the search bar ──────────────
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
                 modifier = Modifier
-                    .background(beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe), RoundedCornerShape(50))
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(scroll)
+                    .padding(horizontal = 26.dp)
             ) {
-                Text("🕵", fontSize = 12.sp)
-                Spacer(Modifier.width(6.dp))
+                Text("🐝", fontSize = 46.sp)
+                Spacer(Modifier.height(8.dp))
                 Text(
-                    L(R.string.home_incognito),
+                    "DVORA",
+                    fontSize = 30.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 7.sp,
+                    color = BeeColors.HoneyGold
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    L(R.string.home_tagline),
+                    fontSize = 11.sp,
+                    color = sub,
+                    textAlign = TextAlign.Center
+                )
+
+                if (incognito) {
+                    Spacer(Modifier.height(14.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .background(
+                                beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe),
+                                RoundedCornerShape(50)
+                            )
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                    ) {
+                        Text("🕵", fontSize = 12.sp)
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            L(R.string.home_incognito),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = fg
+                        )
+                    }
+                }
+            }
+
+            // ── search bar — locked to the bottom, i.e. right above the keyboard ──
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 26.dp)
+                    .padding(top = 6.dp, bottom = 12.dp)
+            ) {
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
+                    textStyle = TextStyle(
+                        fontSize = 14.sp,
+                        color = fg,
+                        textAlign = if (rtl) TextAlign.End else TextAlign.Start
+                    ),
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Search, null,
+                            tint = BeeColors.DeepAmber, modifier = Modifier.size(20.dp)
+                        )
+                    },
+                    placeholder = { Text(L(R.string.home_search_hint), fontSize = 14.sp, color = sub) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = fg,
+                        unfocusedTextColor = fg,
+                        focusedBorderColor = BeeColors.HoneyGold,
+                        unfocusedBorderColor = BeeColors.DeepAmber.copy(alpha = 0.5f),
+                        focusedContainerColor = fieldBg,
+                        unfocusedContainerColor = fieldBg,
+                        cursorColor = BeeColors.HoneyGold
+                    ),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Text,
+                        imeAction = ImeAction.Search
+                    ),
+                    keyboardActions = KeyboardActions(onSearch = { go() }, onGo = { go() }, onDone = { go() })
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                Button(
+                    onClick = { go() },
+                    enabled = query.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = BeeColors.HoneyGold,
+                        contentColor = BeeColors.BeeBlack,
+                        disabledContainerColor = BeeColors.HoneyGold.copy(alpha = 0.35f),
+                        disabledContentColor = BeeColors.BeeBlack.copy(alpha = 0.55f)
+                    )
+                ) {
+                    Text(L(R.string.home_search_go), fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                // which engine this searches with — the choice itself lives in the browser settings tab
+                Text(
+                    L(if (engine == ENGINE_GOOGLE) R.string.home_engine_google else R.string.home_engine_ddg),
                     fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = fg
+                    color = sub,
+                    textAlign = TextAlign.Center
                 )
             }
-        }
-
-        Spacer(Modifier.height(34.dp))
-
-        // ── search ────────────────────────────────────────────────────────────
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .bringIntoViewRequester(bringField)
-                // the keyboard may cover the field on short screens — scroll it up
-                .onFocusChanged { st ->
-                    // the button sits under the field — keep both above the keyboard
-                    if (st.isFocused) scope.launch { runCatching { bringButton.bringIntoView() } }
-                },
-            singleLine = true,
-            shape = RoundedCornerShape(14.dp),
-            textStyle = TextStyle(
-                fontSize = 14.sp,
-                color = fg,
-                textAlign = if (rtl) TextAlign.End else TextAlign.Start
-            ),
-            leadingIcon = {
-                Icon(
-                    Icons.Default.Search, null,
-                    tint = BeeColors.DeepAmber, modifier = Modifier.size(20.dp)
-                )
-            },
-            placeholder = { Text(L(R.string.home_search_hint), fontSize = 14.sp, color = sub) },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedTextColor = fg,
-                unfocusedTextColor = fg,
-                focusedBorderColor = BeeColors.HoneyGold,
-                unfocusedBorderColor = BeeColors.DeepAmber.copy(alpha = 0.5f),
-                focusedContainerColor = fieldBg,
-                unfocusedContainerColor = fieldBg,
-                cursorColor = BeeColors.HoneyGold
-            ),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Search),
-            keyboardActions = KeyboardActions(onSearch = { go() }, onGo = { go() }, onDone = { go() })
-        )
-
-        Spacer(Modifier.height(10.dp))
-
-        Button(
-            onClick = { go() },
-            enabled = query.isNotBlank(),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(46.dp)
-                .bringIntoViewRequester(bringButton),
-            shape = RoundedCornerShape(14.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = BeeColors.HoneyGold,
-                contentColor = BeeColors.BeeBlack,
-                disabledContainerColor = BeeColors.HoneyGold.copy(alpha = 0.35f),
-                disabledContentColor = BeeColors.BeeBlack.copy(alpha = 0.55f)
-            )
-        ) {
-            Text(L(R.string.home_search_go), fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // which engine this searches with — the choice itself lives in the browser settings tab
-        Text(
-            L(if (engine == ENGINE_GOOGLE) R.string.home_engine_google else R.string.home_engine_ddg),
-            fontSize = 10.sp,
-            color = sub,
-            textAlign = TextAlign.Center
-        )
-
-            // room to scroll the field above the keyboard when it opens
-            Spacer(Modifier.height(140.dp))
         }
     }
 }
