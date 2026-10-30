@@ -1415,15 +1415,38 @@ fun BrowserScreen(
                 }
                 Spacer(Modifier.weight(1f))
                 // per-site ad-block toggle — shield: green = filtering this site,
-                // red-crossed = the site is whitelisted or blocking is off.
-                // LONG press = the master switch for EVERY site.
+                // red-crossed = this site is whitelisted, amber = blocking is off for
+                // every site. TAP restores blocking when it is globally off, otherwise
+                // it flips this site; LONG press is the master switch for EVERY site.
                 val siteAllowed = tab.pageHost.isNotEmpty() && Whitelist.isAllowed(tab.pageHost, allowed)
+                val shieldIcon = when {
+                    !masterOn -> Icons.Default.GppMaybe
+                    siteAllowed -> Icons.Default.GppBad
+                    else -> Icons.Default.GppGood
+                }
+                val shieldTint = when {
+                    !masterOn -> BeeColors.NotFoundAmber
+                    siteAllowed -> BeeColors.NotFoundRed
+                    else -> BeeColors.FoundGreen
+                }
                 Box(
                     modifier = Modifier
                         .size(44.dp)
                         .clip(CircleShape)
                         .combinedClickable(
                             onClick = {
+                                if (!masterOn) {
+                                    // blocking is off everywhere — one tap brings it back
+                                    masterOn = true
+                                    repo.setMaster(true)
+                                    tab.webView.reload()
+                                    Toast.makeText(
+                                        context,
+                                        localeStr(context, R.string.ab_global_on),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    return@combinedClickable
+                                }
                                 val h = tab.pageHost
                                 if (h.isNotEmpty()) {
                                     if (siteAllowed) Whitelist.remove(context, h)
@@ -1457,9 +1480,9 @@ fun BrowserScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        if (masterOn && !siteAllowed) Icons.Default.GppGood else Icons.Default.GppBad,
+                        shieldIcon,
                         L(R.string.cd_ab_toggle),
-                        tint = if (masterOn && !siteAllowed) BeeColors.FoundGreen else BeeColors.NotFoundRed,
+                        tint = shieldTint,
                         modifier = Modifier.size(22.dp)
                     )
                 }
