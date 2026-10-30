@@ -1460,6 +1460,14 @@ fun BrowserScreen(
 
             // ── top row: live url / search — toggleable by the toolbar button ──
             val onHome = tab.address == BROWSER_HOME
+            // opening/closing the url row changes the page height — the WebView is a
+            // real Android view, so force its layout instead of trusting a stale rect
+            LaunchedEffect(urlBar, barVisible) {
+                tabs.getOrNull(active)?.webView?.let { wv ->
+                    wv.requestLayout()
+                    wv.invalidate()
+                }
+            }
             // the row text — empty on the start page, user-owned while editing.
             // Hebrew / Arabic input is right-aligned, English stays left
             val barText = if (urlEditing) urlDraft else if (onHome) "" else tab.address
@@ -1530,59 +1538,33 @@ fun BrowserScreen(
             // renderer, scroll and page state while it sits in the background.
             // On the home sentinel the blank WebView stays behind and the Compose
             // start page covers it, so navigating away/back never rebuilds the tab.
+            // ONE host view for the whole screen: stacked Android views kept stale
+            // rects that swallowed taps meant for the chrome (top bar / url row /
+            // toolbar), which reads as "the buttons stopped working".
             Box(Modifier.weight(1f).fillMaxWidth()) {
-                // one permanent host per tab — each WebView is attached ONCE and a tab
-                // switch only flips visibility. Detaching a WebView from its window to
-                // move it into another frame makes Chromium drop the drawn surface, so
-                // the page came back blank after a tab switch or a screen return.
-                tabs.forEach { t ->
-                    key(t) {
-                        AndroidView(
-                            factory = { ctx ->
-                                FrameLayout(ctx).apply {
-                                    // a re-entering composition hands us the WebView of a
-                                    // dead hierarchy — take it over before adding it here
-                                    (t.webView.parent as? ViewGroup)?.removeView(t.webView)
-                                    addView(
-                                        t.webView,
-                                        FrameLayout.LayoutParams(
-                                            FrameLayout.LayoutParams.MATCH_PARENT,
-                                            FrameLayout.LayoutParams.MATCH_PARENT
-                                        )
-                                    )
-                                }
-                            },
-                            update = { frame ->
-                                val wv = t.webView
-                                if (wv.parent !== frame) {
-                                    (wv.parent as? ViewGroup)?.removeView(wv)
-                                    frame.removeAllViews()
-                                    frame.addView(
-                                        wv,
-                                        FrameLayout.LayoutParams(
-                                            FrameLayout.LayoutParams.MATCH_PARENT,
-                                            FrameLayout.LayoutParams.MATCH_PARENT
-                                        )
-                                    )
-                                    wv.requestLayout()
-                                }
-                                // only the active tab draws; the rest stay attached
-                                // and keep their page state (background tabs)
-                                val want = if (t === tab && !onHome) View.VISIBLE else View.INVISIBLE
-                                if (wv.visibility != want) {
-                                    wv.visibility = want
-                                    // Chromium resumes drawing on show — kick one frame so
-                                    // the surface comes back instead of staying blank
-                                    if (want == View.VISIBLE) {
-                                        wv.requestLayout()
-                                        wv.invalidate()
-                                    }
-                                }
-                            },
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                }
+                AndroidView(
+                    factory = { FrameLayout(it) },
+                    update = { frame ->
+                        val wv = tab.webView
+                        if (wv.parent !== frame) {
+                            (wv.parent as? ViewGroup)?.removeView(wv)
+                            frame.removeAllViews()
+                            frame.addView(
+                                wv,
+                                FrameLayout.LayoutParams(
+                                    FrameLayout.LayoutParams.MATCH_PARENT,
+                                    FrameLayout.LayoutParams.MATCH_PARENT
+                                )
+                            )
+                            // a view attached mid-layout keeps its old rect for one
+                            // pass — ask for another so the page can't cover the chrome
+                            wv.requestLayout()
+                            wv.post { runCatching { wv.invalidate() } }
+                        }
+                        wv.visibility = if (!onHome) View.VISIBLE else View.INVISIBLE
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
                 if (onHome) {
                     BrowserHomePage(
                         incognito = tab.incognito,

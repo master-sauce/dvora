@@ -304,6 +304,14 @@ class WebTab(
 
             override fun onViewDetachedFromWindow(v: View) {}
         })
+        // a background tab is not attached until selected — it still has to load,
+        // so the first navigation goes out on its own after a moment
+        webView.postDelayed({
+            pendingUrl?.let { u ->
+                pendingUrl = null
+                runCatching { webView.loadUrl(u) }
+            }
+        }, 800L)
     }
 
     /** address snaps to the target so the row reflects what is loading even before commit. */
