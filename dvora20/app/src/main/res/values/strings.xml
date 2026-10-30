@@ -191,6 +191,17 @@
     <string name="lp_copied_text">Text copied</string>
     <string name="lp_share">Share link</string>
 
+    <!-- ad-block: shield long press + per-request exclusions -->
+    <string name="ab_global_on">Ad-blocking enabled on all sites</string>
+    <string name="ab_global_off">Ad-blocking disabled on all sites</string>
+    <string name="rs_allow_q">Allow this request?</string>
+    <string name="rs_allow_msg">It will be excluded from the ad blocker on every site.</string>
+    <string name="rs_allow">Allow</string>
+    <string name="rs_allowed">Request allowed</string>
+    <string name="rs_excluded_title">EXCLUDED FROM AD BLOCKER</string>
+    <string name="rs_excluded_tag">excluded by you</string>
+    <string name="rs_remove_exclusion">Remove from exclusions</string>
+
     <!-- dialogs / toasts (shared) -->
     <string name="toast_open_url_failed">Could not open URL</string>
     <string name="ok">OK</string>

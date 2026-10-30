@@ -49,7 +49,14 @@ class BlockerEngine {
     data class BlockRecord(val url: String, val host: String, val pattern: String, val list: String)
 
     /** one network request of the page (allowed or blocked), for the resources panel. */
-    data class ReqRecord(val url: String, val tag: String, val blocked: Boolean, val rule: String)
+    data class ReqRecord(
+        val url: String,
+        val tag: String,
+        val blocked: Boolean,
+        val rule: String,
+        /** allowed by a user exception — listed under "excluded from ad blocker" */
+        val excluded: Boolean = false
+    )
 
     constructor()
 
@@ -79,9 +86,9 @@ class BlockerEngine {
     }
 
     /** every page request lands here (allowed + blocked), capped at 800. */
-    fun noteReq(tag: String, url: String, blocked: Boolean, rule: String) {
+    fun noteReq(tag: String, url: String, blocked: Boolean, rule: String, excluded: Boolean = false) {
         synchronized(lock) {
-            reqLog.addLast(ReqRecord(url, tag, blocked, rule))
+            reqLog.addLast(ReqRecord(url, tag, blocked, rule, excluded))
             if (reqLog.size > 800) reqLog.removeFirst()
         }
         if (tag == "media") Log.i(

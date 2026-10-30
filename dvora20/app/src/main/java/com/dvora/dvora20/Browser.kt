@@ -47,6 +47,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -61,6 +62,7 @@ import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -79,6 +81,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.dvora.dvora20.adblock.BlockerEngine
+import com.dvora.dvora20.adblock.Exceptions
 import com.dvora.dvora20.adblock.ListRepo
 import com.dvora.dvora20.adblock.Media
 import com.dvora.dvora20.adblock.ResourceProbe
@@ -156,7 +159,7 @@ fun ytSaveDir(context: Context): File? {
  * panel, SSL user dialog, `<input type="file">` picker, and
  * DownloadManager downloads.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun BrowserScreen(
     initialUrl: String,
@@ -200,6 +203,9 @@ fun BrowserScreen(
 
     // the whole site's whitelist — kept live; the interceptor reads this supplier per request
     var allowed by remember { mutableStateOf(Whitelist.hosts(context)) }
+
+    // the master ad-block switch — the shield's LONG press flips it for every site
+    var masterOn by remember { mutableStateOf(repo.isMaster()) }
 
     // ── yt-dlp: media download of what was captured on this page — owned by the
     // foreground service from here on; here its live state is polled for badge / row ──
@@ -1409,29 +1415,51 @@ fun BrowserScreen(
                 }
                 Spacer(Modifier.weight(1f))
                 // per-site ad-block toggle — shield: green = filtering this site,
-                // red-crossed = the site is whitelisted, nothing is blocked here
+                // red-crossed = the site is whitelisted or blocking is off.
+                // LONG press = the master switch for EVERY site.
                 val siteAllowed = tab.pageHost.isNotEmpty() && Whitelist.isAllowed(tab.pageHost, allowed)
-                IconButton(
-                    onClick = {
-                        val h = tab.pageHost
-                        if (h.isNotEmpty()) {
-                            if (siteAllowed) Whitelist.remove(context, h)
-                            else Whitelist.add(context, BlockerEngine.registrable(h).ifBlank { h })
-                            allowed = Whitelist.hosts(context)   // live — the interceptor reads it per request
-                            tab.webView.reload()                  // refetch under the new rule
-                            Toast.makeText(
-                                context,
-                                localeStr(context, if (siteAllowed) R.string.ab_site_on else R.string.ab_site_off),
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    },
-                    modifier = Modifier.size(44.dp)
+                Box(
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .combinedClickable(
+                            onClick = {
+                                val h = tab.pageHost
+                                if (h.isNotEmpty()) {
+                                    if (siteAllowed) Whitelist.remove(context, h)
+                                    else Whitelist.add(context, BlockerEngine.registrable(h).ifBlank { h })
+                                    allowed = Whitelist.hosts(context)   // live — the interceptor reads it per request
+                                    tab.webView.reload()                  // refetch under the new rule
+                                    Toast.makeText(
+                                        context,
+                                        localeStr(
+                                            context,
+                                            if (siteAllowed) R.string.ab_site_on else R.string.ab_site_off
+                                        ),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            },
+                            onLongClick = {
+                                masterOn = !masterOn
+                                repo.setMaster(masterOn)
+                                tab.webView.reload()
+                                Toast.makeText(
+                                    context,
+                                    localeStr(
+                                        context,
+                                        if (masterOn) R.string.ab_global_on else R.string.ab_global_off
+                                    ),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        ),
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        if (siteAllowed) Icons.Default.GppBad else Icons.Default.GppGood,
+                        if (masterOn && !siteAllowed) Icons.Default.GppGood else Icons.Default.GppBad,
                         L(R.string.cd_ab_toggle),
-                        tint = if (siteAllowed) BeeColors.NotFoundRed else BeeColors.FoundGreen,
+                        tint = if (masterOn && !siteAllowed) BeeColors.FoundGreen else BeeColors.NotFoundRed,
                         modifier = Modifier.size(22.dp)
                     )
                 }
@@ -1746,6 +1774,7 @@ fun BrowserScreen(
                     lifetime = repo.engine.lifetime,
                     onMedia = { ytPicker = true },
                     onDownload = { startYt(it) },
+                    onReloadPage = { tab.webView.reload() },   // allowed/removed request takes effect now
                     onClear = {
                         // wipe this page's request log + captured media list
                         repo.engine.newPage()
@@ -2098,6 +2127,7 @@ private fun ResourceSheet(
     lifetime: Long,
     onMedia: (String) -> Unit,
     onDownload: (String) -> Unit,
+    onReloadPage: () -> Unit,
     onClear: () -> Unit,
     onClose: () -> Unit
 ) {
@@ -2113,7 +2143,11 @@ private fun ResourceSheet(
     var filter by remember { mutableStateOf("all") }
     var query by remember { mutableStateOf("") }              // free-text search across every request
     var confirm by remember { mutableStateOf<String?>(null) } // long-pressed url awaiting download confirm
+    var allowReq by remember { mutableStateOf<String?>(null) } // long-pressed BLOCKED url awaiting allow
     var confirmClear by remember { mutableStateOf(false) }     // the trash button's wipe confirm
+    var excTick by remember { mutableIntStateOf(0) }           // user exceptions changed → refresh the section
+
+    val excluded = remember(excTick) { Exceptions.all(context) }
 
     val shown = remember(log, filter, query) {
         val base = when (filter) {
@@ -2202,17 +2236,69 @@ private fun ResourceSheet(
             )
         )
         Spacer(Modifier.height(8.dp))
-        if (shown.isEmpty()) {
+        if (shown.isEmpty() && excluded.isEmpty()) {
             Text(L(R.string.rs_empty), fontSize = 11.sp, color = subColor)
         } else {
             LazyColumn {
+                if (excluded.isNotEmpty()) {
+                    item {
+                        Text(
+                            L(R.string.rs_excluded_title),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = BeeColors.DeepAmber,
+                            modifier = Modifier.padding(top = 2.dp, bottom = 4.dp)
+                        )
+                    }
+                    items(excluded) { u ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 2.dp)
+                                .background(
+                                    BeeColors.DeepAmber.copy(alpha = 0.16f),
+                                    RoundedCornerShape(8.dp)
+                                )
+                                .padding(start = 8.dp, end = 4.dp, top = 3.dp, bottom = 3.dp)
+                        ) {
+                            Text(
+                                u,
+                                fontSize = 10.sp,
+                                color = textColor,
+                                maxLines = 1,
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(
+                                onClick = {
+                                    Exceptions.remove(context, u)
+                                    excTick++
+                                    onReloadPage()
+                                },
+                                modifier = Modifier.size(30.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    L(R.string.rs_remove_exclusion),
+                                    tint = BeeColors.NotFoundRed,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                    item { Spacer(Modifier.height(8.dp)) }
+                }
                 items(shown) { rec ->
                     Column(
                         Modifier
                             .fillMaxWidth()
                             .padding(vertical = 2.dp)
                             .background(
-                                if (rec.blocked) BeeColors.NotFoundRed.copy(alpha = 0.18f) else rowBg,
+                                when {
+                                    rec.blocked -> BeeColors.NotFoundRed.copy(alpha = 0.18f)
+                                    rec.excluded -> BeeColors.DeepAmber.copy(alpha = 0.16f)
+                                    else -> rowBg
+                                },
                                 RoundedCornerShape(8.dp)
                             )
                             .combinedClickable(
@@ -2221,7 +2307,9 @@ private fun ResourceSheet(
                                     if (rec.tag == "media") onMedia(rec.url)   // media rows forward to the downloads dialog
                                     Toast.makeText(context, copied, Toast.LENGTH_SHORT).show()
                                 },
-                                onLongClick = { confirm = rec.url }            // ask before queueing a download
+                                // blocked → offer to exclude it from the blocker; anything else
+                                // keeps the download prompt
+                                onLongClick = { if (rec.blocked) allowReq = rec.url else confirm = rec.url }
                             )
                             .padding(8.dp)
                     ) {
@@ -2250,6 +2338,14 @@ private fun ResourceSheet(
                         if (rec.blocked && rec.rule.isNotEmpty()) {
                             Spacer(Modifier.height(2.dp))
                             Text(rec.rule, fontSize = 9.sp, color = BeeColors.DeepAmber, maxLines = 1)
+                        } else if (rec.excluded) {
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                L(R.string.rs_excluded_tag),
+                                fontSize = 9.sp,
+                                color = BeeColors.DeepAmber,
+                                maxLines = 1
+                            )
                         }
                     }
                 }
@@ -2271,6 +2367,38 @@ private fun ResourceSheet(
             },
             dismissButton = {
                 TextButton(onClick = { confirmClear = false }) {
+                    Text(L(R.string.cancel), color = BeeColors.DeepAmber)
+                }
+            }
+        )
+    }
+
+    // long-press on a BLOCKED request → exclude it from the ad blocker on every site
+    allowReq?.let { u ->
+        AlertDialog(
+            onDismissRequest = { allowReq = null },
+            containerColor = BeeColors.DarkComb,
+            title = { Text(L(R.string.rs_allow_q), color = BeeColors.HoneyGold) },
+            text = {
+                Column {
+                    Text(L(R.string.rs_allow_msg), color = textColor, fontSize = 11.sp)
+                    Spacer(Modifier.height(6.dp))
+                    Text(u, color = subColor, fontSize = 10.sp, maxLines = 3)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    allowReq = null
+                    Exceptions.add(context, u)
+                    excTick++
+                    onReloadPage()
+                    Toast.makeText(context, localeStr(context, R.string.rs_allowed), Toast.LENGTH_SHORT).show()
+                }) {
+                    Text(L(R.string.rs_allow), color = BeeColors.FoundGreen)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { allowReq = null }) {
                     Text(L(R.string.cancel), color = BeeColors.DeepAmber)
                 }
             }

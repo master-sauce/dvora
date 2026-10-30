@@ -151,6 +151,13 @@ class BlockerWebViewClient(
             onActivity()
             return null
         }
+        // user exceptions — single urls allowed from the resources panel; they win
+        // over every rule and stay listed there as "excluded"
+        if (Exceptions.has(appCtx, url)) {
+            engine.noteReq(tag, url, false, "user exception", excluded = true)
+            onActivity()
+            return null
+        }
         // per-site whitelist — a whitelisted PAGE lets EVERYTHING it loads through:
         // ads/trackers come from third-party hosts, so matching only the RESOURCE
         // host never disabled blocking on the site. An allowed resource host stays
