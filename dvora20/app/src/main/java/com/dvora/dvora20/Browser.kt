@@ -57,6 +57,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -1381,7 +1382,10 @@ fun BrowserScreen(
             // the vertical tab list; a 🕵 at the right end marks an incognito ACTIVE tab
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth().background(headerBg).padding(horizontal = 4.dp, vertical = 2.dp)
+                modifier = Modifier.fillMaxWidth()
+                    .background(headerBg)
+                    .zIndex(2f)
+                    .padding(horizontal = 4.dp, vertical = 2.dp)
             ) {
                 // the tabs button — the counter on the left of the bar
                 Row(
@@ -1482,6 +1486,7 @@ fun BrowserScreen(
                     modifier = Modifier.fillMaxWidth()
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                         .background(headerBg)
+                        .zIndex(1f)
                 ) {
                     Icon(
                         Icons.Default.Share,
@@ -1557,8 +1562,8 @@ fun BrowserScreen(
                                 )
                             )
                             // a view attached mid-layout keeps its old rect for one
-                            // pass — ask for another so the page can't cover the chrome
-                            wv.requestLayout()
+                            // pass — kick a redraw after this frame instead of asking
+                            // for layout from inside the layout pass
                             wv.post { runCatching { wv.invalidate() } }
                         }
                         wv.visibility = if (!onHome) View.VISIBLE else View.INVISIBLE
