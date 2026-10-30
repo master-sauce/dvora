@@ -104,6 +104,7 @@ fun BrowserHomePage(
     var query by remember { mutableStateOf("") }
     val scroll = rememberScrollState()
     val bringField = remember { BringIntoViewRequester() }
+    val bringButton = remember { BringIntoViewRequester() }
     val scope = rememberCoroutineScope()
 
     val bg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
@@ -123,6 +124,8 @@ fun BrowserHomePage(
         modifier = modifier
             .fillMaxSize()
             .background(bg)
+            // the keyboard shortens the page instead of covering the search button
+            .imePadding()
             .verticalScroll(scroll)
             .padding(horizontal = 26.dp)
     ) {
@@ -176,7 +179,8 @@ fun BrowserHomePage(
                 .bringIntoViewRequester(bringField)
                 // the keyboard may cover the field on short screens — scroll it up
                 .onFocusChanged { st ->
-                    if (st.isFocused) scope.launch { runCatching { bringField.bringIntoView() } }
+                    // the button sits under the field — keep both above the keyboard
+                    if (st.isFocused) scope.launch { runCatching { bringButton.bringIntoView() } }
                 },
             singleLine = true,
             shape = RoundedCornerShape(14.dp),
@@ -210,7 +214,10 @@ fun BrowserHomePage(
         Button(
             onClick = { go() },
             enabled = query.isNotBlank(),
-            modifier = Modifier.fillMaxWidth().height(46.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(46.dp)
+                .bringIntoViewRequester(bringButton),
             shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = BeeColors.HoneyGold,
