@@ -590,14 +590,7 @@ fun BrowserScreen(
         val raw = (if (urlEditing) urlDraft else t.address).trim()
             .takeUnless { it == BROWSER_HOME } ?: ""
         if (raw.isEmpty()) return
-        // a url must carry a scheme or a dotted host — bare words / phrases are searches
-        val host = raw.substringBefore('/').substringBefore('?').substringBefore('#')
-        val looksLikeUrl = raw.contains("://") || (host.contains('.') && host.isNotEmpty())
-        val target = if (looksLikeUrl) {
-            if (raw.startsWith("http://", true) || raw.startsWith("https://", true)) raw else "https://$raw"
-        } else {
-            searchUrl(context, raw)
-        }
+        val target = resolveBrowserInput(context, raw)
         urlEditing = false
         urlDraft = ""
         t.load(target)
@@ -1576,7 +1569,7 @@ fun BrowserScreen(
                         onSearch = { q ->
                             urlEditing = false
                             urlDraft = ""
-                            tab.load(searchUrl(context, q))
+                            tab.load(resolveBrowserInput(context, q))
                         },
                         modifier = Modifier.fillMaxSize()
                     )
@@ -2343,9 +2336,25 @@ private fun isSubtitleUrl(url: String): Boolean =
     url.substringBefore('?').substringBefore('#').lowercase().substringAfterLast('.', "") in SUBTITLE_EXTS
 
 
+/**
+ * One rule for every address input (start page + address bar): anything shaped like an
+ * address — a scheme, or a dotted host with no spaces — loads directly; everything else
+ * becomes a search with the engine from the browser settings tab.
+ */
+fun resolveBrowserInput(context: Context, raw: String): String {
+    val text = raw.trim()
+    val host = text.substringBefore('/').substringBefore('?').substringBefore('#')
+    val looksLikeUrl = text.contains("://") ||
+        (host.contains('.') && host.isNotEmpty() && host.none { it.isWhitespace() })
+    return when {
+        !looksLikeUrl -> searchUrl(context, text)
+        text.startsWith("http://", true) || text.startsWith("https://", true) -> text
+        else -> "https://$text"
+    }
+}
+
 /** a long-pressed target the download pipeline can actually take: an image, or a url
- *  whose path names real media / a playlist / a subtitle file. A page link is not. */
-private fun isDownloadableHit(url: String, image: Boolean): Boolean {
+ *  whose path names real media / a playlist / a subtitle file. A page link is not. */private fun isDownloadableHit(url: String, image: Boolean): Boolean {
     if (image) return true
     val path = url.substringBefore('?').substringBefore('#').lowercase()
     if (path.endsWith(".m3u8") || path.endsWith(".mpd")) return true

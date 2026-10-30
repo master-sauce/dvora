@@ -170,7 +170,7 @@
     <!-- browser start page -->
     <string name="home_tagline">Private, ad-free browsing</string>
     <string name="home_title">Dvora home</string>
-    <string name="home_search_hint">Search the web</string>
+    <string name="home_search_hint">Search or type a URL</string>
     <string name="home_search_go">SEARCH</string>
     <string name="home_engine_google">Searches with Google</string>
     <string name="home_engine_ddg">Searches with DuckDuckGo</string>
