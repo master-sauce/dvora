@@ -197,6 +197,7 @@ fun BrowserScreen(
     var hitMenu by remember { mutableStateOf<Triple<String, Boolean, String?>?>(null) } // long-pressed (url, isImage, linkText)
     var previewUrl by remember { mutableStateOf<String?>(null) }                     // fullscreen preview overlay
     var previewImage by remember { mutableStateOf(false) }                            // preview target is an image
+    var searchPromptTab by remember { mutableStateOf<WebTab?>(null) }                 // fresh tab → search popup
     val urlFocus = remember { FocusRequester() }
     var pendingChooser by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }   // active <input type=file> picker
     var hasStorage by remember { mutableStateOf(Build.VERSION.SDK_INT >= 29) }
@@ -682,8 +683,9 @@ fun BrowserScreen(
         CookieManager.getInstance().setAcceptCookie(tabs.none { it.incognito })
     }
 
-    fun newTab(url: String, incognito: Boolean, background: Boolean = false) {
+    fun newTab(url: String, incognito: Boolean, background: Boolean = false, promptSearch: Boolean = true) {
         val prevActive = active
+        val target = url.ifBlank { BROWSER_HOME }
         tabs.add(
             WebTab(
                 // the whitelist is read live from its cache (not this screen's state) —
@@ -700,6 +702,8 @@ fun BrowserScreen(
         )
         active = tabs.lastIndex
         if (background) active = prevActive.coerceIn(0, tabs.lastIndex)   // load it, keep the current tab on screen
+        // a brand-new tab asks what to search/open instead of just showing the start page
+        if (promptSearch && !background && target == BROWSER_HOME) searchPromptTab = tabs.last()
         syncCookies()
     }
 
@@ -740,7 +744,7 @@ fun BrowserScreen(
         val restoreActive = TabCtl.restoreActive
         TabCtl.restore = null
         if (tabs.isEmpty() && !restore.isNullOrEmpty()) {
-            restore.forEach { u -> newTab(u, false) }
+            restore.forEach { u -> newTab(u, false, promptSearch = false) }
             if (tabs.isNotEmpty()) active = restoreActive.coerceIn(0, tabs.lastIndex)
         } else if (tabs.isEmpty()) newTab(initialUrl.ifBlank { BROWSER_HOME }, false)
         else if (initialUrl.isNotBlank() && initialUrl != BROWSER_HOME) newTab(initialUrl, false)
@@ -766,7 +770,7 @@ fun BrowserScreen(
         val prevActive = active
         tabs.forEach { it.destroy() }
         tabs.clear()
-        snap.forEach { (addr, inc) -> newTab(addr, inc) }
+        snap.forEach { (addr, inc) -> newTab(addr, inc, promptSearch = false) }
         if (tabs.isNotEmpty()) active = prevActive.coerceIn(0, tabs.lastIndex)
     }
 
@@ -1008,6 +1012,27 @@ fun BrowserScreen(
             onOpenTab = {
                 previewUrl = null
                 newTab(url, incognitoTab)
+            }
+        )
+    }
+
+    // ── fresh tab → ask what to search/open ────────────────────────────────────
+    // (a restored tab or a background tab never prompts)
+    LaunchedEffect(active) {
+        val cur = tabs.getOrNull(active)
+        if (searchPromptTab != null && searchPromptTab !== cur) searchPromptTab = null
+    }
+    val promptTab = searchPromptTab
+    if (promptTab != null && promptTab === tabs.getOrNull(active)) {
+        NewTabSearchDialog(
+            engine = searchEngine(context),
+            suggestionsOn = suggestionsEnabled(context),
+            onDismiss = { searchPromptTab = null },
+            onGo = { raw ->
+                searchPromptTab = null
+                urlEditing = false
+                urlDraft = ""
+                promptTab.load(resolveBrowserInput(context, raw))
             }
         )
     }

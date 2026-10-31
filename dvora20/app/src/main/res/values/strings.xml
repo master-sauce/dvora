@@ -166,12 +166,15 @@
     <string name="btab_engine_hint">Used by the browser start page and the address bar</string>
     <string name="btab_engine_google">Google</string>
     <string name="btab_engine_ddg">DuckDuckGo</string>
+    <string name="btab_suggest">SEARCH SUGGESTIONS</string>
+    <string name="btab_suggest_hint">Live suggestions from the selected engine, in the start page and the new-tab search</string>
 
     <!-- browser start page -->
     <string name="home_tagline">Private, ad-free browsing</string>
     <string name="home_title">Dvora home</string>
     <string name="home_search_hint">Search or type a URL</string>
     <string name="home_search_go">SEARCH</string>
+    <string name="newtab_search_title">Search or open a URL</string>
     <string name="home_engine_google">Searches with Google</string>
     <string name="home_engine_ddg">Searches with DuckDuckGo</string>
     <string name="home_incognito">Incognito tab · nothing is saved</string>

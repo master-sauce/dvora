@@ -87,6 +87,7 @@ fun BrowserTab(repo: ListRepo) {
     var listOn by remember { mutableStateOf(ListInfo.all.map { repo.isEnabled(it) }) }
     var useDvora by remember { mutableStateOf(prefs.getBoolean("use_dvora_browser", true)) }
     var engine by remember { mutableStateOf(searchEngine(context)) }
+    var suggest by remember { mutableStateOf(suggestionsEnabled(context)) }
 
     fun clearAll() {
         confirmClear = false
@@ -246,6 +247,29 @@ fun BrowserTab(repo: ListRepo) {
                     setSearchEngine(context, ENGINE_DUCKDUCKGO)
                 },
                 Modifier.weight(1f)
+            )
+        }
+        Spacer(Modifier.height(14.dp))
+
+        // ── live search suggestions ───────────────────────────────────────────
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(L(R.string.btab_suggest), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = textColor)
+                Spacer(Modifier.height(2.dp))
+                Text(L(R.string.btab_suggest_hint), fontSize = 10.sp, color = subColor)
+            }
+            Switch(
+                checked = suggest,
+                onCheckedChange = {
+                    suggest = it
+                    setSuggestionsEnabled(context, it)
+                },
+                colors = SwitchDefaults.colors(
+                    checkedTrackColor = BeeColors.FoundGreen,
+                    uncheckedTrackColor = BeeColors.DeepAmber.copy(alpha = 0.4f),
+                    checkedThumbColor = Color.White,
+                    uncheckedThumbColor = BeeColors.HoneyGold
+                )
             )
         }
         Spacer(Modifier.height(14.dp))

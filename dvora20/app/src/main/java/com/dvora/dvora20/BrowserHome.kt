@@ -22,6 +22,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
@@ -54,6 +56,17 @@ const val ENGINE_DUCKDUCKGO = "duckduckgo"
 
 private const val PREFS = "dvora_prefs"
 private const val KEY_ENGINE = "search_engine"
+private const val KEY_SUGGEST = "search_suggestions"
+
+/** live suggestions are on unless the user turned them off in the browser settings tab. */
+fun suggestionsEnabled(context: Context): Boolean =
+    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_SUGGEST, true)
+
+fun setSuggestionsEnabled(context: Context, on: Boolean) {
+    context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+        .putBoolean(KEY_SUGGEST, on)
+        .apply()
+}
 
 /** the configured engine — unknown / missing values fall back to Google. */
 fun searchEngine(context: Context): String =
@@ -141,6 +154,7 @@ fun BrowserHomePage(
     val context = LocalContext.current
     // read per composition — the settings tab writes the pref while this screen is away
     val engine = searchEngine(context)
+    val suggestionsOn = suggestionsEnabled(context)
 
     var query by remember { mutableStateOf("") }
     var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
@@ -164,9 +178,9 @@ fun BrowserHomePage(
     }
 
     // engine-aware live suggestions — debounced so typing does not spam the endpoint
-    LaunchedEffect(engine, query) {
+    LaunchedEffect(engine, query, suggestionsOn) {
         val q = query.trim()
-        if (q.length < 2) {
+        if (!suggestionsOn || q.length < 2) {
             suggestions = emptyList()
             return@LaunchedEffect
         }
@@ -300,7 +314,7 @@ fun BrowserHomePage(
 
         // suggestions float ABOVE the pinned bar in the same keyboard frame — the field
         // never moves while typing, so the text being typed stays visible
-        if (suggestions.isNotEmpty()) {
+        if (suggestionsOn && suggestions.isNotEmpty()) {
             Box(Modifier.fillMaxSize().imePadding()) {
                 Surface(
                     shape = RoundedCornerShape(14.dp),
@@ -351,4 +365,126 @@ fun BrowserHomePage(
             }
         }
     }
+}
+
+/**
+ * Shown when a NEW tab opens: instead of dropping the user on the start page, a
+ * focused field asks what to search or open. Same engine + suggestion rules as the
+ * home page; dismissing it leaves the start page behind.
+ */
+@Composable
+fun NewTabSearchDialog(
+    engine: String,
+    suggestionsOn: Boolean,
+    onDismiss: () -> Unit,
+    onGo: (String) -> Unit
+) {
+    var text by remember { mutableStateOf("") }
+    var tips by remember { mutableStateOf<List<String>>(emptyList()) }
+    val focus = remember { FocusRequester() }
+
+    val fg = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
+    val sub = fg.copy(alpha = 0.6f)
+    val fieldBg = beeAdapt(BeeColors.HoneycombYellow.copy(alpha = 0.4f), BeeColors.DarkCell)
+
+    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
+
+    LaunchedEffect(engine, text, suggestionsOn) {
+        val q = text.trim()
+        if (!suggestionsOn || q.length < 2) {
+            tips = emptyList()
+            return@LaunchedEffect
+        }
+        delay(220)
+        tips = fetchSuggestions(engine, q)
+    }
+
+    fun submit(value: String) {
+        val v = value.trim()
+        if (v.isNotEmpty()) {
+            tips = emptyList()
+            onGo(v)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = BeeColors.DarkComb,
+        title = { Text(L(R.string.newtab_search_title), color = BeeColors.HoneyGold) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    textStyle = TextStyle(
+                        fontSize = 14.sp,
+                        color = fg,
+                        textAlign = if (isRtlText(text)) TextAlign.End else TextAlign.Start
+                    ),
+                    placeholder = { Text(L(R.string.home_search_hint), fontSize = 13.sp, color = sub) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = fg,
+                        unfocusedTextColor = fg,
+                        focusedBorderColor = BeeColors.HoneyGold,
+                        unfocusedBorderColor = BeeColors.DeepAmber.copy(alpha = 0.5f),
+                        focusedContainerColor = fieldBg,
+                        unfocusedContainerColor = fieldBg,
+                        cursorColor = BeeColors.HoneyGold
+                    ),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Text,
+                        imeAction = ImeAction.Search
+                    ),
+                    keyboardActions = KeyboardActions(onSearch = { submit(text) }, onGo = { submit(text) })
+                )
+
+                if (tips.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    Column(
+                        Modifier
+                            .heightIn(max = 170.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        tips.forEach { s ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { submit(s) }
+                                    .padding(horizontal = 6.dp, vertical = 9.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Search, null,
+                                    tint = BeeColors.DeepAmber, modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    s,
+                                    fontSize = 13.sp,
+                                    color = fg,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = if (isRtlText(s)) TextAlign.End else TextAlign.Start,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { submit(text) }) {
+                Text(L(R.string.home_search_go), color = BeeColors.HoneyGold, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(L(R.string.cancel), color = BeeColors.DeepAmber)
+            }
+        }
+    )
 }
