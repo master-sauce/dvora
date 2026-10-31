@@ -16,13 +16,16 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -141,7 +144,9 @@ fun BrowserHomePage(
 
     var query by remember { mutableStateOf("") }
     var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
+    var barHeightPx by remember { mutableIntStateOf(0) }
     val scroll = rememberScrollState()
+    val density = LocalDensity.current
 
     val bg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
     val fg = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
@@ -226,55 +231,10 @@ fun BrowserHomePage(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .onGloballyPositioned { barHeightPx = it.size.height }
                     .padding(horizontal = 26.dp)
                     .padding(top = 6.dp, bottom = 12.dp)
             ) {
-                if (suggestions.isNotEmpty()) {
-                    Surface(
-                        shape = RoundedCornerShape(14.dp),
-                        color = beeAdapt(Color.White, BeeColors.DarkCell),
-                        tonalElevation = 2.dp,
-                        shadowElevation = 3.dp,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            Modifier
-                                .heightIn(max = 220.dp)
-                                .verticalScroll(rememberScrollState())
-                        ) {
-                            suggestions.forEach { s ->
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            query = s
-                                            suggestions = emptyList()
-                                            onSearch(s)
-                                        }
-                                        .padding(horizontal = 14.dp, vertical = 11.dp)
-                                ) {
-                                    Icon(
-                                        Icons.Default.Search, null,
-                                        tint = BeeColors.DeepAmber, modifier = Modifier.size(15.dp)
-                                    )
-                                    Spacer(Modifier.width(10.dp))
-                                    Text(
-                                        s,
-                                        fontSize = 13.sp,
-                                        color = fg,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        textAlign = if (isRtlText(s)) TextAlign.End else TextAlign.Start,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                }
-
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
@@ -335,6 +295,59 @@ fun BrowserHomePage(
                     color = sub,
                     textAlign = TextAlign.Center
                 )
+            }
+        }
+
+        // suggestions float ABOVE the pinned bar in the same keyboard frame — the field
+        // never moves while typing, so the text being typed stays visible
+        if (suggestions.isNotEmpty()) {
+            Box(Modifier.fillMaxSize().imePadding()) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = beeAdapt(Color.White, BeeColors.DarkCell),
+                    tonalElevation = 2.dp,
+                    shadowElevation = 4.dp,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(horizontal = 26.dp)
+                        .padding(bottom = with(density) { barHeightPx.toDp() })
+                        .fillMaxWidth()
+                ) {
+                    Column(
+                        Modifier
+                            .heightIn(max = 220.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        suggestions.forEach { s ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        query = s
+                                        suggestions = emptyList()
+                                        onSearch(s)
+                                    }
+                                    .padding(horizontal = 14.dp, vertical = 11.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Search, null,
+                                    tint = BeeColors.DeepAmber, modifier = Modifier.size(15.dp)
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    s,
+                                    fontSize = 13.sp,
+                                    color = fg,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = if (isRtlText(s)) TextAlign.End else TextAlign.Start,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
