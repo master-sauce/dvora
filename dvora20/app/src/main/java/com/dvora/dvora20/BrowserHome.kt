@@ -3,6 +3,7 @@
 import android.content.Context
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,20 +14,30 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.gson.JsonParser
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BROWSER HOME + SEARCH ENGINES
@@ -80,6 +91,40 @@ fun isRtlText(text: String): Boolean {
 }
 
 /**
+ * Live search suggestions from the engine the user picked: Google's suggest
+ * endpoint or DuckDuckGo's autocomplete, both answering the same
+ * `[query, [suggestion, …]]` shape.
+ */
+private val suggestClient = OkHttpClient.Builder()
+    .callTimeout(4, TimeUnit.SECONDS)
+    .build()
+
+private suspend fun fetchSuggestions(engine: String, query: String): List<String> =
+    withContext(Dispatchers.IO) {
+        val url = if (engine == ENGINE_GOOGLE)
+            "https://suggestqueries.google.com/complete/search?client=firefox&hl=en&q=" + Uri.encode(query)
+        else
+            "https://duckduckgo.com/ac/?type=list&q=" + Uri.encode(query)
+        runCatching {
+            val req = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Linux; Android) Dvora")
+                .build()
+            suggestClient.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@use emptyList()
+                val body = resp.body?.string() ?: return@use emptyList()
+                val arr = JsonParser.parseString(body).asJsonArray
+                if (arr.size() < 2) return@use emptyList()
+                val items = arr[1].asJsonArray
+                items.mapNotNull { el -> runCatching { el.asString }.getOrNull() }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .take(6)
+            }
+        }.getOrDefault(emptyList())
+    }
+
+/**
  * The browser's start page — logo above, one search field pinned to the bottom of
  * the viewport. With the keyboard up that bottom bar sits directly on top of it,
  * like an extra toolbar, so the field and its button are never covered.
@@ -95,6 +140,7 @@ fun BrowserHomePage(
     val engine = searchEngine(context)
 
     var query by remember { mutableStateOf("") }
+    var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
     val scroll = rememberScrollState()
 
     val bg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
@@ -106,7 +152,21 @@ fun BrowserHomePage(
 
     fun go() {
         val q = query.trim()
-        if (q.isNotEmpty()) onSearch(q)
+        if (q.isNotEmpty()) {
+            suggestions = emptyList()
+            onSearch(q)
+        }
+    }
+
+    // engine-aware live suggestions — debounced so typing does not spam the endpoint
+    LaunchedEffect(engine, query) {
+        val q = query.trim()
+        if (q.length < 2) {
+            suggestions = emptyList()
+            return@LaunchedEffect
+        }
+        delay(250)
+        suggestions = fetchSuggestions(engine, q)
     }
 
     Box(modifier.fillMaxSize().background(bg)) {
@@ -169,6 +229,52 @@ fun BrowserHomePage(
                     .padding(horizontal = 26.dp)
                     .padding(top = 6.dp, bottom = 12.dp)
             ) {
+                if (suggestions.isNotEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = beeAdapt(Color.White, BeeColors.DarkCell),
+                        tonalElevation = 2.dp,
+                        shadowElevation = 3.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            Modifier
+                                .heightIn(max = 220.dp)
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            suggestions.forEach { s ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            query = s
+                                            suggestions = emptyList()
+                                            onSearch(s)
+                                        }
+                                        .padding(horizontal = 14.dp, vertical = 11.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Search, null,
+                                        tint = BeeColors.DeepAmber, modifier = Modifier.size(15.dp)
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(
+                                        s,
+                                        fontSize = 13.sp,
+                                        color = fg,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        textAlign = if (isRtlText(s)) TextAlign.End else TextAlign.Start,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                }
+
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
