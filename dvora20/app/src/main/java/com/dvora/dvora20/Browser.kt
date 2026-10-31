@@ -1645,15 +1645,25 @@ fun BrowserScreen(
                     modifier = Modifier.fillMaxSize()
                 )
                 if (onHome) {
-                    BrowserHomePage(
-                        incognito = tab.incognito,
-                        onSearch = { q ->
-                            urlEditing = false
-                            urlDraft = ""
-                            tab.load(resolveBrowserInput(context, q))
-                        },
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    // a fresh tab shows ONLY the search popup — no start page flashing
+                    // in behind it while the dialog window is being attached
+                    if (searchPromptTab === tab) {
+                        Box(
+                            Modifier
+                                .fillMaxSize()
+                                .background(beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb))
+                        )
+                    } else {
+                        BrowserHomePage(
+                            incognito = tab.incognito,
+                            onSearch = { q ->
+                                urlEditing = false
+                                urlDraft = ""
+                                tab.load(resolveBrowserInput(context, q))
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
 
