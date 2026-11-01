@@ -373,8 +373,29 @@ private fun applyNightMode(activity: android.app.Activity, dark: Boolean) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 class MainActivity : ComponentActivity() {
+    /** a browser link handed over by another app — consumed by DvoraApp once */
+    private val incomingLink = mutableStateOf<String?>(null)
+
+    /** http(s) VIEW url of [intent], or null for a normal launch. */
+    private fun viewUrl(intent: Intent?): String? {
+        val i = intent ?: return null
+        if (i.action != Intent.ACTION_VIEW) return null
+        val data = i.data ?: return null
+        val scheme = (data.scheme ?: "").lowercase()
+        return if (scheme == "http" || scheme == "https") data.toString() else null
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        // a link arrives while the app is already running (Dvora is a registered browser)
+        viewUrl(intent)?.let { incomingLink.value = it }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // a fresh launch from a link; an activity recreation keeps the session instead
+        if (savedInstanceState == null) incomingLink.value = viewUrl(intent)
         // the WINDOW theme carries the dark flag WebView's darkening gate reads —
         // a permanently light theme silently disabled algorithmic darkening
         setTheme(
@@ -412,8 +433,13 @@ class MainActivity : ComponentActivity() {
                 LocalLayoutDirection provides LayoutDirection.Ltr   // layout is always LTR
             ) {
                 MaterialTheme(colorScheme = if (darkModeState.value) BeeDarkScheme else BeeLightScheme) {
+                    // a link handed over by another app (VIEW http/https) — read as state,
+                    // so a warm singleTop instance still picks it up via onNewIntent
+                    val handover = incomingLink.value
                     DvoraApp(
-                        openBrowser = intent?.getBooleanExtra("open_browser", false) == true,
+                        openBrowser = intent?.getBooleanExtra("open_browser", false) == true || handover != null,
+                        openUrl = handover,
+                        onUrlConsumed = { incomingLink.value = null },
                         onToggleDarkMode = {
                             darkModeState.value = !darkModeState.value
                             prefs.edit().putBoolean("dark_mode", darkModeState.value).apply()
@@ -588,7 +614,12 @@ fun openCard(context: Context, url: String, onBrowser: (String) -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DvoraApp(openBrowser: Boolean = false, onToggleDarkMode: () -> Unit) {
+fun DvoraApp(
+    openBrowser: Boolean = false,
+    openUrl: String? = null,
+    onUrlConsumed: () -> Unit = {},
+    onToggleDarkMode: () -> Unit
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val scanner = remember { DvoraScanner() }
@@ -645,7 +676,9 @@ fun DvoraApp(openBrowser: Boolean = false, onToggleDarkMode: () -> Unit) {
     var showImdb by rememberSaveable { mutableStateOf(false) }
     var showBookmarks by rememberSaveable { mutableStateOf(false) }
     var showBrowser by rememberSaveable { mutableStateOf(openBrowser) }
-    var browserUrl by remember { mutableStateOf("") }
+    // a link handed over by another app opens straight in the browser
+    var browserUrl by remember { mutableStateOf(openUrl ?: "") }
+    LaunchedEffect(Unit) { if (openUrl != null) onUrlConsumed() }
 
     // kicks the ad-block list load (cache/asset, then background refresh) at startup
     val repo = remember { Repo.get(context) }

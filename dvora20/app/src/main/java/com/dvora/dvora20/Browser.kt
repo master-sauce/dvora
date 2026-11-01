@@ -748,6 +748,16 @@ fun BrowserScreen(
         else if (initialUrl.isNotBlank() && initialUrl != BROWSER_HOME) newTab(initialUrl, false)
     }
 
+    // a link handed over while the browser is ALREADY open (another app, a result
+    // card, Dvora as the system browser) gets its own new tab
+    var lastOpenUrl by remember { mutableStateOf(initialUrl) }
+    LaunchedEffect(initialUrl) {
+        if (initialUrl.isBlank() || initialUrl == BROWSER_HOME) return@LaunchedEffect
+        if (initialUrl == lastOpenUrl) return@LaunchedEffect
+        lastOpenUrl = initialUrl
+        newTab(initialUrl, false)
+    }
+
     // leaving the browser screen: incognito tabs die here (never saved, never
     // recorded); regular tabs keep living in TabCtl for the whole app session
     DisposableEffect(Unit) {
