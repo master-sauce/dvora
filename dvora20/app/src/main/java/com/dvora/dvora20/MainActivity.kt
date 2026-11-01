@@ -35,6 +35,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -877,7 +878,7 @@ fun DvoraApp(
                                             .focusRequester(searchFieldFocusRequester),
                                         singleLine = true, colors = beeTextFieldColors(),
                                         textStyle = LocalTextStyle.current.copy(
-                                            textAlign = if (isRtlText(searchTerm)) TextAlign.End else TextAlign.Start
+                                            textAlign = TextAlign.Start, textDirection = TextDirection.Content
                                         )
                                     )
 
@@ -1524,7 +1525,7 @@ fun SubtitlesScreen(
                 singleLine = true,
                 colors = beeTextFieldColors(),
                 textStyle = LocalTextStyle.current.copy(
-                    textAlign = if (isRtlText(searchTerm)) TextAlign.End else TextAlign.Start
+                    textAlign = TextAlign.Start, textDirection = TextDirection.Content
                 )
             )
             Spacer(Modifier.height(12.dp))
@@ -1817,7 +1818,7 @@ fun ImdbScreen(
                 singleLine = true,
                 colors = beeTextFieldColors(),
                 textStyle = LocalTextStyle.current.copy(
-                    textAlign = if (isRtlText(searchTerm)) TextAlign.End else TextAlign.Start
+                    textAlign = TextAlign.Start, textDirection = TextDirection.Content
                 )
             )
             if (isSearching) {

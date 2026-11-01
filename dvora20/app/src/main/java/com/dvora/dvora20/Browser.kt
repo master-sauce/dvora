@@ -74,6 +74,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -1553,7 +1554,6 @@ fun BrowserScreen(
             // the row text — empty on the start page, user-owned while editing.
             // Hebrew / Arabic input is right-aligned, English stays left
             val barText = if (urlEditing) urlDraft else if (onHome) "" else tab.address
-            val barRtl = isRtlText(barText)
             if (urlBar) {
                 LaunchedEffect(active) {
                     urlEditing = false
@@ -1595,7 +1595,8 @@ fun BrowserScreen(
                         textStyle = TextStyle(
                             fontSize = 12.sp,
                             color = textColor,
-                            textAlign = if (barRtl) TextAlign.End else TextAlign.Start
+                            textAlign = TextAlign.Start,
+                            textDirection = TextDirection.Content
                         ),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = textColor,
@@ -1908,7 +1909,8 @@ fun BrowserScreen(
                     textStyle = TextStyle(
                         fontSize = 12.sp,
                         color = textColor,
-                        textAlign = if (isRtlText(tabQuery)) TextAlign.End else TextAlign.Start
+                        textAlign = TextAlign.Start,
+                        textDirection = TextDirection.Content
                     ),
                     placeholder = {
                         Text(L(R.string.tab_search), fontSize = 12.sp, color = textColor.copy(alpha = 0.35f))

@@ -36,6 +36,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -171,8 +172,6 @@ fun BrowserHomePage(
     val fg = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
     val sub = fg.copy(alpha = 0.6f)
     val fieldBg = beeAdapt(BeeColors.HoneycombYellow.copy(alpha = 0.4f), BeeColors.DarkCell)
-    // Hebrew / Arabic input sits on the right, English on the left
-    val rtl = isRtlText(query)
 
     fun go() {
         val q = query.trim()
@@ -263,7 +262,11 @@ fun BrowserHomePage(
                     textStyle = TextStyle(
                         fontSize = 14.sp,
                         color = fg,
-                        textAlign = if (rtl) TextAlign.End else TextAlign.Start
+                        textAlign = TextAlign.Start,
+                        // direction follows the typed script: empty/English stay LTR,
+                        // Hebrew/Arabic switch the paragraph so the caret sits at the
+                        // real end of the text instead of the wrong side
+                        textDirection = TextDirection.Content
                     ),
                     leadingIcon = {
                         Icon(
@@ -470,7 +473,8 @@ fun NewTabSearchDialog(
                 textStyle = TextStyle(
                     fontSize = 14.sp,
                     color = fg,
-                    textAlign = if (isRtlText(text)) TextAlign.End else TextAlign.Start
+                    textAlign = TextAlign.Start,
+                    textDirection = TextDirection.Content
                 ),
                 leadingIcon = {
                     Icon(
