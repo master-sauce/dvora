@@ -197,7 +197,8 @@ fun BrowserScreen(
     var hitMenu by remember { mutableStateOf<Triple<String, Boolean, String?>?>(null) } // long-pressed (url, isImage, linkText)
     var previewUrl by remember { mutableStateOf<String?>(null) }                     // fullscreen preview overlay
     var previewImage by remember { mutableStateOf(false) }                            // preview target is an image
-    var searchPromptTab by remember { mutableStateOf<WebTab?>(null) }                 // fresh tab → search popup
+    // true = regular new tab, false = incognito… only while the prompt is open
+    var newTabPromptIncognito by remember { mutableStateOf<Boolean?>(null) }
     val urlFocus = remember { FocusRequester() }
     var pendingChooser by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }   // active <input type=file> picker
     var hasStorage by remember { mutableStateOf(Build.VERSION.SDK_INT >= 29) }
@@ -683,9 +684,8 @@ fun BrowserScreen(
         CookieManager.getInstance().setAcceptCookie(tabs.none { it.incognito })
     }
 
-    fun newTab(url: String, incognito: Boolean, background: Boolean = false, promptSearch: Boolean = true) {
+    fun newTab(url: String, incognito: Boolean, background: Boolean = false) {
         val prevActive = active
-        val target = url.ifBlank { BROWSER_HOME }
         tabs.add(
             WebTab(
                 // the whitelist is read live from its cache (not this screen's state) —
@@ -702,8 +702,6 @@ fun BrowserScreen(
         )
         active = tabs.lastIndex
         if (background) active = prevActive.coerceIn(0, tabs.lastIndex)   // load it, keep the current tab on screen
-        // a brand-new tab asks what to search/open instead of just showing the start page
-        if (promptSearch && !background && target == BROWSER_HOME) searchPromptTab = tabs.last()
         syncCookies()
     }
 
@@ -744,7 +742,7 @@ fun BrowserScreen(
         val restoreActive = TabCtl.restoreActive
         TabCtl.restore = null
         if (tabs.isEmpty() && !restore.isNullOrEmpty()) {
-            restore.forEach { u -> newTab(u, false, promptSearch = false) }
+            restore.forEach { u -> newTab(u, false) }
             if (tabs.isNotEmpty()) active = restoreActive.coerceIn(0, tabs.lastIndex)
         } else if (tabs.isEmpty()) newTab(initialUrl.ifBlank { BROWSER_HOME }, false)
         else if (initialUrl.isNotBlank() && initialUrl != BROWSER_HOME) newTab(initialUrl, false)
@@ -770,7 +768,7 @@ fun BrowserScreen(
         val prevActive = active
         tabs.forEach { it.destroy() }
         tabs.clear()
-        snap.forEach { (addr, inc) -> newTab(addr, inc, promptSearch = false) }
+        snap.forEach { (addr, inc) -> newTab(addr, inc) }
         if (tabs.isNotEmpty()) active = prevActive.coerceIn(0, tabs.lastIndex)
     }
 
@@ -1016,23 +1014,18 @@ fun BrowserScreen(
         )
     }
 
-    // ── fresh tab → ask what to search/open ────────────────────────────────────
-    // (a restored tab or a background tab never prompts)
-    LaunchedEffect(active) {
-        val cur = tabs.getOrNull(active)
-        if (searchPromptTab != null && searchPromptTab !== cur) searchPromptTab = null
-    }
-    val promptTab = searchPromptTab
-    if (promptTab != null && promptTab === tabs.getOrNull(active)) {
+    // ── new tab → ask FIRST; the current tab stays untouched behind the prompt ──
+    newTabPromptIncognito?.let { incognito ->
         NewTabSearchDialog(
             engine = searchEngine(context),
             suggestionsOn = suggestionsEnabled(context),
-            onDismiss = { searchPromptTab = null },
+            onDismiss = { newTabPromptIncognito = null },     // cancel = no tab at all
             onGo = { raw ->
-                searchPromptTab = null
+                newTabPromptIncognito = null
                 urlEditing = false
                 urlDraft = ""
-                promptTab.load(resolveBrowserInput(context, raw))
+                // the tab exists only now, already carrying the result
+                newTab(resolveBrowserInput(context, raw), incognito)
             }
         )
     }
@@ -1524,11 +1517,12 @@ fun BrowserScreen(
                     )
                 }
                 // OPEN a new incognito tab — the detective emoji marks the ACTION, so it
-                // can't be confused with the on-state mark
-                IconButton(onClick = { newTab(BROWSER_HOME, true) }, modifier = Modifier.size(44.dp)) {
+                // can't be confused with the on-state mark. Both new-tab buttons ask for a
+                // search first and only then create the tab.
+                IconButton(onClick = { newTabPromptIncognito = true }, modifier = Modifier.size(44.dp)) {
                     Text("🕵", fontSize = 20.sp)
                 }
-                IconButton(onClick = { newTab(BROWSER_HOME, false) }, modifier = Modifier.size(44.dp)) {
+                IconButton(onClick = { newTabPromptIncognito = false }, modifier = Modifier.size(44.dp)) {
                     Icon(
                         Icons.Default.Add, L(R.string.cd_newtab),
                         tint = BeeColors.HoneyGold, modifier = Modifier.size(22.dp)
@@ -1645,25 +1639,15 @@ fun BrowserScreen(
                     modifier = Modifier.fillMaxSize()
                 )
                 if (onHome) {
-                    // a fresh tab shows ONLY the search popup — no start page flashing
-                    // in behind it while the dialog window is being attached
-                    if (searchPromptTab === tab) {
-                        Box(
-                            Modifier
-                                .fillMaxSize()
-                                .background(beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb))
-                        )
-                    } else {
-                        BrowserHomePage(
-                            incognito = tab.incognito,
-                            onSearch = { q ->
-                                urlEditing = false
-                                urlDraft = ""
-                                tab.load(resolveBrowserInput(context, q))
-                            },
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
+                    BrowserHomePage(
+                        incognito = tab.incognito,
+                        onSearch = { q ->
+                            urlEditing = false
+                            urlDraft = ""
+                            tab.load(resolveBrowserInput(context, q))
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
             }
 
