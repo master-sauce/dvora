@@ -2254,6 +2254,10 @@ fun BookmarksScreen(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 colors = beeTextFieldColors(),
+                textStyle = LocalTextStyle.current.copy(
+                    textAlign = TextAlign.Start,
+                    textDirection = TextDirection.Content
+                ),
                 trailingIcon = {
                     if (bookmarkSearch.isNotEmpty()) IconButton(onClick = { bookmarkSearch = "" }) {
                         Icon(Icons.Default.Close, "Clear", tint = BeeColors.DeepAmber)
