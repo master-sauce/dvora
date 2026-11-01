@@ -175,6 +175,7 @@
     <string name="home_search_hint">Search or type a URL</string>
     <string name="home_search_go">SEARCH</string>
     <string name="newtab_search_title">Search or open a URL</string>
+    <string name="newtab_badge">NEW TAB</string>
     <string name="home_engine_google">Searches with Google</string>
     <string name="home_engine_ddg">Searches with DuckDuckGo</string>
     <string name="home_incognito">Incognito tab · nothing is saved</string>

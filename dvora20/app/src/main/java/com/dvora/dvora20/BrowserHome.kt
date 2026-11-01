@@ -1,8 +1,9 @@
-﻿package com.dvora.dvora20
+package com.dvora.dvora20
 
 import android.content.Context
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -11,6 +12,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -22,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -36,6 +39,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -368,9 +373,9 @@ fun BrowserHomePage(
 }
 
 /**
- * Shown when a NEW tab opens: instead of dropping the user on the start page, a
- * focused field asks what to search or open. Same engine + suggestion rules as the
- * home page; dismissing it leaves the start page behind.
+ * Shown when a NEW tab is requested: the current tab stays untouched behind a
+ * bee-themed prompt that asks what to search or open. Same engine + suggestion
+ * rules as the start page; cancelling creates nothing.
  */
 @Composable
 fun NewTabSearchDialog(
@@ -383,6 +388,8 @@ fun NewTabSearchDialog(
     var tips by remember { mutableStateOf<List<String>>(emptyList()) }
     val focus = remember { FocusRequester() }
 
+    val cardBg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
+    val rowBg = beeAdapt(BeeColors.HoneycombYellow.copy(alpha = 0.35f), BeeColors.DarkCell)
     val fg = beeAdapt(BeeColors.BeeBlack, BeeColors.DarkOnSurface)
     val sub = fg.copy(alpha = 0.6f)
     val fieldBg = beeAdapt(BeeColors.HoneycombYellow.copy(alpha = 0.4f), BeeColors.DarkCell)
@@ -407,84 +414,178 @@ fun NewTabSearchDialog(
         }
     }
 
-    AlertDialog(
+    Dialog(
         onDismissRequest = onDismiss,
-        containerColor = BeeColors.DarkComb,
-        title = { Text(L(R.string.newtab_search_title), color = BeeColors.HoneyGold) },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    modifier = Modifier.fillMaxWidth().focusRequester(focus),
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    textStyle = TextStyle(
-                        fontSize = 14.sp,
-                        color = fg,
-                        textAlign = if (isRtlText(text)) TextAlign.End else TextAlign.Start
-                    ),
-                    placeholder = { Text(L(R.string.home_search_hint), fontSize = 13.sp, color = sub) },
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = fg,
-                        unfocusedTextColor = fg,
-                        focusedBorderColor = BeeColors.HoneyGold,
-                        unfocusedBorderColor = BeeColors.DeepAmber.copy(alpha = 0.5f),
-                        focusedContainerColor = fieldBg,
-                        unfocusedContainerColor = fieldBg,
-                        cursorColor = BeeColors.HoneyGold
-                    ),
-                    keyboardOptions = KeyboardOptions(
-                        keyboardType = KeyboardType.Text,
-                        imeAction = ImeAction.Search
-                    ),
-                    keyboardActions = KeyboardActions(onSearch = { submit(text) }, onGo = { submit(text) })
-                )
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .background(cardBg)
+                .border(1.5.dp, BeeColors.HoneyGold.copy(alpha = 0.55f), RoundedCornerShape(22.dp))
+                .padding(16.dp)
+        ) {
+            // ── hive header ───────────────────────────────────────────────────
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .background(BeeColors.HoneyGold.copy(alpha = 0.18f), RoundedCornerShape(10.dp)),
+                    contentAlignment = Alignment.Center
+                ) { Text("🐝", fontSize = 17.sp) }
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        L(R.string.newtab_badge),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 3.sp,
+                        color = BeeColors.HoneyGold
+                    )
+                    Text(
+                        L(R.string.newtab_search_title),
+                        fontSize = 10.sp,
+                        color = sub,
+                        maxLines = 1
+                    )
+                }
+                IconButton(onClick = onDismiss, modifier = Modifier.size(34.dp)) {
+                    Icon(
+                        Icons.Default.Close, L(R.string.cancel),
+                        tint = BeeColors.DeepAmber, modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
 
-                if (tips.isNotEmpty()) {
-                    Spacer(Modifier.height(6.dp))
-                    Column(
-                        Modifier
-                            .heightIn(max = 170.dp)
-                            .verticalScroll(rememberScrollState())
-                    ) {
-                        tips.forEach { s ->
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { submit(s) }
-                                    .padding(horizontal = 6.dp, vertical = 9.dp)
-                            ) {
-                                Icon(
-                                    Icons.Default.Search, null,
-                                    tint = BeeColors.DeepAmber, modifier = Modifier.size(14.dp)
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    s,
-                                    fontSize = 13.sp,
-                                    color = fg,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    textAlign = if (isRtlText(s)) TextAlign.End else TextAlign.Start,
-                                    modifier = Modifier.weight(1f)
-                                )
-                            }
+            Spacer(Modifier.height(14.dp))
+
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                singleLine = true,
+                shape = RoundedCornerShape(14.dp),
+                textStyle = TextStyle(
+                    fontSize = 14.sp,
+                    color = fg,
+                    textAlign = if (isRtlText(text)) TextAlign.End else TextAlign.Start
+                ),
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Search, null,
+                        tint = BeeColors.DeepAmber, modifier = Modifier.size(20.dp)
+                    )
+                },
+                trailingIcon = {
+                    if (text.isNotEmpty()) {
+                        IconButton(
+                            onClick = { text = ""; tips = emptyList() },
+                            modifier = Modifier.size(30.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Close, L(R.string.cancel),
+                                tint = sub, modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                },
+                placeholder = { Text(L(R.string.home_search_hint), fontSize = 13.sp, color = sub) },
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = fg,
+                    unfocusedTextColor = fg,
+                    focusedBorderColor = BeeColors.HoneyGold,
+                    unfocusedBorderColor = BeeColors.DeepAmber.copy(alpha = 0.45f),
+                    focusedContainerColor = fieldBg,
+                    unfocusedContainerColor = fieldBg,
+                    cursorColor = BeeColors.HoneyGold
+                ),
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Text,
+                    imeAction = ImeAction.Search
+                ),
+                keyboardActions = KeyboardActions(onSearch = { submit(text) }, onGo = { submit(text) })
+            )
+
+            if (tips.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(rowBg)
+                        .heightIn(max = 186.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    tips.forEachIndexed { idx, s ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { submit(s) }
+                                .padding(horizontal = 12.dp, vertical = 10.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Search, null,
+                                tint = BeeColors.DeepAmber.copy(alpha = 0.8f),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(Modifier.width(9.dp))
+                            Text(
+                                s,
+                                fontSize = 13.sp,
+                                color = fg,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = if (isRtlText(s)) TextAlign.End else TextAlign.Start,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        if (idx != tips.lastIndex) {
+                            HorizontalDivider(
+                                color = BeeColors.HoneyGold.copy(alpha = 0.12f),
+                                thickness = 1.dp
+                            )
                         }
                     }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = { submit(text) }) {
-                Text(L(R.string.home_search_go), color = BeeColors.HoneyGold, fontWeight = FontWeight.Bold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(L(R.string.cancel), color = BeeColors.DeepAmber)
+
+            Spacer(Modifier.height(14.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(0.42f).height(44.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = beeAdapt(BeeColors.HoneycombYellow, BeeColors.DarkStripe),
+                        contentColor = beeAdapt(BeeColors.BeeBlack, BeeColors.HoneyGold)
+                    )
+                ) {
+                    Text(L(R.string.cancel), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                Button(
+                    onClick = { submit(text) },
+                    enabled = text.isNotBlank(),
+                    modifier = Modifier.weight(0.58f).height(44.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = BeeColors.HoneyGold,
+                        contentColor = BeeColors.BeeBlack,
+                        disabledContainerColor = BeeColors.HoneyGold.copy(alpha = 0.35f),
+                        disabledContentColor = BeeColors.BeeBlack.copy(alpha = 0.55f)
+                    )
+                ) {
+                    Text(
+                        L(R.string.home_search_go),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.5.sp
+                    )
+                }
             }
         }
-    )
+    }
 }
