@@ -2303,8 +2303,9 @@ private fun ResourceSheet(
 
     // one row per url — an exclusion can never be listed twice
     val excluded = remember(excTick) { Exceptions.all(context).distinct() }
+    val excludedSet = remember(excluded) { excluded.toHashSet() }
 
-    val shown = remember(log, filter, query) {
+    val shown = remember(log, filter, query, excludedSet) {
         val base = when (filter) {
             "blocked" -> log.filter { it.blocked }
             "api" -> log.filter { it.tag == "api" }
@@ -2314,9 +2315,12 @@ private fun ResourceSheet(
         val q = query.trim()
         val filtered = if (q.isEmpty()) base
         else base.filter { it.url.contains(q, ignoreCase = true) || it.tag.contains(q, ignoreCase = true) }
-        // the same url can be requested several times per page — show it once, with
-        // its LATEST state (blocked / excluded)
-        filtered.asReversed().distinctBy { it.url }.asReversed()
+        // the same url can be requested several times per page — show it once, with its
+        // LATEST state; urls already listed under the exclusions section are not repeated
+        filtered.asReversed()
+            .distinctBy { it.url }
+            .filter { it.url !in excludedSet }
+            .asReversed()
     }
 
     Column(Modifier.fillMaxWidth().height(560.dp).padding(horizontal = 14.dp, vertical = 12.dp)) {
