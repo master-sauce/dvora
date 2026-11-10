@@ -2301,7 +2301,8 @@ private fun ResourceSheet(
     var confirmClear by remember { mutableStateOf(false) }     // the trash button's wipe confirm
     var excTick by remember { mutableIntStateOf(0) }           // user exceptions changed → refresh the section
 
-    val excluded = remember(excTick) { Exceptions.all(context) }
+    // one row per url — an exclusion can never be listed twice
+    val excluded = remember(excTick) { Exceptions.all(context).distinct() }
 
     val shown = remember(log, filter, query) {
         val base = when (filter) {
@@ -2311,8 +2312,11 @@ private fun ResourceSheet(
             else -> log
         }
         val q = query.trim()
-        if (q.isEmpty()) base
+        val filtered = if (q.isEmpty()) base
         else base.filter { it.url.contains(q, ignoreCase = true) || it.tag.contains(q, ignoreCase = true) }
+        // the same url can be requested several times per page — show it once, with
+        // its LATEST state (blocked / excluded)
+        filtered.asReversed().distinctBy { it.url }.asReversed()
     }
 
     Column(Modifier.fillMaxWidth().height(560.dp).padding(horizontal = 14.dp, vertical = 12.dp)) {
