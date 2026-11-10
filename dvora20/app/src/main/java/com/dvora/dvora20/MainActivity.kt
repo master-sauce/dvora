@@ -685,14 +685,21 @@ fun DvoraApp(
     var browserUrl by remember { mutableStateOf(openUrl ?: "") }
     // bumped for every handover, so even the SAME url twice still gets its own tab
     var openTick by remember { mutableIntStateOf(0) }
+    // the link present at launch is already the browser's initial url — ticking for it
+    // would open the exact same page twice (initialUrl + tick)
+    val launchHandover = remember { openUrl }
+    var launchHandoverDone by remember { mutableStateOf(false) }
     LaunchedEffect(openUrl) {
-        if (openUrl != null) {
-            browserUrl = openUrl
-            showBrowser = true
-            showBookmarks = false; showSubtitles = false; showImdb = false; showSettings = false
-            openTick++
-            onUrlConsumed()
+        val u = openUrl ?: return@LaunchedEffect
+        browserUrl = u
+        showBrowser = true
+        showBookmarks = false; showSubtitles = false; showImdb = false; showSettings = false
+        if (launchHandover != null && u == launchHandover && !launchHandoverDone) {
+            launchHandoverDone = true      // first composition already opened it as initialUrl
+        } else {
+            openTick++                     // a real handover while the app is running → new tab
         }
+        onUrlConsumed()
     }
 
     // kicks the ad-block list load (cache/asset, then background refresh) at startup
