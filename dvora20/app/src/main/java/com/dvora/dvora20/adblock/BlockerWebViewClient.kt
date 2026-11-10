@@ -46,6 +46,9 @@ class BlockerWebViewClient(
     var onBlocked: () -> Unit = {}              // page-block counter just moved → refresh badge
     var onActivity: () -> Unit = {}             // another page request happened → live the resources panel
     var onCrossNav: ((String, String) -> Unit)? = null   // (target url, host) — confirm-site-change dialog
+    /** a MAIN-PAGE navigation the filter list blocked — (url, matched rule) */
+    var onBlockedNav: ((String, String) -> Unit)? = null
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     var onSsl: ((Uri?, SslErrorHandler) -> Unit)? = null
 
     /** sniffer script injection — called on every http(s) page start (script itself is idempotent) */
@@ -182,6 +185,10 @@ class BlockerWebViewClient(
             rule != null -> {
                 engine.noteReq(tag, url, true, "${rule.pattern()} — ${rule.list}")
                 onBlocked()
+                if (request.isForMainFrame) {
+                    // the PAGE itself was blocked — let the UI offer "open anyway"
+                    mainHandler.post { onBlockedNav?.invoke(url, "${rule.pattern()} — ${rule.list}") }
+                }
                 return empty(kind)
             }
 

@@ -202,6 +202,8 @@ fun BrowserScreen(
     var previewImage by remember { mutableStateOf(false) }                            // preview target is an image
     // true = regular new tab, false = incognito… only while the prompt is open
     var newTabPromptIncognito by remember { mutableStateOf<Boolean?>(null) }
+    // a page the filter list blocked → (tab, url, matched rule) awaiting the user's call
+    var blockedNav by remember { mutableStateOf<Triple<WebTab, String, String>?>(null) }
     val urlFocus = remember { FocusRequester() }
     var pendingChooser by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }   // active <input type=file> picker
     var hasStorage by remember { mutableStateOf(Build.VERSION.SDK_INT >= 29) }
@@ -700,7 +702,11 @@ fun BrowserScreen(
                 onEnqueue = { u, d, m -> clickDownload(u, d, m) },
                 // long-press: the screen pops the action menu (download / preview /
                 // new tab / background / incognito / external app / copy / share)
-                onLongPress = { u, img, text -> hitMenu = Triple(u, img, text) }
+                onLongPress = { u, img, text -> hitMenu = Triple(u, img, text) },
+                // a page the filter list blocked → ask before opening it unblocked
+                onBlockedNav = { t, u, rule ->
+                    if (blockedNav == null) blockedNav = Triple(t, u, rule)
+                }
             )
         )
         active = tabs.lastIndex
@@ -1038,6 +1044,51 @@ fun BrowserScreen(
                 urlDraft = ""
                 // the tab exists only now, already carrying the result
                 newTab(resolveBrowserInput(context, raw), incognito)
+            }
+        )
+    }
+
+    // ── a PAGE the ad blocker stopped → offer to open it anyway ──────────────
+    blockedNav?.let { (t, u, rule) ->
+        val leaveBlocked: () -> Unit = {
+            blockedNav = null
+            // the blocked document never rendered — step back to a real page
+            runCatching { if (t.webView.canGoBack()) t.webView.goBack() else t.load(BROWSER_HOME) }
+        }
+        AlertDialog(
+            onDismissRequest = { leaveBlocked() },
+            containerColor = BeeColors.DarkComb,
+            title = { Text(L(R.string.ab_blocked_title), color = BeeColors.HoneyGold) },
+            text = {
+                Column {
+                    Text(L(R.string.ab_blocked_msg), color = textColor, fontSize = 11.sp)
+                    Spacer(Modifier.height(6.dp))
+                    Text(u, color = subColor, fontSize = 10.sp, maxLines = 3)
+                    if (rule.isNotEmpty()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(rule, color = BeeColors.DeepAmber, fontSize = 9.sp, maxLines = 1)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    blockedNav = null
+                    // exact-url exception, then load the page again — it passes the filter now
+                    Exceptions.add(context, u)
+                    Toast.makeText(
+                        context,
+                        localeStr(context, R.string.ab_opened_anyway),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    t.load(u)
+                }) {
+                    Text(L(R.string.ab_open_anyway), color = BeeColors.FoundGreen, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { leaveBlocked() }) {
+                    Text(L(R.string.cancel), color = BeeColors.DeepAmber)
+                }
             }
         )
     }

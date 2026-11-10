@@ -67,7 +67,9 @@ class WebTab(
     /** a forced download (Content-Disposition) goes to the DownloadManager */
     onEnqueue: (String, String?, String?) -> Unit,
     /** long-press on an image / link — (url, isImage, linkText); the screen shows the action menu */
-    private val onLongPress: (String, Boolean, String?) -> Unit
+    private val onLongPress: (String, Boolean, String?) -> Unit,
+    /** a main-page navigation the ad blocker stopped — (tab, url, matched rule) */
+    private val onBlockedNav: (WebTab, String, String) -> Unit = { _, _, _ -> }
 ) {
     // ── per-page UI state (own state per tab — background tabs update silently) ──
     var address by mutableStateOf(startUrl)
@@ -218,6 +220,7 @@ class WebTab(
         }
         client.onActivity = onActivity
         client.onCrossNav = { url, host -> onCrossNav(this, url, host) }
+        client.onBlockedNav = { url, rule -> onBlockedNav(this, url, rule) }
         client.onPageEnd = {
             blockLog = repo.engine.blockSnapshot()
             blocked = repo.engine.pageBlocks

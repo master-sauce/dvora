@@ -198,6 +198,10 @@
     <!-- ad-block: shield long press + per-request exclusions -->
     <string name="ab_global_on">Ad-blocking enabled on all sites</string>
     <string name="ab_global_off">Ad-blocking disabled on all sites</string>
+    <string name="ab_blocked_title">This page is blocked</string>
+    <string name="ab_blocked_msg">The ad blocker stopped this page. Open it anyway? Blocking is skipped for this exact URL from now on.</string>
+    <string name="ab_open_anyway">Open anyway</string>
+    <string name="ab_opened_anyway">Opened without blocking</string>
     <string name="rs_allow_q">Allow this request?</string>
     <string name="rs_allow_msg">It will be excluded from the ad blocker on every site.</string>
     <string name="rs_allow">Allow</string>
