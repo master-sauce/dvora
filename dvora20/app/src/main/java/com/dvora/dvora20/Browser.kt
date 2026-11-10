@@ -202,8 +202,17 @@ fun BrowserScreen(
     var previewImage by remember { mutableStateOf(false) }                            // preview target is an image
     // true = regular new tab, false = incognito… only while the prompt is open
     var newTabPromptIncognito by remember { mutableStateOf<Boolean?>(null) }
-    // a page the filter list blocked → (tab, url, matched rule) awaiting the user's call
-    var blockedNav by remember { mutableStateOf<Triple<WebTab, String, String>?>(null) }
+    // a blocked PAGE navigation: every blocked document of one attempt is collected
+    // and asked about ONCE (a redirect chain reports more than one url)
+    var blockedTab by remember { mutableStateOf<WebTab?>(null) }
+    var blockedUrls by remember { mutableStateOf<Map<String, String>>(emptyMap()) }   // url → rule
+    var blockedSeq by remember { mutableIntStateOf(0) }
+    var blockedShow by remember { mutableStateOf(false) }
+    // right after "Open anyway" the same attempt can hit another blocked document —
+    // except it silently instead of prompting a second time
+    var autoAllowTab by remember { mutableStateOf<WebTab?>(null) }
+    var autoAllowUntil by remember { mutableLongStateOf(0L) }
+    var autoAllowLeft by remember { mutableIntStateOf(0) }
     val urlFocus = remember { FocusRequester() }
     var pendingChooser by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }   // active <input type=file> picker
     var hasStorage by remember { mutableStateOf(Build.VERSION.SDK_INT >= 29) }
@@ -703,9 +712,19 @@ fun BrowserScreen(
                 // long-press: the screen pops the action menu (download / preview /
                 // new tab / background / incognito / external app / copy / share)
                 onLongPress = { u, img, text -> hitMenu = Triple(u, img, text) },
-                // a page the filter list blocked → ask before opening it unblocked
+                // a page the filter list blocked → ask ONCE for the whole attempt
                 onBlockedNav = { t, u, rule ->
-                    if (blockedNav == null) blockedNav = Triple(t, u, rule)
+                    val now = android.os.SystemClock.uptimeMillis()
+                    if (autoAllowTab === t && now < autoAllowUntil && autoAllowLeft > 0) {
+                        // follow-up document of an already-approved opening
+                        autoAllowLeft--
+                        Exceptions.add(context, u)
+                        t.load(u)
+                    } else {
+                        blockedTab = t
+                        blockedUrls = blockedUrls + (u to rule)
+                        blockedSeq++
+                    }
                 }
             )
         )
@@ -1048,12 +1067,24 @@ fun BrowserScreen(
         )
     }
 
-    // ── a PAGE the ad blocker stopped → offer to open it anyway ──────────────
-    blockedNav?.let { (t, u, rule) ->
+    // ── blocked PAGE prompt — ONE dialog for every blocked document of the attempt ──
+    LaunchedEffect(blockedSeq) {
+        if (blockedUrls.isEmpty()) return@LaunchedEffect
+        delay(450)                     // let a redirect chain report all its documents first
+        if (blockedUrls.isNotEmpty()) blockedShow = true
+    }
+    if (blockedShow && blockedUrls.isNotEmpty()) {
+        val pageTab = blockedTab
+        val urls = blockedUrls.keys.toList()
+        val firstRule = blockedUrls.values.firstOrNull().orEmpty()
         val leaveBlocked: () -> Unit = {
-            blockedNav = null
+            blockedShow = false
+            blockedUrls = emptyMap()
+            blockedTab = null
             // the blocked document never rendered — step back to a real page
-            runCatching { if (t.webView.canGoBack()) t.webView.goBack() else t.load(BROWSER_HOME) }
+            pageTab?.let { pt ->
+                runCatching { if (pt.webView.canGoBack()) pt.webView.goBack() else pt.load(BROWSER_HOME) }
+            }
         }
         AlertDialog(
             onDismissRequest = { leaveBlocked() },
@@ -1063,24 +1094,36 @@ fun BrowserScreen(
                 Column {
                     Text(L(R.string.ab_blocked_msg), color = textColor, fontSize = 11.sp)
                     Spacer(Modifier.height(6.dp))
-                    Text(u, color = subColor, fontSize = 10.sp, maxLines = 3)
-                    if (rule.isNotEmpty()) {
+                    urls.take(4).forEach { bu ->
+                        Text(bu, color = subColor, fontSize = 9.sp, maxLines = 1)
+                    }
+                    if (urls.size > 4) {
+                        Text("+${urls.size - 4}", color = subColor, fontSize = 9.sp)
+                    }
+                    if (firstRule.isNotEmpty()) {
                         Spacer(Modifier.height(4.dp))
-                        Text(rule, color = BeeColors.DeepAmber, fontSize = 9.sp, maxLines = 1)
+                        Text(firstRule, color = BeeColors.DeepAmber, fontSize = 9.sp, maxLines = 1)
                     }
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
-                    blockedNav = null
-                    // exact-url exception, then load the page again — it passes the filter now
-                    Exceptions.add(context, u)
-                    Toast.makeText(
-                        context,
-                        localeStr(context, R.string.ab_opened_anyway),
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    t.load(u)
+                    // every url of this attempt is excepted at once — no second prompt
+                    Exceptions.addAll(context, urls)
+                    blockedShow = false
+                    blockedUrls = emptyMap()
+                    blockedTab = null
+                    pageTab?.let { pt ->
+                        autoAllowTab = pt
+                        autoAllowUntil = android.os.SystemClock.uptimeMillis() + 8_000
+                        autoAllowLeft = 4
+                        Toast.makeText(
+                            context,
+                            localeStr(context, R.string.ab_opened_anyway),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        pt.load(urls.last())     // the chain stopped here — reload its last document
+                    }
                 }) {
                     Text(L(R.string.ab_open_anyway), color = BeeColors.FoundGreen, fontWeight = FontWeight.Bold)
                 }

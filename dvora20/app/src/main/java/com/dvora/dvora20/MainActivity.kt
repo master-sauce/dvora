@@ -71,6 +71,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.annotation.StringRes
 import java.util.Locale
+import com.dvora.dvora20.adblock.Exceptions
 import com.dvora.dvora20.adblock.ListRepo
 import com.dvora.dvora20.adblock.Repo
 
@@ -407,7 +408,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         BookmarksManager.load(this)
         BookmarksManager.rescheduleAllReminders(this)
-        HistoryStore.load(this)   // persisted browsing history — incognito pages were never recorded        // yt-dlp + ffmpeg — the in-app browser's media-download feature
+        HistoryStore.load(this)   // persisted browsing history - incognito pages were never recorded        // yt-dlp + ffmpeg - the in-app browser's media-download feature
+        Exceptions.clearLegacyStore(this)   // exclusions are session-only now — no old ones may survive
         try {
             YoutubeDL.getInstance().init(this)
             FFmpeg.getInstance().init(this)
@@ -471,6 +473,8 @@ class MainActivity : ComponentActivity() {
             }
         }
         TabCtl.destroyAll()
+        // request exclusions are session-only — closing Dvora drops them
+        if (isFinishing) Exceptions.clear()
     }
 }
 

@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
+import com.dvora.dvora20.adblock.Exceptions
 import com.dvora.dvora20.adblock.ListInfo
 import com.dvora.dvora20.adblock.ListRepo
 import kotlinx.coroutines.Dispatchers
@@ -107,6 +108,7 @@ fun BrowserTab(repo: ListRepo) {
             // the session store outlives this screen — without closing it, re-entering the
             // browser restores every tab with its in-memory page state and cookies
             TabCtl.destroyAll()
+            Exceptions.clear()   // request exclusions are session-only — clearing browsing data drops them too
             Toast.makeText(context, localeStr(context, R.string.btab_cleared), Toast.LENGTH_SHORT).show()
         }
     }

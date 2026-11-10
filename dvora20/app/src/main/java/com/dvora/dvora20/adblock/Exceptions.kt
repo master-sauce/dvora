@@ -1,67 +1,53 @@
 package com.dvora.dvora20.adblock
 
 import android.content.Context
-import android.content.SharedPreferences
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
 
 /**
- * Per-request exceptions — single urls the user allowed from the resources panel
- * ("allow this request"). Exact url match, stored in the app-wide `dvora_prefs`
- * next to the per-site whitelist, so the interceptor can consult a cached list
- * on every request without touching disk.
+ * SESSION-ONLY per-request exceptions: urls the user allowed from the requests
+ * panel or the "this page is blocked" prompt. Nothing is written to disk — the
+ * list lives as long as the app process and is dropped the moment Dvora closes.
  *
- * The resources panel lists them under "excluded from ad blocker" and can drop
- * them again from there.
+ * The interceptor reads the cached list on every request, so no disk access ever
+ * happens on the network path.
  */
 object Exceptions {
 
-    private const val PREFS = "dvora_prefs"
-    private const val KEY = "browser_exceptions"
-    private const val MAX = 500
-
-    private val gson = Gson()
     private val lock = Any()
-    private val listType = object : TypeToken<List<String>>() {}.type
 
+    /** in-memory snapshot — read on EVERY intercepted request */
     @Volatile
-    private var prefs: SharedPreferences? = null
+    private var cached: List<String> = emptyList()
 
-    /** in-memory snapshot — read on EVERY intercepted request, so never touch disk there */
-    @Volatile
-    private var cached: List<String>? = null
+    fun all(@Suppress("UNUSED_PARAMETER") context: Context): List<String> = cached
 
-    private fun prefs(context: Context): SharedPreferences =
-        prefs ?: synchronized(lock) {
-            prefs ?: context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .also { prefs = it }
+    fun has(@Suppress("UNUSED_PARAMETER") context: Context, url: String): Boolean =
+        cached.contains(url)
+
+    fun add(@Suppress("UNUSED_PARAMETER") context: Context, url: String) {
+        synchronized(lock) {
+            if (!cached.contains(url)) cached = cached + url
         }
-
-    fun all(context: Context): List<String> = cached ?: synchronized(lock) {
-        cached ?: load(context).also { cached = it }
     }
 
-    private fun load(context: Context): List<String> = try {
-        val raw = prefs(context).getString(KEY, "") ?: ""
-        if (raw.isEmpty()) emptyList() else gson.fromJson(raw, listType) ?: emptyList()
-    } catch (_: Exception) {
-        emptyList()
+    fun addAll(@Suppress("UNUSED_PARAMETER") context: Context, urls: Collection<String>) {
+        if (urls.isEmpty()) return
+        synchronized(lock) { cached = (cached + urls).distinct() }
     }
 
-    fun has(context: Context, url: String): Boolean = all(context).contains(url)
-
-    fun add(context: Context, url: String) {
-        val set = LinkedHashSet(all(context))
-        if (set.add(url)) save(context, set.toList().takeLast(MAX))
+    fun remove(@Suppress("UNUSED_PARAMETER") context: Context, url: String) {
+        synchronized(lock) { cached = cached - url }
     }
 
-    fun remove(context: Context, url: String) {
-        val set = LinkedHashSet(all(context))
-        if (set.remove(url)) save(context, set.toList())
+    /** app closed → nothing of this session survives */
+    fun clear() {
+        synchronized(lock) { cached = emptyList() }
     }
 
-    private fun save(context: Context, urls: List<String>) {
-        prefs(context).edit().putString(KEY, gson.toJson(urls)).apply()
-        cached = urls       // the interceptor reads this live — keep it current
+    /** older builds stored exclusions in prefs — wipe that key so none come back */
+    fun clearLegacyStore(context: Context) {
+        runCatching {
+            context.applicationContext.getSharedPreferences("dvora_prefs", Context.MODE_PRIVATE)
+                .edit().remove("browser_exceptions").apply()
+        }
     }
 }

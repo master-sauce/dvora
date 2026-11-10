@@ -206,7 +206,7 @@
     <string name="rs_allow_msg">It will be excluded from the ad blocker on every site.</string>
     <string name="rs_allow">Allow</string>
     <string name="rs_allowed">Request allowed</string>
-    <string name="rs_excluded_title">EXCLUDED FROM AD BLOCKER</string>
+    <string name="rs_excluded_title">EXCLUDED THIS SESSION</string>
     <string name="rs_excluded_tag">excluded by you</string>
     <string name="rs_remove_exclusion">Remove from exclusions</string>
 
