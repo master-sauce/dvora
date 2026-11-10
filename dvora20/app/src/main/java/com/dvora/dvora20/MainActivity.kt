@@ -679,7 +679,17 @@ fun DvoraApp(
     var showBrowser by rememberSaveable { mutableStateOf(openBrowser) }
     // a link handed over by another app opens straight in the browser
     var browserUrl by remember { mutableStateOf(openUrl ?: "") }
-    LaunchedEffect(Unit) { if (openUrl != null) onUrlConsumed() }
+    // bumped for every handover, so even the SAME url twice still gets its own tab
+    var openTick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(openUrl) {
+        if (openUrl != null) {
+            browserUrl = openUrl
+            showBrowser = true
+            showBookmarks = false; showSubtitles = false; showImdb = false; showSettings = false
+            openTick++
+            onUrlConsumed()
+        }
+    }
 
     // kicks the ad-block list load (cache/asset, then background refresh) at startup
     val repo = remember { Repo.get(context) }
@@ -689,6 +699,7 @@ fun DvoraApp(
         openCard(context, u) { url ->
             showBookmarks = false; showSubtitles = false; showImdb = false; showSettings = false
             browserUrl = url; showBrowser = true
+            openTick++      // a card tapped while the browser is open → its own new tab
         }
     }
 
@@ -804,6 +815,7 @@ fun DvoraApp(
 
                 "browser" -> BrowserScreen(
                     initialUrl = browserUrl,
+                    openTick = openTick,
                     repo = repo,
                     onBack = { showBrowser = false },
                     onToggleDark = onToggleDarkMode,
