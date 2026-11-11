@@ -288,9 +288,9 @@ fun BrowserHomePage(
                 Spacer(Modifier.height(8.dp))
 
                 // fixed slot right under the field: suggestions drop down here while
-                // typing, the SEARCH button + engine note live here otherwise — the
-                // field never moves
-                Box(Modifier.fillMaxWidth().height(96.dp)) {
+                // typing, the SEARCH button + engine note live here otherwise. Same
+                // height either way, so the field keeps the position/height it had.
+                Box(Modifier.fillMaxWidth().height(68.dp)) {
                     if (suggestionsOn && suggestions.isNotEmpty()) {
                         Surface(
                             shape = RoundedCornerShape(14.dp),
