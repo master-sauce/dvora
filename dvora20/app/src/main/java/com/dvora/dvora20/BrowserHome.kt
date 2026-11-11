@@ -27,7 +27,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -164,7 +163,6 @@ fun BrowserHomePage(
 
     var query by remember { mutableStateOf("") }
     var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
-    var fieldFocused by remember { mutableStateOf(false) }
     val scroll = rememberScrollState()
 
     val bg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
@@ -180,11 +178,13 @@ fun BrowserHomePage(
         }
     }
 
-    // engine-aware live suggestions — debounced so typing does not spam the endpoint;
-    // they disappear with the keyboard, so closing it doesn't reflow the page twice
-    LaunchedEffect(engine, query, suggestionsOn, fieldFocused) {
+    // engine-aware live suggestions — debounced so typing does not spam the endpoint.
+    // They are NOT tied to focus/IME: clearing them when the keyboard closes reflowed
+    // the bar at the end of the animation (the "flick"), so they simply stay until the
+    // query changes, a suggestion is used, or the user searches.
+    LaunchedEffect(engine, query, suggestionsOn) {
         val q = query.trim()
-        if (!fieldFocused || !suggestionsOn || q.length < 2) {
+        if (!suggestionsOn || q.length < 2) {
             suggestions = emptyList()
             return@LaunchedEffect
         }
@@ -197,13 +197,6 @@ fun BrowserHomePage(
         // itself, so adding our own tween made the page lag behind it and "pop" after.
         val density = LocalDensity.current
         val imeDp = with(density) { WindowInsets.ime.getBottom(density).toDp() }
-        // The moment the keyboard STARTS closing, drop the suggestion list: waiting for
-        // focus loss (at the end of the animation) made the page settle and then flick.
-        var lastIme by remember { mutableStateOf(0.dp) }
-        LaunchedEffect(imeDp) {
-            if (imeDp < lastIme && lastIme > 0.dp) suggestions = emptyList()
-            lastIme = imeDp
-        }
         // the keyboard toolbar can grow the IME a lot — the suggestion list shrinks with
         // the remaining space instead of squashing the field / button
         val usable = (maxHeight - imeDp).coerceAtLeast(0.dp)
@@ -270,9 +263,7 @@ fun BrowserHomePage(
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .onFocusChanged { fieldFocused = it.isFocused },
+                    modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     shape = RoundedCornerShape(14.dp),
                     textStyle = TextStyle(
