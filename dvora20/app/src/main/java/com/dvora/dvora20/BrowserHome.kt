@@ -3,8 +3,6 @@ package com.dvora.dvora20
 import android.content.Context
 import android.net.Uri
 import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -195,15 +193,10 @@ fun BrowserHomePage(
     }
 
     BoxWithConstraints(modifier.fillMaxSize().background(bg)) {
-        // The IME inset is animated by hand: padding that snaps from 0 to the keyboard
-        // height makes the whole page bounce when the keyboard closes.
+        // The IME inset is followed frame-by-frame: the system animates the keyboard
+        // itself, so adding our own tween made the page lag behind it and "pop" after.
         val density = LocalDensity.current
-        val imeTarget = with(density) { WindowInsets.ime.getBottom(density).toDp() }
-        val imeDp by animateDpAsState(
-            targetValue = imeTarget,
-            animationSpec = tween(durationMillis = 220),
-            label = "ime"
-        )
+        val imeDp = with(density) { WindowInsets.ime.getBottom(density).toDp() }
         // the keyboard toolbar can grow the IME a lot — the suggestion list shrinks with
         // the remaining space instead of squashing the field / button
         val usable = (maxHeight - imeDp).coerceAtLeast(0.dp)
