@@ -187,7 +187,10 @@ fun BrowserHomePage(
         suggestions = fetchSuggestions(engine, q)
     }
 
-    Box(modifier.fillMaxSize().background(bg)) {
+    BoxWithConstraints(modifier.fillMaxSize().background(bg)) {
+        // the keyboard toolbar can grow the IME a lot — the suggestion list shrinks with
+        // the space instead of squashing the field / button
+        val tipsMax = (maxHeight * 0.32f).coerceIn(72.dp, 170.dp)
         Column(Modifier.fillMaxSize().imePadding()) {
             // ── hive mark — takes the space above the search bar ──────────────
             Column(
@@ -298,7 +301,7 @@ fun BrowserHomePage(
                     ) {
                         Column(
                             Modifier
-                                .heightIn(max = 170.dp)
+                                .heightIn(max = tipsMax)
                                 .verticalScroll(rememberScrollState())
                         ) {
                             suggestions.forEach { s ->
