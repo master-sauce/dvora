@@ -83,6 +83,16 @@ class WebTab(
     var video by mutableStateOf<Pair<View, WebChromeClient.CustomViewCallback>?>(null)   // fullscreen video overlay
     var navTick by mutableIntStateOf(0)    // back/fwd availability moved → refresh the toolbar
 
+    /** until when a block on this tab's page may prompt (a link opened from OUTSIDE the app);
+     *  0 = in-app navigation, blocking stays silent */
+    @Volatile
+    var externalOpenUntil: Long = 0L
+
+    /** a link handed over from another app / a result card — its blocked page may ask */
+    fun markExternalOpen() {
+        externalOpenUntil = android.os.SystemClock.uptimeMillis() + 20_000L
+    }
+
     // ── one-time objects ──────────────────────────────────────────────────────
     // the WebView is built on the ACTIVITY context so it inherits the app's real
     // window theme — algorithmic darkening is refused by Chromium when the host
@@ -287,9 +297,11 @@ class WebTab(
 
         webView.setOnTouchListener { _, ev ->
             // a real finger on the page — the navigation it may cause counts as the
-            // user's own even where WebView's hasGesture() lies
+            // user's own even where WebView's hasGesture() lies; it also ends the
+            // "opened from outside" window, so only that first load can prompt
             if (ev.actionMasked == MotionEvent.ACTION_DOWN || ev.actionMasked == MotionEvent.ACTION_UP) {
                 client.lastUserTouchAt = android.os.SystemClock.uptimeMillis()
+                if (ev.actionMasked == MotionEvent.ACTION_DOWN) externalOpenUntil = 0L
             }
             detector.onTouchEvent(ev)
             false

@@ -715,7 +715,10 @@ fun BrowserScreen(
                 // a page the filter list blocked → ask ONCE for the whole attempt
                 onBlockedNav = { t, u, rule ->
                     val now = android.os.SystemClock.uptimeMillis()
-                    if (autoAllowTab === t && now < autoAllowUntil && autoAllowLeft > 0) {
+                    if (now > t.externalOpenUntil) {
+                        // an in-browser navigation (link tap, typed url, redirect):
+                        // blocking stays silent, exactly like any other blocked resource
+                    } else if (autoAllowTab === t && now < autoAllowUntil && autoAllowLeft > 0) {
                         // follow-up document of an already-approved opening
                         autoAllowLeft--
                         Exceptions.add(context, u)
@@ -772,8 +775,15 @@ fun BrowserScreen(
         if (tabs.isEmpty() && !restore.isNullOrEmpty()) {
             restore.forEach { u -> newTab(u, false) }
             if (tabs.isNotEmpty()) active = restoreActive.coerceIn(0, tabs.lastIndex)
-        } else if (tabs.isEmpty()) newTab(initialUrl.ifBlank { BROWSER_HOME }, false)
-        else if (initialUrl.isNotBlank() && initialUrl != BROWSER_HOME) newTab(initialUrl, false)
+        } else if (tabs.isEmpty()) {
+            val u = initialUrl.ifBlank { BROWSER_HOME }
+            newTab(u, false)
+            // opened from outside (link / result card) → a blocked page may ask
+            if (u != BROWSER_HOME) tabs.lastOrNull()?.markExternalOpen()
+        } else if (initialUrl.isNotBlank() && initialUrl != BROWSER_HOME) {
+            newTab(initialUrl, false)
+            tabs.lastOrNull()?.markExternalOpen()
+        }
     }
 
     // a link handed over while the browser is ALREADY open (another app, Dvora as the
@@ -782,7 +792,10 @@ fun BrowserScreen(
     LaunchedEffect(openTick) {
         if (openTick == lastOpenTick) return@LaunchedEffect
         lastOpenTick = openTick
-        if (initialUrl.isNotBlank() && initialUrl != BROWSER_HOME) newTab(initialUrl, false)
+        if (initialUrl.isNotBlank() && initialUrl != BROWSER_HOME) {
+            newTab(initialUrl, false)
+            tabs.lastOrNull()?.markExternalOpen()
+        }
     }
 
     // leaving the browser screen: incognito tabs die here (never saved, never
