@@ -31,10 +31,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
@@ -257,6 +260,8 @@ fun BrowserScreen(
     var confirmCloseAll by remember { mutableStateOf(false) }
     // panel search — filters open tabs by title / url
     var tabQuery by remember { mutableStateOf("") }
+    // tabs closed from the panel — they play a short exit animation before dying
+    val closingTabs = remember { mutableStateListOf<WebTab>() }
     LaunchedEffect(tabsPanelOpen) { if (!tabsPanelOpen) tabQuery = "" }
 
     // ── launchers ─────────────────────────────────────────────────────────────
@@ -741,6 +746,7 @@ fun BrowserScreen(
 
     fun closeTab(i: Int) {
         val t = tabs.getOrNull(i) ?: return
+        closingTabs.remove(t)
         tabs.removeAt(i)
         t.destroy()
         if (tabs.isEmpty()) {                       // never tab-less — a fresh home tab
@@ -1541,12 +1547,24 @@ fun BrowserScreen(
                         tint = BeeColors.HoneyGold, modifier = Modifier.size(20.dp)
                     )
                     Spacer(Modifier.width(7.dp))
-                    Text(
-                        "${tabs.size}",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = textColor
-                    )
+                    // the count rolls up/down as tabs come and go
+                    AnimatedContent(
+                        targetState = tabs.size,
+                        transitionSpec = {
+                            if (targetState > initialState)
+                                (slideInVertically { it } togetherWith slideOutVertically { -it })
+                            else
+                                (slideInVertically { -it } togetherWith slideOutVertically { it })
+                        },
+                        label = "tabCount"
+                    ) { count ->
+                        Text(
+                            "$count",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = textColor
+                        )
+                    }
                 }
                 // the ACTIVE tab is incognito → the eye mark sits LEFT, next to the tabs pill
                 if (tab.incognito) {
@@ -2064,7 +2082,19 @@ fun BrowserScreen(
                         val t = iv.value
                         val sel = i == active
                         val isHome = t.address == BROWSER_HOME
-                        Row(
+                        // closing first plays a short shrink+fade, then the tab really dies
+                        val closing = t in closingTabs
+                        LaunchedEffect(closing) {
+                            if (closing) {
+                                delay(180)
+                                closeTab(tabs.indexOf(t))
+                            }
+                        }
+                        AnimatedVisibility(
+                            visible = !closing,
+                            exit = shrinkVertically(shrinkTowards = Alignment.Top) + fadeOut()
+                        ) {
+                            Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -2117,8 +2147,9 @@ fun BrowserScreen(
                                 tint = subColor,
                                 modifier = Modifier
                                     .size(20.dp)
-                                    .clickable { closeTab(i) }
+                                    .clickable { if (t !in closingTabs) closingTabs.add(t) }
                             )
+                        }
                         }
                     }
                 }
