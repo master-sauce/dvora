@@ -298,7 +298,7 @@ fun BrowserHomePage(
                     ) {
                         Column(
                             Modifier
-                                .heightIn(max = 108.dp)
+                                .heightIn(max = 170.dp)
                                 .verticalScroll(rememberScrollState())
                         ) {
                             suggestions.forEach { s ->

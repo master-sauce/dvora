@@ -37,6 +37,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -160,7 +161,7 @@ fun ytSaveDir(context: Context): File? {
  * panel, SSL user dialog, `<input type="file">` picker, and
  * DownloadManager downloads.
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class, ExperimentalLayoutApi::class)
 @Composable
 fun BrowserScreen(
     initialUrl: String,
@@ -1820,7 +1821,11 @@ fun BrowserScreen(
                 }
             }
 
-            if (barVisible) {
+            // The bottom toolbar costs ~62dp: with the keyboard up that space is dead
+            // weight above the IME, so it steps aside and the page (and the home search
+            // bar) sits directly on the keyboard instead.
+            val imeUp = WindowInsets.isImeVisible
+            if (barVisible && !imeUp) {
                 Column(Modifier.navigationBarsPadding().fillMaxWidth()) {
                     // toolbar (bottom) — back / fwd / reload / home / page resources / url row toggle
                     Row(
@@ -1896,7 +1901,7 @@ fun BrowserScreen(
                         }
                     }
                 }
-            } else {
+            } else if (!imeUp) {
                 // bar hidden — slim strip with one button that brings it back
                 Box(
                     Modifier.navigationBarsPadding().fillMaxWidth().background(headerBg),
