@@ -36,6 +36,12 @@ class BlockerWebViewClient(
     private val allowedHosts: () -> Set<String>
 ) : WebViewClient() {
 
+    companion object {
+        /** blocked requests on the CURRENT page that mark it as ad-heavy — site changes
+         *  are still confirmed there even when the user tapped the link */
+        private const val AD_HEAVY_BLOCKS = 8
+    }
+
     // ── UI callbacks ──────────────────────────────────────────────────────────
     var onUrl: (String) -> Unit = {}
     // every COMMITTED url — navs, redirects AND in-page history.pushState/replaceState;
@@ -73,12 +79,19 @@ class BlockerWebViewClient(
         }
         onUrl(uri.toString())
         val newHost = (uri.host ?: "").lowercase()
-        // an actual site change (different registrable domain) while browsing → ask the user
+        // an actual site change (different registrable domain) while browsing
         if (docHost.isNotEmpty() && newHost.isNotEmpty() &&
             BlockerEngine.registrable(newHost) != BlockerEngine.registrable(docHost)
         ) {
+            // A deliberate tap on a page that is NOT ad-heavy just goes through. The
+            // confirm is kept for what ad-heavy pages do to you: script redirects /
+            // pop-unders (no user gesture) and links injected on pages already full of
+            // blocked ad requests.
+            val userTap = request.hasGesture()
+            val adHeavy = repo.engine.pageBlocks >= AD_HEAVY_BLOCKS
+            if (userTap && !adHeavy) return false
             onCrossNav?.invoke(uri.toString(), (uri.host ?: ""))
-            return true                            // cancelled — the UI loads it again on approve
+            return true                            // cancelled - the UI loads it again on approve
         }
         return false                               // same site → stays inside the app's WebView
     }
