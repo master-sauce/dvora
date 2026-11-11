@@ -197,10 +197,9 @@ fun BrowserHomePage(
         // itself, so adding our own tween made the page lag behind it and "pop" after.
         val density = LocalDensity.current
         val imeDp = with(density) { WindowInsets.ime.getBottom(density).toDp() }
-        // the keyboard toolbar can grow the IME a lot — the suggestion list shrinks with
-        // the remaining space instead of squashing the field / button
-        val usable = (maxHeight - imeDp).coerceAtLeast(0.dp)
-        val tipsMax = (usable * 0.32f).coerceIn(72.dp, 170.dp)
+        // The list height must not depend on the IME: if it grew as the keyboard closed
+        // the bar re-laid itself mid-animation (the "flick"). It follows the window only.
+        val tipsMax = (maxHeight * 0.28f).coerceIn(72.dp, 170.dp)
         Column(Modifier.fillMaxSize().padding(bottom = imeDp)) {
             // ── hive mark — takes the space above the search bar ──────────────
             Column(
