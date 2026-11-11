@@ -2,6 +2,9 @@ package com.dvora.dvora20
 
 import android.content.Context
 import android.net.Uri
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -26,8 +29,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -161,6 +166,7 @@ fun BrowserHomePage(
 
     var query by remember { mutableStateOf("") }
     var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
+    var fieldFocused by remember { mutableStateOf(false) }
     val scroll = rememberScrollState()
 
     val bg = beeAdapt(BeeColors.WaxWhite, BeeColors.DarkComb)
@@ -176,10 +182,11 @@ fun BrowserHomePage(
         }
     }
 
-    // engine-aware live suggestions — debounced so typing does not spam the endpoint
-    LaunchedEffect(engine, query, suggestionsOn) {
+    // engine-aware live suggestions — debounced so typing does not spam the endpoint;
+    // they disappear with the keyboard, so closing it doesn't reflow the page twice
+    LaunchedEffect(engine, query, suggestionsOn, fieldFocused) {
         val q = query.trim()
-        if (!suggestionsOn || q.length < 2) {
+        if (!fieldFocused || !suggestionsOn || q.length < 2) {
             suggestions = emptyList()
             return@LaunchedEffect
         }
@@ -188,10 +195,20 @@ fun BrowserHomePage(
     }
 
     BoxWithConstraints(modifier.fillMaxSize().background(bg)) {
+        // The IME inset is animated by hand: padding that snaps from 0 to the keyboard
+        // height makes the whole page bounce when the keyboard closes.
+        val density = LocalDensity.current
+        val imeTarget = with(density) { WindowInsets.ime.getBottom(density).toDp() }
+        val imeDp by animateDpAsState(
+            targetValue = imeTarget,
+            animationSpec = tween(durationMillis = 220),
+            label = "ime"
+        )
         // the keyboard toolbar can grow the IME a lot — the suggestion list shrinks with
-        // the space instead of squashing the field / button
-        val tipsMax = (maxHeight * 0.32f).coerceIn(72.dp, 170.dp)
-        Column(Modifier.fillMaxSize().imePadding()) {
+        // the remaining space instead of squashing the field / button
+        val usable = (maxHeight - imeDp).coerceAtLeast(0.dp)
+        val tipsMax = (usable * 0.32f).coerceIn(72.dp, 170.dp)
+        Column(Modifier.fillMaxSize().padding(bottom = imeDp)) {
             // ── hive mark — takes the space above the search bar ──────────────
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -253,7 +270,9 @@ fun BrowserHomePage(
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onFocusChanged { fieldFocused = it.isFocused },
                     singleLine = true,
                     shape = RoundedCornerShape(14.dp),
                     textStyle = TextStyle(
@@ -297,7 +316,7 @@ fun BrowserHomePage(
                         color = beeAdapt(Color.White, BeeColors.DarkCell),
                         tonalElevation = 2.dp,
                         shadowElevation = 3.dp,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().animateContentSize()
                     ) {
                         Column(
                             Modifier
