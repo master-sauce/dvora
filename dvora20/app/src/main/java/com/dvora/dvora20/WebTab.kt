@@ -286,6 +286,11 @@ class WebTab(
         }
 
         webView.setOnTouchListener { _, ev ->
+            // a real finger on the page — the navigation it may cause counts as the
+            // user's own even where WebView's hasGesture() lies
+            if (ev.actionMasked == MotionEvent.ACTION_DOWN || ev.actionMasked == MotionEvent.ACTION_UP) {
+                client.lastUserTouchAt = android.os.SystemClock.uptimeMillis()
+            }
             detector.onTouchEvent(ev)
             false
         }

@@ -39,8 +39,14 @@ class BlockerWebViewClient(
     companion object {
         /** blocked requests on the CURRENT page that mark it as ad-heavy — site changes
          *  are still confirmed there even when the user tapped the link */
-        private const val AD_HEAVY_BLOCKS = 8
+        private const val AD_HEAVY_BLOCKS = 25
+        /** a navigation this soon after a real touch is the user's own tap */
+        private const val TAP_WINDOW_MS = 1_500L
     }
+
+    /** set by the tab's touch listener — last time a finger touched the page */
+    @Volatile
+    var lastUserTouchAt: Long = 0L
 
     // ── UI callbacks ──────────────────────────────────────────────────────────
     var onUrl: (String) -> Unit = {}
@@ -87,7 +93,8 @@ class BlockerWebViewClient(
             // confirm is kept for what ad-heavy pages do to you: script redirects /
             // pop-unders (no user gesture) and links injected on pages already full of
             // blocked ad requests.
-            val userTap = request.hasGesture()
+            val userTap = request.hasGesture() ||
+                (android.os.SystemClock.uptimeMillis() - lastUserTouchAt) in 0..TAP_WINDOW_MS
             val adHeavy = repo.engine.pageBlocks >= AD_HEAVY_BLOCKS
             if (userTap && !adHeavy) return false
             onCrossNav?.invoke(uri.toString(), (uri.host ?: ""))
