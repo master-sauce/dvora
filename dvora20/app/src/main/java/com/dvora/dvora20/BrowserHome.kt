@@ -197,9 +197,12 @@ fun BrowserHomePage(
         // itself, so adding our own tween made the page lag behind it and "pop" after.
         val density = LocalDensity.current
         val imeDp = with(density) { WindowInsets.ime.getBottom(density).toDp() }
-        // The list height must not depend on the IME: if it grew as the keyboard closed
-        // the bar re-laid itself mid-animation (the "flick"). It follows the window only.
-        val tipsMax = (maxHeight * 0.28f).coerceIn(72.dp, 170.dp)
+        // The list only takes what is left after the field + button + note — so while
+        // the keyboard collapses / the toolbar slides back in it shrinks with the space
+        // instead of overflowing and squashing the fixed controls.
+        val fixed = 160.dp
+        val usable = (maxHeight - imeDp).coerceAtLeast(0.dp)
+        val tipsMax = (usable - fixed).coerceIn(56.dp, 170.dp)
         Column(Modifier.fillMaxSize().padding(bottom = imeDp)) {
             // ── hive mark — fixed top offset: it must NOT re-centre when the keyboard
             // opens/closes (that was the logo "updating its position") ──────────────
