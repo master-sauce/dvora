@@ -197,6 +197,13 @@ fun BrowserHomePage(
         // itself, so adding our own tween made the page lag behind it and "pop" after.
         val density = LocalDensity.current
         val imeDp = with(density) { WindowInsets.ime.getBottom(density).toDp() }
+        // The moment the keyboard STARTS closing, drop the suggestion list: waiting for
+        // focus loss (at the end of the animation) made the page settle and then flick.
+        var lastIme by remember { mutableStateOf(0.dp) }
+        LaunchedEffect(imeDp) {
+            if (imeDp < lastIme && lastIme > 0.dp) suggestions = emptyList()
+            lastIme = imeDp
+        }
         // the keyboard toolbar can grow the IME a lot — the suggestion list shrinks with
         // the remaining space instead of squashing the field / button
         val usable = (maxHeight - imeDp).coerceAtLeast(0.dp)
