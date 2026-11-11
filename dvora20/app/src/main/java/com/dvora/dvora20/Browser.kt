@@ -32,6 +32,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
@@ -1823,9 +1825,15 @@ fun BrowserScreen(
 
             // The bottom toolbar costs ~62dp: with the keyboard up that space is dead
             // weight above the IME, so it steps aside and the page (and the home search
-            // bar) sits directly on the keyboard instead.
+            // bar) sits directly on the keyboard instead. It slides back in when the
+            // keyboard closes, so the page never jumps by its height in one frame.
             val imeUp = WindowInsets.isImeVisible
-            if (barVisible && !imeUp) {
+            AnimatedVisibility(
+                visible = !imeUp,
+                enter = expandVertically(expandFrom = Alignment.Bottom),
+                exit = shrinkVertically(shrinkTowards = Alignment.Bottom)
+            ) {
+                if (barVisible) {
                 Column(Modifier.navigationBarsPadding().fillMaxWidth()) {
                     // toolbar (bottom) — back / fwd / reload / home / page resources / url row toggle
                     Row(
@@ -1901,7 +1909,7 @@ fun BrowserScreen(
                         }
                     }
                 }
-            } else if (!imeUp) {
+            } else {
                 // bar hidden — slim strip with one button that brings it back
                 Box(
                     Modifier.navigationBarsPadding().fillMaxWidth().background(headerBg),
@@ -1916,6 +1924,7 @@ fun BrowserScreen(
                         )
                     }
                 }
+            }
             }
         }
 

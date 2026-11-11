@@ -201,16 +201,17 @@ fun BrowserHomePage(
         // the bar re-laid itself mid-animation (the "flick"). It follows the window only.
         val tipsMax = (maxHeight * 0.28f).coerceIn(72.dp, 170.dp)
         Column(Modifier.fillMaxSize().padding(bottom = imeDp)) {
-            // ── hive mark — takes the space above the search bar ──────────────
+            // ── hive mark — fixed top offset: it must NOT re-centre when the keyboard
+            // opens/closes (that was the logo "updating its position") ──────────────
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth()
                     .verticalScroll(scroll)
                     .padding(horizontal = 26.dp)
             ) {
+                Spacer(Modifier.height(56.dp))
                 Text("🐝", fontSize = 46.sp)
                 Spacer(Modifier.height(8.dp))
                 Text(
