@@ -287,77 +287,78 @@ fun BrowserHomePage(
 
                 Spacer(Modifier.height(8.dp))
 
-                // fixed slot right under the field: suggestions drop down here while
-                // typing, the SEARCH button + engine note live here otherwise. Same
-                // height either way, so the field keeps the position/height it had.
-                Box(Modifier.fillMaxWidth().height(68.dp)) {
-                    if (suggestionsOn && suggestions.isNotEmpty()) {
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = beeAdapt(Color.White, BeeColors.DarkCell),
-                            tonalElevation = 2.dp,
-                            shadowElevation = 3.dp,
-                            modifier = Modifier.fillMaxSize()
+                // suggestions drop in ABOVE the button, never over it
+                if (suggestionsOn && suggestions.isNotEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = beeAdapt(Color.White, BeeColors.DarkCell),
+                        tonalElevation = 2.dp,
+                        shadowElevation = 3.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            Modifier
+                                .heightIn(max = 108.dp)
+                                .verticalScroll(rememberScrollState())
                         ) {
-                            Column(Modifier.verticalScroll(rememberScrollState())) {
-                                suggestions.forEach { s ->
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                query = s
-                                                suggestions = emptyList()
-                                                onSearch(s)
-                                            }
-                                            .padding(horizontal = 12.dp, vertical = 9.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Search, null,
-                                            tint = BeeColors.DeepAmber, modifier = Modifier.size(14.dp)
-                                        )
-                                        Spacer(Modifier.width(9.dp))
-                                        Text(
-                                            s,
-                                            fontSize = 13.sp,
-                                            color = fg,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            textAlign = if (isRtlText(s)) TextAlign.End else TextAlign.Start,
-                                            modifier = Modifier.weight(1f)
-                                        )
-                                    }
+                            suggestions.forEach { s ->
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            query = s
+                                            suggestions = emptyList()
+                                            onSearch(s)
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 9.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Search, null,
+                                        tint = BeeColors.DeepAmber, modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(Modifier.width(9.dp))
+                                    Text(
+                                        s,
+                                        fontSize = 13.sp,
+                                        color = fg,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        textAlign = if (isRtlText(s)) TextAlign.End else TextAlign.Start,
+                                        modifier = Modifier.weight(1f)
+                                    )
                                 }
                             }
                         }
-                    } else {
-                        Column(Modifier.fillMaxSize()) {
-                            Button(
-                                onClick = { go() },
-                                enabled = query.isNotBlank(),
-                                modifier = Modifier.fillMaxWidth().height(46.dp),
-                                shape = RoundedCornerShape(14.dp),
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = BeeColors.HoneyGold,
-                                    contentColor = BeeColors.BeeBlack,
-                                    disabledContainerColor = BeeColors.HoneyGold.copy(alpha = 0.35f),
-                                    disabledContentColor = BeeColors.BeeBlack.copy(alpha = 0.55f)
-                                )
-                            ) {
-                                Text(L(R.string.home_search_go), fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-                            }
-                            Spacer(Modifier.height(6.dp))
-                            // which engine this searches with — the choice lives in the browser settings tab
-                            Text(
-                                L(if (engine == ENGINE_GOOGLE) R.string.home_engine_google else R.string.home_engine_ddg),
-                                fontSize = 10.sp,
-                                color = sub,
-                                textAlign = TextAlign.Center,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
                     }
+                    Spacer(Modifier.height(8.dp))
                 }
+
+                // the SEARCH button is the bottom-most control: locked right above the
+                // keyboard like an extra toolbar, whatever the list does
+                Button(
+                    onClick = { go() },
+                    enabled = query.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = BeeColors.HoneyGold,
+                        contentColor = BeeColors.BeeBlack,
+                        disabledContainerColor = BeeColors.HoneyGold.copy(alpha = 0.35f),
+                        disabledContentColor = BeeColors.BeeBlack.copy(alpha = 0.55f)
+                    )
+                ) {
+                    Text(L(R.string.home_search_go), fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+                }
+                Spacer(Modifier.height(6.dp))
+                // which engine this searches with — the choice lives in the browser settings tab
+                Text(
+                    L(if (engine == ENGINE_GOOGLE) R.string.home_engine_google else R.string.home_engine_ddg),
+                    fontSize = 10.sp,
+                    color = sub,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         }
     }
